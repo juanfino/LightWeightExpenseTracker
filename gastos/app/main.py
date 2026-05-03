@@ -10,36 +10,57 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _parse_users(users_json: str) -> dict:
+def load_config() -> dict:
     """
-    Convierte el JSON de usuarios de HA a {telegram_id: name}.
-    El valor puede ser una lista de objetos o un string JSON.
+    Lee la configuración desde /data/options.json (escrito por HA Supervisor).
+    Fallback a variables de entorno para desarrollo local.
     """
+    options_path = os.getenv("OPTIONS_PATH", "/data/options.json")
+
+    if os.path.exists(options_path):
+        with open(options_path) as f:
+            config = json.load(f)
+        logger.info("Configuración cargada desde %s", options_path)
+        return config
+
+    # Fallback para desarrollo local
+    logger.warning("options.json no encontrado, usando variables de entorno")
+    users_raw = os.environ.get("USERS_JSON", "[]")
     try:
-        if isinstance(users_json, str):
-            data = json.loads(users_json)
-        else:
-            data = users_json
-        return {str(u["telegram_id"]): u["name"] for u in data}
+        users = json.loads(users_raw) if isinstance(users_raw, str) else users_raw
+    except Exception:
+        users = []
+
+    return {
+        "telegram_token": os.environ.get("TELEGRAM_TOKEN", ""),
+        "users": users,
+    }
+
+
+def parse_users(users_list: list) -> dict:
+    """Convierte lista de usuarios a {telegram_id_str: name}."""
+    try:
+        return {str(u["telegram_id"]): u["name"] for u in users_list}
     except Exception as e:
-        logger.warning("No se pudo parsear USERS_JSON: %s", e)
+        logger.warning("No se pudo parsear usuarios: %s", e)
         return {}
 
 
 def main():
-    # 1. Variables de entorno
-    token      = os.environ.get("TELEGRAM_TOKEN", "")
-    users_json = os.environ.get("USERS_JSON", "[]")
-    db_path    = os.environ.get("DB_PATH", "/data/gastos.db")
+    # 1. Cargar configuración
+    config = load_config()
+
+    token   = config.get("telegram_token", "")
+    db_path = os.getenv("DB_PATH", "/data/gastos.db")
 
     if not token:
-        raise RuntimeError("TELEGRAM_TOKEN no está definido.")
+        raise RuntimeError("telegram_token no está definido en la configuración.")
 
     # 2. Parsear usuarios
-    users = _parse_users(users_json)
+    users = parse_users(config.get("users", []))
     logger.info("Usuarios configurados: %s", list(users.values()) or "(ninguno)")
 
-    # 3. Inicializar DB (crea tablas + seed si es nueva + sincroniza usuarios)
+    # 3. Inicializar DB
     import db as database
     database.DB_PATH = db_path
     database.init_db(users)
@@ -54,6 +75,7 @@ def main():
     # 5. Iniciar bot Telegram (bloquea el hilo principal)
     import bot
     bot.TELEGRAM_TOKEN = token
+    bot.USERS = users
     app = bot.build_app()
     logger.info("Bot Telegram iniciando (polling)...")
     app.run_polling(drop_pending_updates=True)
