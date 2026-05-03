@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Historial — Gastos Familiares{% endblock %}
+{% block nav_history %}active{% endblock %}
+
+{% block extra_styles %}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#table-wrap {
+  overflow-x: auto;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.page-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.page-info {
+  font-family: var(--font-mono);
+}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Filters -->
+  <div class="card">
+    <div class="section-title" style="margin-bottom:16px">Filtros</div>
+    <div class="filters">
+      <div class="filter-group">
+        <label class="filter-label" for="f-month">Mes</label>
+        <select id="f-month">
+          <option value="">Todos</option>
+          <option value="1">Enero</option><option value="2">Febrero</option>
+          <option value="3">Marzo</option><option value="4">Abril</option>
+          <option value="5">Mayo</option><option value="6">Junio</option>
+          <option value="7">Julio</option><option value="8">Agosto</option>
+          <option value="9">Septiembre</option><option value="10">Octubre</option>
+          <option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="f-year">Año</label>
+        <input id="f-year" type="number" style="width:90px" min="2020" max="2099">
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="f-category">Categoría</label>
+        <select id="f-category">
+          <option value="">Todas</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btn-filter">Filtrar</button>
+      <button class="btn" id="btn-reset">Limpiar</button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card mt-24">
+    <div class="section-header">
+      <div class="section-title">Gastos</div>
+      <span id="result-count" style="font-size:12px; color:var(--muted)"></span>
+    </div>
+
+    <div id="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Concepto</th>
+            <th>Categoría</th>
+            <th>Monto</th>
+            <th>Usuario</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="expense-body"></tbody>
+      </table>
+    </div>
+
+    <div class="pagination">
+      <span class="page-info" id="page-info"></span>
+      <div class="page-btns">
+        <button class="btn" id="btn-prev-page">← Anterior</button>
+        <button class="btn" id="btn-next-page">Siguiente →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Confirm delete modal (simple) -->
+<div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+     align-items:center; justify-content:center; z-index:100;">
+  <div class="card" style="max-width:360px; width:90%">
+    <div class="section-title" style="margin-bottom:12px">¿Eliminar gasto?</div>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:20px" id="modal-text"></p>
+    <div style="display:flex; gap:10px; justify-content:flex-end">
+      <button class="btn" id="modal-cancel">Cancelar</button>
+      <button class="btn btn-danger" id="modal-confirm">Eliminar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const PAGE_SIZE = 25;
+  let allExpenses = [];
+  let page = 0;
+
+  function fmtAmount(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function fmtDate(s) {
+    if (!s) return "—";
+    const [d, t] = s.split(" ");
+    const [y, m, dd] = d.split("-");
+    const [h, mi] = t.split(":");
+    return `${dd}/${m}/${y} ${h}:${mi}`;
+  }
+
+  // ── Init year to current ───────────────────────────────────────────────────
+  const now = new Date();
+  document.getElementById("f-year").value  = now.getFullYear();
+  document.getElementById("f-month").value = now.getMonth() + 1;
+
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  async function loadExpenses() {
+    const year   = document.getElementById("f-year").value;
+    const month  = document.getElementById("f-month").value;
+    const catId  = document.getElementById("f-category").value;
+
+    let url = "/api/expenses?";
+    if (year && month) url += `year=${year}&month=${month}&`;
+    if (catId)         url += `category_id=${catId}&`;
+
+    const data = await fetch(url).then(r => r.json());
+    allExpenses = Array.isArray(data) ? data : [];
+    page = 0;
+    render();
+  }
+
+  function render() {
+    const total = allExpenses.length;
+    const start = page * PAGE_SIZE;
+    const slice = allExpenses.slice(start, start + PAGE_SIZE);
+
+    document.getElementById("result-count").textContent =
+      total > 0 ? `${total} gasto${total !== 1 ? "s" : ""}` : "";
+
+    document.getElementById("page-info").textContent =
+      total > 0 ? `${start + 1}–${Math.min(start + PAGE_SIZE, total)} de ${total}` : "";
+
+    document.getElementById("btn-prev-page").disabled = page === 0;
+    document.getElementById("btn-next-page").disabled = start + PAGE_SIZE >= total;
+
+    const tbody = document.getElementById("expense-body");
+    if (slice.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = slice.map(r => `
+      <tr>
+        <td class="mono" style="color:var(--muted)">#${r.id}</td>
+        <td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">${fmtDate(r.created_at)}</td>
+        <td>${r.concept}</td>
+        <td>
+          <span class="badge">
+            <span>${r.category_icon || "❓"}</span>
+            <span>${r.category_name || "Sin categoría"}</span>
+          </span>
+        </td>
+        <td class="mono" style="font-weight:600">${fmtAmount(r.amount)}</td>
+        <td style="color:var(--muted)">${r.user_name}</td>
+        <td>
+          <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
+            onclick="confirmDelete(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.amount})">
+            Borrar
+          </button>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  // ── Pagination ─────────────────────────────────────────────────────────────
+  document.getElementById("btn-prev-page").addEventListener("click", () => { page--; render(); });
+  document.getElementById("btn-next-page").addEventListener("click", () => { page++; render(); });
+
+  // ── Filter buttons ─────────────────────────────────────────────────────────
+  document.getElementById("btn-filter").addEventListener("click", loadExpenses);
+  document.getElementById("btn-reset").addEventListener("click", () => {
+    document.getElementById("f-month").value    = "";
+    document.getElementById("f-year").value     = "";
+    document.getElementById("f-category").value = "";
+    loadExpenses();
+  });
+
+  // ── Delete modal ───────────────────────────────────────────────────────────
+  let pendingDeleteId = null;
+
+  function confirmDelete(id, concept, amount) {
+    pendingDeleteId = id;
+    document.getElementById("modal-text").textContent =
+      `¿Eliminar "${concept}" por ${fmtAmount(amount)}? Esta acción no se puede deshacer.`;
+    const modal = document.getElementById("modal");
+    modal.style.display = "flex";
+  }
+
+  document.getElementById("modal-cancel").addEventListener("click", () => {
+    document.getElementById("modal").style.display = "none";
+    pendingDeleteId = null;
+  });
+
+  document.getElementById("modal-confirm").addEventListener("click", async () => {
+    if (!pendingDeleteId) return;
+    const res = await fetch("/api/expenses/delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id: pendingDeleteId}),
+    });
+    document.getElementById("modal").style.display = "none";
+    pendingDeleteId = null;
+    if (res.ok) loadExpenses();
+    else alert("Error al eliminar el gasto.");
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadExpenses();
+</script>
+{% endblock %}

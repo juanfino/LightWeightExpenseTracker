@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Gastos Familiares{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block extra_styles %}
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.month-nav button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s, border-color .15s;
+}
+
+.month-nav button:hover { color: var(--text); border-color: #3a3a3a; }
+
+.month-label {
+  font-size: 22px;
+  font-weight: 600;
+  min-width: 180px;
+  text-align: center;
+}
+
+.total-label {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .charts-grid { grid-template-columns: 1fr; }
+}
+
+.chart-wrap {
+  position: relative;
+  height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.legend {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.legend-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.legend-amount {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:28px;">
+    <div class="month-nav">
+      <button id="prev-month" title="Mes anterior">&#8592;</button>
+      <div>
+        <div class="month-label" id="month-label">{{ month_label }}</div>
+        <div class="total-label" style="text-align:center" id="header-total">cargando...</div>
+      </div>
+      <button id="next-month" title="Mes siguiente">&#8594;</button>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="grid-4">
+    <div class="card">
+      <div class="card-title">Total del mes</div>
+      <div class="card-value" id="card-total">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Gastos</div>
+      <div class="card-value" id="card-count">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Promedio diario</div>
+      <div class="card-value" id="card-avg">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Categoría top</div>
+      <div class="card-value" id="card-top-icon" style="font-size:28px">—</div>
+      <div class="card-sub" id="card-top-name"></div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid mt-24">
+    <!-- Doughnut -->
+    <div class="card">
+      <div class="section-title" style="margin-bottom:16px">Por categoría</div>
+      <div class="chart-wrap">
+        <canvas id="chart-doughnut"></canvas>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <!-- Bar -->
+    <div class="card">
+      <div class="section-title" style="margin-bottom:16px">Por semana</div>
+      <div class="chart-wrap">
+        <canvas id="chart-bar"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent expenses -->
+  <div class="card mt-24">
+    <div class="section-header">
+      <div class="section-title">Últimos gastos</div>
+      <a href="/history" style="font-size:12px; color:var(--muted)">Ver todo →</a>
+    </div>
+    <div id="recent-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Concepto</th>
+            <th>Categoría</th>
+            <th>Monto</th>
+            <th>Usuario</th>
+          </tr>
+        </thead>
+        <tbody id="recent-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  const MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  let currentYear  = {{ year }};
+  let currentMonth = {{ month }};
+
+  let doughnutChart = null;
+  let barChart      = null;
+
+  // ── Formateo ───────────────────────────────────────────────────────────────
+  function fmtAmount(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) {
+      return "$" + Math.round(n).toLocaleString("es-AR");
+    }
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function fmtDate(s) {
+    if (!s) return "—";
+    const [datePart, timePart] = s.split(" ");
+    const [y, m, d] = datePart.split("-");
+    const [h, mi]   = timePart.split(":");
+    return `${d}/${m} ${h}:${mi}`;
+  }
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  document.getElementById("prev-month").addEventListener("click", () => {
+    currentMonth--;
+    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    loadAll();
+  });
+
+  document.getElementById("next-month").addEventListener("click", () => {
+    const now = new Date();
+    if (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1) return;
+    currentMonth++;
+    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    loadAll();
+  });
+
+  // ── Load data ──────────────────────────────────────────────────────────────
+  async function loadAll() {
+    document.getElementById("month-label").textContent =
+      MONTHS_ES[currentMonth] + " " + currentYear;
+
+    const [summary, expenses] = await Promise.all([
+      fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
+      fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
+    ]);
+
+    renderCards(summary, expenses);
+    renderDoughnut(summary.by_category);
+    renderBar(summary.by_week);
+    renderRecent(expenses.slice(0, 10));
+  }
+
+  // ── Cards ──────────────────────────────────────────────────────────────────
+  function renderCards(summary, expenses) {
+    const total = summary.total || 0;
+    document.getElementById("header-total").textContent = fmtAmount(total);
+    document.getElementById("card-total").textContent   = fmtAmount(total);
+    document.getElementById("card-count").textContent   = expenses.length;
+
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const today = new Date();
+    const daysElapsed = (currentYear === today.getFullYear() && currentMonth === today.getMonth() + 1)
+      ? today.getDate()
+      : daysInMonth;
+    const avg = daysElapsed > 0 ? total / daysElapsed : 0;
+    document.getElementById("card-avg").textContent = fmtAmount(avg);
+
+    if (summary.by_category && summary.by_category.length > 0) {
+      const top = summary.by_category[0];
+      document.getElementById("card-top-icon").textContent = top.icon;
+      document.getElementById("card-top-name").textContent = top.name;
+    } else {
+      document.getElementById("card-top-icon").textContent = "—";
+      document.getElementById("card-top-name").textContent = "";
+    }
+  }
+
+  // ── Doughnut chart ─────────────────────────────────────────────────────────
+  function renderDoughnut(byCategory) {
+    const canvas = document.getElementById("chart-doughnut");
+    if (doughnutChart) doughnutChart.destroy();
+
+    if (!byCategory || byCategory.length === 0) {
+      canvas.parentElement.innerHTML = '<div class="empty">Sin datos</div>';
+      document.getElementById("legend").innerHTML = "";
+      return;
+    }
+
+    doughnutChart = new Chart(canvas, {
+      type: "doughnut",
+      data: {
+        labels:   byCategory.map(r => r.name),
+        datasets: [{
+          data:            byCategory.map(r => r.total),
+          backgroundColor: byCategory.map(r => r.color),
+          borderColor:     "#1a1a1a",
+          borderWidth:     3,
+          hoverOffset:     6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "62%",
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${fmtAmount(ctx.parsed)}  (${byCategory[ctx.dataIndex].pct}%)`,
+            },
+          },
+        },
+      },
+    });
+
+    const legend = document.getElementById("legend");
+    legend.innerHTML = byCategory.map(r => `
+      <div class="legend-item">
+        <span class="legend-name">
+          <span class="legend-dot" style="background:${r.color}"></span>
+          ${r.icon} ${r.name}
+        </span>
+        <span class="legend-amount">${fmtAmount(r.total)}</span>
+      </div>
+    `).join("");
+  }
+
+  // ── Bar chart ──────────────────────────────────────────────────────────────
+  function renderBar(byWeek) {
+    const canvas = document.getElementById("chart-bar");
+    if (barChart) barChart.destroy();
+
+    if (!byWeek || byWeek.length === 0) {
+      canvas.parentElement.innerHTML = '<div class="empty">Sin datos</div>';
+      return;
+    }
+
+    barChart = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels:   byWeek.map(r => r.label),
+        datasets: [{
+          label:           "Gastos",
+          data:            byWeek.map(r => r.total),
+          backgroundColor: "#6366f1",
+          borderRadius:    6,
+          borderSkipped:   false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: ctx => ` ${fmtAmount(ctx.parsed.y)}` },
+          },
+        },
+        scales: {
+          x: {
+            grid:  { color: "#2a2a2a" },
+            ticks: { color: "#888" },
+          },
+          y: {
+            grid:  { color: "#2a2a2a" },
+            ticks: {
+              color: "#888",
+              callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0)+"k" : v),
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Recent table ───────────────────────────────────────────────────────────
+  function renderRecent(expenses) {
+    const tbody = document.getElementById("recent-body");
+    if (!expenses || expenses.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin gastos este mes</td></tr>';
+      return;
+    }
+    tbody.innerHTML = expenses.map(r => `
+      <tr>
+        <td class="mono" style="color:var(--muted); white-space:nowrap">${fmtDate(r.created_at)}</td>
+        <td>${r.concept}</td>
+        <td>
+          <span class="badge">
+            <span>${r.category_icon}</span>
+            <span>${r.category_name}</span>
+          </span>
+        </td>
+        <td class="mono" style="font-weight:600">${fmtAmount(r.amount)}</td>
+        <td style="color:var(--muted)">${r.user_name}</td>
+      </tr>
+    `).join("");
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadAll();
+</script>
+{% endblock %}

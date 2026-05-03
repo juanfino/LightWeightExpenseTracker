@@ -1,0 +1,23 @@
+name: "Gastos Familiares"
+description: "Registro de gastos familiares via Telegram con dashboard web"
+version: "1.0.0"
+slug: "gastos"
+init: false
+arch:
+  - aarch64
+  - armv7
+  - amd64
+ports:
+  5000/tcp: 5000
+ports_description:
+  5000/tcp: "Dashboard web"
+options:
+  telegram_token: ""
+  users: []
+schema:
+  telegram_token: str
+  users:
+    - telegram_id: str
+      name: str
+map:
+  - data:rw
