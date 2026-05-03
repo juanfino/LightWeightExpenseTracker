@@ -1,11 +1,10 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM python:3.11-alpine
 
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache gcc musl-dev libffi-dev
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ .
 COPY run.sh /run.sh
