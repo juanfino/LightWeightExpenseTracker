@@ -226,14 +226,22 @@ async def cmd_add_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    added = db.add_keyword(keyword, cat["id"])
-    if added:
+    status = db.add_keyword(keyword, cat["id"])
+    if status == "new":
         await update.message.reply_text(
             f"✅ Keyword <b>{keyword}</b> agregada a <b>{cat['name']}</b>.",
             parse_mode="HTML",
         )
+    elif status == "remapped":
+        await update.message.reply_text(
+            f"✅ Keyword <b>{keyword}</b> remapeada a <b>{cat['name']}</b>.",
+            parse_mode="HTML",
+        )
     else:
-        await update.message.reply_text(f"⚠️ La keyword <b>{keyword}</b> ya existe.", parse_mode="HTML")
+        await update.message.reply_text(
+            f"⚠️ La keyword <b>{keyword}</b> ya está asignada a <b>{cat['name']}</b>.",
+            parse_mode="HTML",
+        )
 
 
 async def cmd_categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -432,10 +440,22 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         db.update_expense_category(expense_id, user["id"], cat["id"])
-        await update.message.reply_text(
-            f"✅ Gasto <code>#{expense_id}</code> actualizado — nueva categoría: {cat['icon']} <b>{cat['name']}</b>",
-            parse_mode="HTML",
+
+        # Aprender el concepto como keyword de la categoría elegida
+        normalized_concept = categorizer.normalize(expense["concept"])
+        kw_status = db.add_keyword(normalized_concept, cat["id"])
+        if kw_status == "new":
+            kw_line = f'🏷️ <code>{normalized_concept}</code> agregado como keyword de <b>{cat["name"]}</b>'
+        elif kw_status == "remapped":
+            kw_line = f'🏷️ <code>{normalized_concept}</code> remapeado a <b>{cat["name"]}</b>'
+        else:
+            kw_line = ""
+
+        reply = (
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — nueva categoría: {cat['icon']} <b>{cat['name']}</b>"
+            + (f"\n{kw_line}" if kw_line else "")
         )
+        await update.message.reply_text(reply, parse_mode="HTML")
 
     else:
         await update.message.reply_text(

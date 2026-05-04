@@ -403,16 +403,27 @@ def get_all_keywords():
         ).fetchall()
 
 
-def add_keyword(keyword: str, category_id: int) -> bool:
-    try:
-        with get_conn() as conn:
-            conn.execute(
-                "INSERT INTO keywords (keyword, category_id) VALUES (?, ?)",
-                (keyword.lower().strip(), category_id),
-            )
-        return True
-    except sqlite3.IntegrityError:
-        return False
+def add_keyword(keyword: str, category_id: int) -> str:
+    """
+    Inserta o actualiza el keyword.
+    Retorna: 'new' si se insertó, 'remapped' si existía con otra categoría,
+             'unchanged' si ya apuntaba a la misma categoría.
+    """
+    kw = keyword.lower().strip()
+    with get_conn() as conn:
+        existing = conn.execute(
+            "SELECT category_id FROM keywords WHERE keyword = ?", (kw,)
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO keywords (keyword, category_id) VALUES (?, ?)"
+            " ON CONFLICT(keyword) DO UPDATE SET category_id = excluded.category_id",
+            (kw, category_id),
+        )
+    if existing is None:
+        return "new"
+    if existing["category_id"] != category_id:
+        return "remapped"
+    return "unchanged"
 
 
 def delete_keyword(keyword_id: int) -> bool:

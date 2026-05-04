@@ -236,9 +236,10 @@ button[disabled] {
 {% endblock %}
 
 {% block scripts %}
+<script type="application/json" id="cat-data">{{ categories | tojson }}</script>
 <script>
   // ── Datos embebidos desde Jinja ─────────────────────────────────────────────
-  let categories = {{ categories | tojson }};
+  let categories = JSON.parse(document.getElementById("cat-data").textContent);
 
   // ── Toast ───────────────────────────────────────────────────────────────────
   function showToast(msg, isError = false) {
@@ -250,47 +251,55 @@ button[disabled] {
   }
 
   // ── Render categorías ───────────────────────────────────────────────────────
+  function buildCategoryRow(cat) {
+    const isProtected    = cat.name === "Sin categoría";
+    const deleteDisabled = isProtected || cat.expense_count > 0;
+    const count          = cat.expense_count;
+
+    let deleteTitle = "";
+    if (isProtected) {
+      deleteTitle = "Esta categoría no se puede eliminar";
+    } else if (count > 0) {
+      deleteTitle = "Tiene " + count + " gasto" + (count !== 1 ? "s" : "") +
+                   " asociado" + (count !== 1 ? "s" : "");
+    }
+
+    const protectedBadge = isProtected
+      ? ' <span style="font-size:11px;color:var(--muted)">(protegida)</span>'
+      : "";
+    const expenseCount = count > 0 ? count : "—";
+    const safeName     = cat.name.replace(/'/g, "\\'");
+
+    let editBtn = "";
+    if (!isProtected) {
+      editBtn = '<button class="btn" style="padding:4px 10px; font-size:12px"'
+              + ' onclick="openEditModal(' + cat.id + ')">Editar</button>';
+    }
+
+    let deleteBtn;
+    if (deleteDisabled) {
+      deleteBtn = '<button class="btn btn-danger" style="padding:4px 10px; font-size:12px"'
+                + ' disabled title="' + deleteTitle + '">Borrar</button>';
+    } else {
+      deleteBtn = '<button class="btn btn-danger" style="padding:4px 10px; font-size:12px"'
+                + ' onclick="deleteCategory(' + cat.id + ', \'' + safeName + '\')">Borrar</button>';
+    }
+
+    return `<tr id="cat-row-${cat.id}">
+      <td style="font-size:20px">${cat.icon}</td>
+      <td>${cat.name}${protectedBadge}</td>
+      <td>
+        <span class="color-dot" style="background:${cat.color}"></span>
+        <span class="mono" style="font-size:12px; color:var(--muted)">${cat.color}</span>
+      </td>
+      <td style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">${expenseCount}</td>
+      <td><div style="display:flex; gap:6px; justify-content:flex-end">${editBtn} ${deleteBtn}</div></td>
+    </tr>`;
+  }
+
   function renderCategories() {
-    const tbody = document.getElementById("cat-body");
-    tbody.innerHTML = categories.map(cat => {
-      const isProtected = cat.name === "Sin categoría";
-      const deleteDisabled = isProtected || cat.expense_count > 0;
-      const deleteTitle = isProtected
-        ? "Esta categoría no se puede eliminar"
-        : cat.expense_count > 0
-          ? `Tiene ${cat.expense_count} gasto${cat.expense_count !== 1 ? "s" : ""} asociado${cat.expense_count !== 1 ? "s" : ""}`
-          : "";
-
-      return `
-        <tr id="cat-row-${cat.id}">
-          <td style="font-size:20px">${cat.icon}</td>
-          <td>${cat.name}${isProtected ? ' <span style="font-size:11px;color:var(--muted)">(protegida)</span>' : ""}</td>
-          <td>
-            <span class="color-dot" style="background:${cat.color}"></span>
-            <span class="mono" style="font-size:12px; color:var(--muted)">${cat.color}</span>
-          </td>
-          <td style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">
-            ${cat.expense_count > 0 ? cat.expense_count : "—"}
-          </td>
-          <td>
-            <div style="display:flex; gap:6px; justify-content:flex-end">
-              ${isProtected ? "" : `
-                <button class="btn" style="padding:4px 10px; font-size:12px"
-                  onclick="openEditModal(${cat.id})">
-                  Editar
-                </button>
-              `}
-              <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
-                ${deleteDisabled ? `disabled title="${deleteTitle}"` : `onclick="deleteCategory(${cat.id}, '${cat.name.replace(/'/g, "\\'")}')"`}>
-                Borrar
-              </button>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join("");
-
-    document.getElementById("cat-count").textContent = `${categories.length} categorías`;
+    document.getElementById("cat-body").innerHTML = categories.map(buildCategoryRow).join("");
+    document.getElementById("cat-count").textContent = categories.length + " categorías";
   }
 
   // ── Edit modal ──────────────────────────────────────────────────────────────
