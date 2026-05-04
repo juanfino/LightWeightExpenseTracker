@@ -134,11 +134,14 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="application/json" id="cat-data">{{ categories | tojson }}</script>
 <script>
   const PAGE_SIZE = 25;
   let allExpenses = [];
-  let page = 0;
+  let page        = 0;
+  const categories = JSON.parse(document.getElementById("cat-data").textContent);
 
+  // ── Formateo ───────────────────────────────────────────────────────────────
   function fmtAmount(n) {
     if (n === null || n === undefined) return "—";
     const isWhole = Math.abs(n - Math.round(n)) < 0.005;
@@ -151,40 +154,126 @@
     const [d, t] = s.split(" ");
     const [y, m, dd] = d.split("-");
     const [h, mi] = t.split(":");
-    return `${dd}/${m}/${y} ${h}:${mi}`;
+    return dd + "/" + m + "/" + y + " " + h + ":" + mi;
   }
 
-  // ── Init year to current ───────────────────────────────────────────────────
-  const now = new Date();
-  document.getElementById("f-year").value  = now.getFullYear();
-  document.getElementById("f-month").value = now.getMonth() + 1;
-
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  async function loadExpenses() {
-    const year   = document.getElementById("f-year").value;
-    const month  = document.getElementById("f-month").value;
-    const catId  = document.getElementById("f-category").value;
-
-    let url = "/api/expenses?";
-    if (year && month) url += `year=${year}&month=${month}&`;
-    if (catId)         url += `category_id=${catId}&`;
-
-    const data = await fetch(url).then(r => r.json());
-    allExpenses = Array.isArray(data) ? data : [];
-    page = 0;
-    render();
+  // ── Row builders ───────────────────────────────────────────────────────────
+  function buildReadRow(r) {
+    const safeConcept = r.concept.replace(/'/g, "\\'");
+    return '<tr id="row-' + r.id + '">'
+      + '<td class="mono" style="color:var(--muted)">#' + r.id + '</td>'
+      + '<td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
+      + '<td>' + r.concept + '</td>'
+      + '<td><span class="badge"><span>' + (r.category_icon || "❓") + '</span><span>' + (r.category_name || "Sin categoría") + '</span></span></td>'
+      + '<td class="mono" style="font-weight:600">' + fmtAmount(r.amount) + '</td>'
+      + '<td style="color:var(--muted)">' + r.user_name + '</td>'
+      + '<td><div style="display:flex;gap:6px">'
+      +   '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="enterEditMode(' + r.id + ')">Editar</button>'
+      +   '<button class="btn btn-danger" style="padding:4px 10px;font-size:12px" onclick="confirmDelete(' + r.id + ',\'' + safeConcept + '\',' + r.amount + ')">Borrar</button>'
+      + '</div></td>'
+      + '</tr>';
   }
 
+  function buildEditRow(r) {
+    const catOptions = categories.map(function(cat) {
+      const sel = cat.id === r.category_id ? " selected" : "";
+      return '<option value="' + cat.id + '"' + sel + '>' + cat.icon + ' ' + cat.name + '</option>';
+    }).join("");
+
+    const safeConceptAttr = r.concept.replace(/"/g, "&quot;");
+
+    return '<tr id="row-' + r.id + '" style="background:rgba(99,102,241,.06)">'
+      + '<td class="mono" style="color:var(--muted)">#' + r.id + '</td>'
+      + '<td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
+      + '<td><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:120px"></td>'
+      + '<td><select id="ei-cat-' + r.id + '" style="min-width:140px"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
+      + '<td><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100px;font-family:var(--font-mono)"></td>'
+      + '<td style="color:var(--muted)">' + r.user_name + '</td>'
+      + '<td><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
+      +   '<div style="display:flex;gap:6px">'
+      +     '<button class="btn btn-primary" style="padding:4px 10px;font-size:12px" onclick="saveEdit(' + r.id + ')">Guardar</button>'
+      +     '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="cancelEdit(' + r.id + ')">Cancelar</button>'
+      +   '</div>'
+      +   '<span id="ei-err-' + r.id + '" style="font-size:11px;color:var(--danger);display:none"></span>'
+      + '</div></td>'
+      + '</tr>';
+  }
+
+  // ── Inline edit ────────────────────────────────────────────────────────────
+  function enterEditMode(id) {
+    const r = allExpenses.find(function(e) { return e.id === id; });
+    if (!r) return;
+    const tr = document.getElementById("row-" + id);
+    if (tr) tr.outerHTML = buildEditRow(r);
+  }
+
+  function cancelEdit(id) {
+    const r = allExpenses.find(function(e) { return e.id === id; });
+    if (!r) return;
+    const tr = document.getElementById("row-" + id);
+    if (tr) tr.outerHTML = buildReadRow(r);
+  }
+
+  async function saveEdit(id) {
+    const conceptEl = document.getElementById("ei-concept-" + id);
+    const catEl     = document.getElementById("ei-cat-"     + id);
+    const amountEl  = document.getElementById("ei-amount-"  + id);
+    const errEl     = document.getElementById("ei-err-"     + id);
+
+    const concept = conceptEl.value.trim();
+    const amount  = parseFloat(amountEl.value);
+    const catId   = catEl.value ? parseInt(catEl.value) : null;
+
+    errEl.style.display = "none";
+
+    if (!concept) { showEditError(errEl, "El concepto no puede estar vacío."); return; }
+    if (isNaN(amount) || amount <= 0) { showEditError(errEl, "Monto inválido."); return; }
+
+    const res = await fetch("/api/expenses/update", {
+      method:  "POST",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({id, concept, amount, category_id: catId}),
+    });
+
+    const data = await res.json().catch(function() { return {}; });
+
+    if (!data.ok) {
+      showEditError(errEl, data.error || "Error al guardar.");
+      return;
+    }
+
+    // Update local data
+    const idx = allExpenses.findIndex(function(e) { return e.id === id; });
+    if (idx !== -1) {
+      const cat = categories.find(function(c) { return c.id === catId; });
+      allExpenses[idx] = Object.assign({}, allExpenses[idx], {
+        concept:        concept,
+        amount:         amount,
+        category_id:    catId,
+        category_name:  cat ? cat.name  : "Sin categoría",
+        category_icon:  cat ? cat.icon  : "❓",
+        category_color: cat ? cat.color : "#6b7280",
+      });
+      const tr = document.getElementById("row-" + id);
+      if (tr) tr.outerHTML = buildReadRow(allExpenses[idx]);
+    }
+  }
+
+  function showEditError(el, msg) {
+    el.textContent    = msg;
+    el.style.display  = "inline";
+  }
+
+  // ── Render (tabla completa) ────────────────────────────────────────────────
   function render() {
     const total = allExpenses.length;
     const start = page * PAGE_SIZE;
     const slice = allExpenses.slice(start, start + PAGE_SIZE);
 
     document.getElementById("result-count").textContent =
-      total > 0 ? `${total} gasto${total !== 1 ? "s" : ""}` : "";
-
+      total > 0 ? (total + " gasto" + (total !== 1 ? "s" : "")) : "";
     document.getElementById("page-info").textContent =
-      total > 0 ? `${start + 1}–${Math.min(start + PAGE_SIZE, total)} de ${total}` : "";
+      total > 0 ? ((start + 1) + "–" + Math.min(start + PAGE_SIZE, total) + " de " + total) : "";
 
     document.getElementById("btn-prev-page").disabled = page === 0;
     document.getElementById("btn-next-page").disabled = start + PAGE_SIZE >= total;
@@ -194,37 +283,32 @@
       tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
       return;
     }
+    tbody.innerHTML = slice.map(buildReadRow).join("");
+  }
 
-    tbody.innerHTML = slice.map(r => `
-      <tr>
-        <td class="mono" style="color:var(--muted)">#${r.id}</td>
-        <td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">${fmtDate(r.created_at)}</td>
-        <td>${r.concept}</td>
-        <td>
-          <span class="badge">
-            <span>${r.category_icon || "❓"}</span>
-            <span>${r.category_name || "Sin categoría"}</span>
-          </span>
-        </td>
-        <td class="mono" style="font-weight:600">${fmtAmount(r.amount)}</td>
-        <td style="color:var(--muted)">${r.user_name}</td>
-        <td>
-          <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
-            onclick="confirmDelete(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.amount})">
-            Borrar
-          </button>
-        </td>
-      </tr>
-    `).join("");
+  // ── Fetch ──────────────────────────────────────────────────────────────────
+  async function loadExpenses() {
+    const year  = document.getElementById("f-year").value;
+    const month = document.getElementById("f-month").value;
+    const catId = document.getElementById("f-category").value;
+
+    let url = "/api/expenses?";
+    if (year && month) url += "year=" + year + "&month=" + month + "&";
+    if (catId)         url += "category_id=" + catId + "&";
+
+    const data = await fetch(url).then(function(r) { return r.json(); });
+    allExpenses = Array.isArray(data) ? data : [];
+    page = 0;
+    render();
   }
 
   // ── Pagination ─────────────────────────────────────────────────────────────
-  document.getElementById("btn-prev-page").addEventListener("click", () => { page--; render(); });
-  document.getElementById("btn-next-page").addEventListener("click", () => { page++; render(); });
+  document.getElementById("btn-prev-page").addEventListener("click", function() { page--; render(); });
+  document.getElementById("btn-next-page").addEventListener("click", function() { page++; render(); });
 
-  // ── Filter buttons ─────────────────────────────────────────────────────────
+  // ── Filters ────────────────────────────────────────────────────────────────
   document.getElementById("btn-filter").addEventListener("click", loadExpenses);
-  document.getElementById("btn-reset").addEventListener("click", () => {
+  document.getElementById("btn-reset").addEventListener("click", function() {
     document.getElementById("f-month").value    = "";
     document.getElementById("f-year").value     = "";
     document.getElementById("f-category").value = "";
@@ -237,22 +321,21 @@
   function confirmDelete(id, concept, amount) {
     pendingDeleteId = id;
     document.getElementById("modal-text").textContent =
-      `¿Eliminar "${concept}" por ${fmtAmount(amount)}? Esta acción no se puede deshacer.`;
-    const modal = document.getElementById("modal");
-    modal.style.display = "flex";
+      "¿Eliminar \"" + concept + "\" por " + fmtAmount(amount) + "? Esta acción no se puede deshacer.";
+    document.getElementById("modal").style.display = "flex";
   }
 
-  document.getElementById("modal-cancel").addEventListener("click", () => {
+  document.getElementById("modal-cancel").addEventListener("click", function() {
     document.getElementById("modal").style.display = "none";
     pendingDeleteId = null;
   });
 
-  document.getElementById("modal-confirm").addEventListener("click", async () => {
+  document.getElementById("modal-confirm").addEventListener("click", async function() {
     if (!pendingDeleteId) return;
     const res = await fetch("/api/expenses/delete", {
-      method: "POST",
+      method:  "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({id: pendingDeleteId}),
+      body:    JSON.stringify({id: pendingDeleteId}),
     });
     document.getElementById("modal").style.display = "none";
     pendingDeleteId = null;
@@ -261,6 +344,9 @@
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────
+  const now = new Date();
+  document.getElementById("f-year").value  = now.getFullYear();
+  document.getElementById("f-month").value = now.getMonth() + 1;
   loadExpenses();
 </script>
 {% endblock %}

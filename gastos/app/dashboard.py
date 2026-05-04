@@ -152,10 +152,8 @@ def api_keywords_add():
     category_id = data.get("category_id")
     if not keyword or not category_id:
         return jsonify({"error": "Faltan campos 'keyword' o 'category_id'"}), 400
-    added = db.add_keyword(keyword, int(category_id))
-    if added:
-        return jsonify({"ok": True})
-    return jsonify({"error": "La keyword ya existe"}), 409
+    status = db.add_keyword(keyword, int(category_id))
+    return jsonify({"ok": True, "status": status})
 
 
 @app.route("/api/keywords/delete", methods=["POST"])
@@ -168,6 +166,31 @@ def api_keywords_delete():
     if deleted:
         return jsonify({"ok": True})
     return jsonify({"error": "Keyword no encontrada"}), 404
+
+
+@app.route("/api/expenses/update", methods=["POST"])
+def api_expenses_update():
+    data        = request.get_json(silent=True) or {}
+    expense_id  = data.get("id")
+    concept     = (data.get("concept") or "").strip()
+    amount      = data.get("amount")
+    category_id = data.get("category_id")   # may be None / null
+
+    if not expense_id or not concept or amount is None:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Monto inválido"}), 400
+
+    cat_id = int(category_id) if category_id else None
+    updated = db.update_expense(int(expense_id), concept, amount, cat_id)
+    if updated:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
 
 
 @app.route("/api/categories/add", methods=["POST"])

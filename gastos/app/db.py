@@ -110,7 +110,7 @@ def get_recent_expenses(limit: int = 50):
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT e.id, e.concept, e.amount, e.raw_text, e.created_at,
+            SELECT e.id, e.user_id, e.category_id, e.concept, e.amount, e.raw_text, e.created_at,
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')       AS category_color,
@@ -129,7 +129,7 @@ def get_expenses_by_month(year: int, month: int):
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT e.id, e.concept, e.amount, e.raw_text, e.created_at,
+            SELECT e.id, e.user_id, e.category_id, e.concept, e.amount, e.raw_text, e.created_at,
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')       AS category_color,
@@ -258,6 +258,15 @@ def get_expenses_by_user(year: int, month: int):
 
 
 # ── Edición de gastos ─────────────────────────────────────────────────────────
+
+def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET concept=?, amount=?, category_id=? WHERE id=?",
+            (concept.strip(), amount, category_id, expense_id),
+        )
+        return cur.rowcount > 0
+
 
 def get_expense_by_id(expense_id: int):
     with get_conn() as conn:

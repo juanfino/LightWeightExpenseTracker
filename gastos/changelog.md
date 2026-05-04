@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.7
+- Edición inline de gastos en historial (concepto, monto, categoría)
+- POST /api/expenses/update en dashboard
+- db.update_expense() + e.category_id/e.user_id en queries get_recent/get_by_month
+- Fix: api_keywords_add ahora maneja correctamente el retorno string de add_keyword
+
 ## 1.0.6
 - /editar categoria aprende el concepto como keyword de la categoría elegida
 - add_keyword usa INSERT ON CONFLICT DO UPDATE (upsert); retorna new/remapped/unchanged
