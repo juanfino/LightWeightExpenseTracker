@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.10
+- Fix: gráficos del dashboard se rompen al navegar entre meses
+- Canvas nunca se elimina del DOM; empty-state usa show/hide en elemento separado
+
 ## 1.0.9
 - Actualización de documentación
 

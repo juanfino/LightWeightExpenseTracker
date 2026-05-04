@@ -136,6 +136,7 @@
       <div class="section-title" style="margin-bottom:16px">Por categoría</div>
       <div class="chart-wrap">
         <canvas id="chart-doughnut"></canvas>
+        <div id="doughnut-empty" class="empty" style="display:none">Sin datos</div>
       </div>
       <div class="legend" id="legend"></div>
     </div>
@@ -145,6 +146,7 @@
       <div class="section-title" style="margin-bottom:16px">Por semana</div>
       <div class="chart-wrap">
         <canvas id="chart-bar"></canvas>
+        <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
       </div>
     </div>
   </div>
@@ -263,14 +265,19 @@
 
   // ── Doughnut chart ─────────────────────────────────────────────────────────
   function renderDoughnut(byCategory) {
-    const canvas = document.getElementById("chart-doughnut");
-    if (doughnutChart) doughnutChart.destroy();
+    const canvas   = document.getElementById("chart-doughnut");
+    const emptyEl  = document.getElementById("doughnut-empty");
+    if (doughnutChart) { doughnutChart.destroy(); doughnutChart = null; }
 
     if (!byCategory || byCategory.length === 0) {
-      canvas.parentElement.innerHTML = '<div class="empty">Sin datos</div>';
+      canvas.style.display  = "none";
+      emptyEl.style.display = "flex";
       document.getElementById("legend").innerHTML = "";
       return;
     }
+
+    canvas.style.display  = "";
+    emptyEl.style.display = "none";
 
     doughnutChart = new Chart(canvas, {
       type: "doughnut",
@@ -313,13 +320,18 @@
 
   // ── Bar chart ──────────────────────────────────────────────────────────────
   function renderBar(byWeek) {
-    const canvas = document.getElementById("chart-bar");
-    if (barChart) barChart.destroy();
+    const canvas  = document.getElementById("chart-bar");
+    const emptyEl = document.getElementById("bar-empty");
+    if (barChart) { barChart.destroy(); barChart = null; }
 
     if (!byWeek || byWeek.length === 0) {
-      canvas.parentElement.innerHTML = '<div class="empty">Sin datos</div>';
+      canvas.style.display  = "none";
+      emptyEl.style.display = "flex";
       return;
     }
+
+    canvas.style.display  = "";
+    emptyEl.style.display = "none";
 
     barChart = new Chart(canvas, {
       type: "bar",
