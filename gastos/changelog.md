@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.8
+- Fix timezone: timestamps se muestran en America/Argentina/Buenos_Aires (UTC-3)
+- _to_baires_str() en dashboard convierte created_at UTC → BA en todas las respuestas JSON
+- create_expense() usa datetime.now(UTC) explícito en lugar de CURRENT_TIMESTAMP
+
 ## 1.0.7
 - Edición inline de gastos en historial (concepto, monto, categoría)
 - POST /api/expenses/update en dashboard

@@ -1,10 +1,12 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, jsonify
 
 import db
 
 app = Flask(__name__)
+
+BAIRES = timezone(timedelta(hours=-3))
 
 MONTHS_ES = [
     "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -16,8 +18,23 @@ def _month_label(year: int, month: int) -> str:
     return f"{MONTHS_ES[month]} {year}"
 
 
+def _to_baires_str(dt_str: str) -> str:
+    """Converts a UTC SQLite timestamp string to Buenos Aires (UTC-3) time."""
+    if not dt_str:
+        return dt_str
+    try:
+        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+        dt_ba = dt.replace(tzinfo=timezone.utc).astimezone(BAIRES)
+        return dt_ba.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return dt_str
+
+
 def _row_to_dict(row) -> dict:
-    return dict(row)
+    d = dict(row)
+    if d.get("created_at"):
+        d["created_at"] = _to_baires_str(d["created_at"])
+    return d
 
 
 # ── Páginas ───────────────────────────────────────────────────────────────────

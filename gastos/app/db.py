@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from contextlib import contextmanager
+from datetime import datetime, timezone
 
 DB_PATH = os.environ.get("DB_PATH", "/data/gastos.db")
 
@@ -91,11 +92,12 @@ def get_user_by_telegram_id(tg_id: str):
 # ── Gastos ────────────────────────────────────────────────────────────────────
 
 def create_expense(user_id: int, category_id: int | None, concept: str, amount: float, raw_text: str) -> int:
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO expenses (user_id, category_id, concept, amount, raw_text)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (user_id, category_id, concept, amount, raw_text),
+            "INSERT INTO expenses (user_id, category_id, concept, amount, raw_text, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, category_id, concept, amount, raw_text, now_utc),
         )
         return cur.lastrowid
 
