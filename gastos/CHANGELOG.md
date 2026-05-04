@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+- OCR de tickets via Claude Vision: mandá una foto por Telegram y el bot extrae comercio, monto y fecha automáticamente
+- Flujo de confirmación antes de guardar: el bot muestra el resumen detectado y espera "sí" o "no"
+- Nuevo módulo `ocr.py` con `extract_ticket_data()` usando claude-haiku-4-5-20251001
+- Nueva opción `anthropic_api_key` en config del add-on
+- Handler `handle_photo` acepta fotos comprimidas y documentos de imagen
+
 ## 1.0.10
 - Fix: gráficos del dashboard se rompen al navegar entre meses
 - Canvas nunca se elimina del DOM; empty-state usa show/hide en elemento separado

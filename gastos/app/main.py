@@ -77,6 +77,7 @@ def main():
     bot.TELEGRAM_TOKEN = token
     bot.USERS = users
     app = bot.build_app()
+    app.bot_data["anthropic_api_key"] = config.get("anthropic_api_key", "")
     logger.info("Bot Telegram iniciando (polling)...")
     app.run_polling(drop_pending_updates=True)
 

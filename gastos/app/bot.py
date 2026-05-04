@@ -7,10 +7,14 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 import db
 import parser as msg_parser
 import categorizer
+import ocr as ocr_module
 
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+
+# Gastos pendientes de confirmación tras OCR, keyed por chat_id
+pending_ocr: dict[int, dict] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -51,12 +55,112 @@ async def _get_authorized_user(update: Update):
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    api_key = context.bot_data.get("anthropic_api_key", "")
+    if not api_key:
+        await update.message.reply_text(
+            "⚠️ OCR no configurado. Agregá la Anthropic API key en las opciones del add-on."
+        )
+        return
+
+    status_msg = await update.message.reply_text("📸 Analizando ticket...")
+
+    if update.message.photo:
+        tg_file = await update.message.photo[-1].get_file()
+    else:
+        tg_file = await update.message.document.get_file()
+
+    image_bytes = bytes(await tg_file.download_as_bytearray())
+    data = ocr_module.extract_ticket_data(image_bytes, api_key)
+
+    chat_id = update.message.chat_id
+
+    if data is None:
+        await status_msg.edit_text(
+            "❌ No pude analizar el ticket. Intentá cargar el gasto manualmente.\n"
+            "Formato: <code>Comercio monto</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    if data["monto"] is None:
+        comercio_info = f" Detecté el comercio: <b>{data['comercio']}</b>." if data["comercio"] else ""
+        await status_msg.edit_text(
+            f"⚠️ No pude detectar el monto total del ticket.{comercio_info}\n"
+            "Cargá el gasto manualmente: <code>Comercio monto</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    pending_ocr[chat_id] = data
+
+    fecha_str = data["fecha"].strftime("%d/%m/%Y")
+    fecha_note = " <i>(fecha no detectada, se usó hoy)</i>" if data["fecha_inferida"] else ""
+    comercio_str = data["comercio"] or "Desconocido"
+
+    await status_msg.edit_text(
+        f"🧾 <b>Ticket detectado</b>\n"
+        f"🏪 Comercio: {comercio_str}\n"
+        f"💰 Monto: {fmt_amount(data['monto'])}\n"
+        f"📅 Fecha: {fecha_str}{fecha_note}\n\n"
+        "¿Guardamos? Respondé <b>sí</b> o <b>no</b>",
+        parse_mode="HTML",
+    )
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
         return
 
+    chat_id = update.message.chat_id
     text = update.message.text.strip()
+
+    if chat_id in pending_ocr:
+        response = text.lower()
+        if response in ("sí", "si", "s", "dale", "ok"):
+            data = pending_ocr.pop(chat_id)
+            concept = data["comercio"] or "Ticket"
+            keywords = db.get_all_keywords()
+            category_id = categorizer.categorize(concept, keywords)
+            categories = {r["id"]: r for r in db.get_all_categories()}
+            cat = categories.get(category_id)
+            cat_name = cat["name"] if cat else "Sin categoría"
+            cat_icon = cat["icon"] if cat else "❓"
+            try:
+                expense_id = db.create_expense(
+                    user_id=user["id"],
+                    category_id=category_id,
+                    concept=concept,
+                    amount=data["monto"],
+                    raw_text=f"[OCR] {concept} {data['monto']}",
+                )
+            except Exception as e:
+                logger.error("Error guardando gasto OCR: %s", e)
+                await update.message.reply_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+                return
+            await update.message.reply_text(
+                f"✅ <b>Gasto registrado</b>\n"
+                f"📋 {concept}\n"
+                f"💰 {fmt_amount(data['monto'])}\n"
+                f"{cat_icon} {cat_name}\n"
+                f"👤 {user['name']}\n"
+                f"<code>#ID{expense_id}</code>",
+                parse_mode="HTML",
+            )
+        elif response in ("no", "n", "cancelar"):
+            del pending_ocr[chat_id]
+            await update.message.reply_text("❌ Carga cancelada.")
+        else:
+            await update.message.reply_text(
+                "Por favor respondé <b>sí</b> o <b>no</b>.", parse_mode="HTML"
+            )
+        return
+
     parsed = msg_parser.parse_message(text)
 
     if parsed is None:
@@ -521,6 +625,7 @@ def build_app():
     app.add_handler(CommandHandler("categorias",        cmd_categorias))
     app.add_handler(CommandHandler("nueva_categoria",   cmd_nueva_categoria))
     app.add_handler(CommandHandler("ayuda",             cmd_ayuda))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return app

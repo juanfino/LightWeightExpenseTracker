@@ -1,6 +1,6 @@
 name: "Gastos Familiares"
 description: "Registro de gastos familiares via Telegram con dashboard web"
-version: "1.0.10"
+version: "1.1.0"
 slug: "gastos"
 init: false
 arch:
@@ -13,9 +13,11 @@ ports_description:
   5000/tcp: "Dashboard web"
 options:
   telegram_token: ""
+  anthropic_api_key: ""
   users: []
 schema:
   telegram_token: str
+  anthropic_api_key: str
   users:
     - telegram_id: str
       name: str
