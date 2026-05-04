@@ -11,6 +11,8 @@ _MODEL = "claude-haiku-4-5-20251001"
 
 _PROMPT = (
     "Analizá este ticket o comprobante de compra. "
+    "Los montos usan formato argentino: el punto . es separador de miles y la coma , es separador decimal. "
+    "Ejemplo: $5.580,00 equivale a 5580.00. Devolvé el monto siempre como número float sin separadores de miles. "
     "Respondé ÚNICAMENTE con un JSON válido (sin explicaciones ni bloques de código) con estos campos:\n"
     '{"comercio": "<nombre del comercio o null>", '
     '"monto": <monto total final en números o null>, '
@@ -18,6 +20,28 @@ _PROMPT = (
     "El monto es el total final pagado después de descuentos, no subtotales. "
     "Si no podés determinar un valor, usá null."
 )
+
+
+def _parse_monto(raw) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    s = str(raw).strip().replace(" ", "")
+    if "," in s and "." in s:
+        if s.index(",") > s.index("."):
+            # Formato argentino: 5.580,00
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # Formato USA: 5,580.00
+            s = s.replace(",", "")
+    elif "," in s:
+        # Sin separador de miles: 5580,00
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
 
 
 def _detect_media_type(image_bytes: bytes) -> str:
@@ -66,7 +90,7 @@ def extract_ticket_data(image_bytes: bytes, api_key: str) -> dict | None:
 
         result: dict = {
             "comercio": data.get("comercio"),
-            "monto": data.get("monto"),
+            "monto": _parse_monto(data.get("monto")),
             "fecha": date.today(),
             "fecha_inferida": True,
         }

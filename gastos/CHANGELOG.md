@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.1
+- Fix: parseo de montos en formato argentino (punto como miles, coma como decimal)
+
 ## 1.1.0
 - OCR de tickets via Claude Vision: mandá una foto por Telegram y el bot extrae comercio, monto y fecha automáticamente
 - Flujo de confirmación antes de guardar: el bot muestra el resumen detectado y espera "sí" o "no"
