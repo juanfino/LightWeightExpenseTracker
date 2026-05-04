@@ -257,6 +257,57 @@ def get_expenses_by_user(year: int, month: int):
         ).fetchall()
 
 
+# ── Edición de gastos ─────────────────────────────────────────────────────────
+
+def get_expense_by_id(expense_id: int):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM expenses WHERE id = ?", (expense_id,)
+        ).fetchone()
+
+
+def get_expenses_uncategorized():
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT e.id, e.concept, e.amount, e.created_at,
+                   u.name AS user_name
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            WHERE e.category_id IS NULL
+            ORDER BY e.created_at DESC
+            """
+        ).fetchall()
+
+
+def update_expense_amount(expense_id: int, user_id: int, amount: float) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET amount = ? WHERE id = ? AND user_id = ?",
+            (amount, expense_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_expense_category(expense_id: int, user_id: int, category_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET category_id = ? WHERE id = ? AND user_id = ?",
+            (category_id, expense_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def recategorize_by_concept(concept: str, category_id: int) -> int:
+    """Actualiza category_id de todos los gastos cuyo concept contenga 'concept' (case-insensitive)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET category_id = ? WHERE LOWER(concept) LIKE LOWER(?)",
+            (category_id, f"%{concept}%"),
+        )
+        return cur.rowcount
+
+
 # ── Categorías ────────────────────────────────────────────────────────────────
 
 def get_all_categories():

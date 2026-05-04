@@ -255,21 +255,182 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "📖 <b>Cómo usar el bot</b>\n\n"
-        "<b>Registrar un gasto:</b>\n"
-        "  <code>Supermercado 15000</code>\n"
-        "  <code>15000 nafta</code>\n"
-        "  <code>Cena cumpleaños 8500,50</code>\n\n"
-        "<b>Comandos:</b>\n"
-        "  /gastos — resumen del mes actual\n"
-        "  /semana — gastos de la semana\n"
-        "  /hoy — gastos de hoy\n"
-        "  /borrar ID — elimina un gasto por ID\n"
-        "  /add_keyword PALABRA CATEGORÍA — agrega keyword\n"
-        "  /categorias — lista de categorías\n"
-        "  /ayuda — este mensaje",
+        "📖 <b>Gastos Familiares — Comandos disponibles</b>\n"
+        "\n"
+        "💰 <b>REGISTRAR UN GASTO</b>\n"
+        "   <code>Supermercado 15000</code>\n"
+        "   <code>YPF 100.000</code>\n"
+        "\n"
+        "📊 <b>CONSULTAS</b>\n"
+        "   /gastos     → resumen del mes\n"
+        "   /semana     → gastos de esta semana\n"
+        "   /hoy        → gastos de hoy\n"
+        "   /sincat     → gastos sin categoría\n"
+        "\n"
+        "✏️ <b>EDITAR</b>\n"
+        "   <code>/editar ID monto 15000</code>\n"
+        "   <code>/editar ID categoria Vehiculos</code>\n"
+        "   <code>/recat papota Entretenimiento</code>\n"
+        "\n"
+        "🗑️ <b>BORRAR</b>\n"
+        "   <code>/borrar ID</code>\n"
+        "\n"
+        "🏷️ <b>KEYWORDS</b>\n"
+        "   <code>/add_keyword nafta Vehiculos</code>\n"
+        "   /categorias → lista de categorías\n"
+        "\n"
+        "❓ <b>AYUDA</b>\n"
+        "   /ayuda → este mensaje",
         parse_mode="HTML",
     )
+
+
+# ── Helper: buscar categoría normalizando acentos ─────────────────────────────
+
+def _find_category(name: str):
+    """Busca una categoría por nombre ignorando mayúsculas y acentos."""
+    normalized_input = categorizer.normalize(name)
+    for cat in db.get_all_categories():
+        if categorizer.normalize(cat["name"]) == normalized_input:
+            return cat
+    return None
+
+
+# ── Comandos nuevos ───────────────────────────────────────────────────────────
+
+async def cmd_sincat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    expenses = db.get_expenses_uncategorized()
+
+    if not expenses:
+        await update.message.reply_text("✅ No tenés gastos sin categoría.")
+        return
+
+    lines = [f"❓ <b>Gastos sin categoría</b> ({len(expenses)})\n"]
+    for r in expenses:
+        date_part = fmt_date(r["created_at"])[:5]  # DD/MM
+        lines.append(
+            f"<code>#{r['id']}</code>  {r['concept']}  "
+            f"<b>{fmt_amount(r['amount'])}</b>  <i>({date_part})</i>"
+        )
+    lines.append(
+        "\nUsá <code>/editar ID categoria NOMBRE</code> para corregirlos\n"
+        "O <code>/recat CONCEPTO CATEGORÍA</code> para reasignar en masa"
+    )
+
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    # Necesitamos al menos: ID campo valor
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "Uso:\n"
+            "  <code>/editar ID monto 15000</code>\n"
+            "  <code>/editar ID categoria Vehiculos</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    try:
+        expense_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("❌ ID inválido. Debe ser un número.", parse_mode="HTML")
+        return
+
+    campo = context.args[1].lower()
+    valor = " ".join(context.args[2:])
+
+    # Verificar que el gasto existe
+    expense = db.get_expense_by_id(expense_id)
+    if expense is None:
+        await update.message.reply_text(f"❌ Gasto <code>#{expense_id}</code> no encontrado.", parse_mode="HTML")
+        return
+
+    # Verificar propiedad
+    if expense["user_id"] != user["id"]:
+        await update.message.reply_text("❌ Solo podés editar tus propios gastos.", parse_mode="HTML")
+        return
+
+    if campo == "monto":
+        amount = msg_parser._normalize_amount(valor)
+        if amount is None:
+            await update.message.reply_text("❌ Monto inválido. Ejemplos: <code>15000</code>, <code>2500,50</code>", parse_mode="HTML")
+            return
+        db.update_expense_amount(expense_id, user["id"], amount)
+        await update.message.reply_text(
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — nuevo monto: <b>{fmt_amount(amount)}</b>",
+            parse_mode="HTML",
+        )
+
+    elif campo == "categoria":
+        cat = _find_category(valor)
+        if cat is None:
+            await update.message.reply_text(
+                f"❌ Categoría <b>{valor}</b> no encontrada. "
+                "Usá /categorias para ver las disponibles.",
+                parse_mode="HTML",
+            )
+            return
+        db.update_expense_category(expense_id, user["id"], cat["id"])
+        await update.message.reply_text(
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — nueva categoría: {cat['icon']} <b>{cat['name']}</b>",
+            parse_mode="HTML",
+        )
+
+    else:
+        await update.message.reply_text(
+            "❌ Campo inválido. Campos válidos: <code>monto</code>, <code>categoria</code>",
+            parse_mode="HTML",
+        )
+
+
+async def cmd_recat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "Uso: <code>/recat CONCEPTO CATEGORÍA</code>\n"
+            "Ejemplo: <code>/recat papota Entretenimiento</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    concept   = context.args[0]
+    cat_name  = " ".join(context.args[1:])
+
+    cat = _find_category(cat_name)
+    if cat is None:
+        await update.message.reply_text(
+            f"❌ Categoría <b>{cat_name}</b> no encontrada. "
+            "Usá /categorias para ver las disponibles.",
+            parse_mode="HTML",
+        )
+        return
+
+    count = db.recategorize_by_concept(concept, cat["id"])
+
+    if count == 0:
+        await update.message.reply_text(
+            f"⚠️ No se encontraron gastos con concepto <b>{concept}</b>.",
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(
+            f"✅ <b>{count}</b> gasto{'s' if count != 1 else ''} con concepto "
+            f"<b>{concept}</b> reasignado{'s' if count != 1 else ''} a "
+            f"{cat['icon']} <b>{cat['name']}</b>.",
+            parse_mode="HTML",
+        )
 
 
 # ── Arranque ──────────────────────────────────────────────────────────────────
@@ -280,6 +441,9 @@ def build_app():
     app.add_handler(CommandHandler("gastos",      cmd_gastos))
     app.add_handler(CommandHandler("semana",      cmd_semana))
     app.add_handler(CommandHandler("hoy",         cmd_hoy))
+    app.add_handler(CommandHandler("sincat",      cmd_sincat))
+    app.add_handler(CommandHandler("editar",      cmd_editar))
+    app.add_handler(CommandHandler("recat",       cmd_recat))
     app.add_handler(CommandHandler("borrar",      cmd_borrar))
     app.add_handler(CommandHandler("add_keyword", cmd_add_keyword))
     app.add_handler(CommandHandler("categorias",  cmd_categorias))
