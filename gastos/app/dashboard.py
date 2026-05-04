@@ -37,11 +37,17 @@ def history():
 
 @app.route("/settings")
 def settings():
-    categories = db.get_all_categories()
-    keywords   = db.get_all_keywords()
+    categories     = db.get_all_categories()
+    keywords       = db.get_all_keywords()
+    expense_counts = db.get_expense_count_by_category()
+    cats_with_counts = []
+    for c in categories:
+        d = _row_to_dict(c)
+        d["expense_count"] = expense_counts.get(c["id"], 0)
+        cats_with_counts.append(d)
     return render_template(
         "settings.html",
-        categories=[_row_to_dict(c) for c in categories],
+        categories=cats_with_counts,
         keywords=[_row_to_dict(k) for k in keywords],
     )
 
@@ -162,6 +168,47 @@ def api_keywords_delete():
     if deleted:
         return jsonify({"ok": True})
     return jsonify({"error": "Keyword no encontrada"}), 404
+
+
+@app.route("/api/categories/add", methods=["POST"])
+def api_categories_add():
+    data  = request.get_json(silent=True) or {}
+    name  = (data.get("name")  or "").strip()
+    icon  = (data.get("icon")  or "💰").strip()
+    color = (data.get("color") or "#6366f1").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "El nombre es obligatorio"}), 400
+    cat_id = db.create_category(name, icon, color)
+    if cat_id is None:
+        return jsonify({"ok": False, "error": f"Ya existe una categoría llamada '{name}'"}), 409
+    return jsonify({"ok": True, "id": cat_id})
+
+
+@app.route("/api/categories/update", methods=["POST"])
+def api_categories_update():
+    data        = request.get_json(silent=True) or {}
+    category_id = data.get("id")
+    name        = (data.get("name")  or "").strip()
+    icon        = (data.get("icon")  or "💰").strip()
+    color       = (data.get("color") or "#6366f1").strip()
+    if not category_id or not name:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    ok, err = db.update_category(int(category_id), name, icon, color)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err}), 409
+
+
+@app.route("/api/categories/delete", methods=["POST"])
+def api_categories_delete():
+    data        = request.get_json(silent=True) or {}
+    category_id = data.get("id")
+    if not category_id:
+        return jsonify({"ok": False, "error": "Falta el campo 'id'"}), 400
+    ok, err = db.delete_category(int(category_id))
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err}), 409
 
 
 def run_dashboard():

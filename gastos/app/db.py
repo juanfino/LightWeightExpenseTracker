@@ -310,6 +310,9 @@ def recategorize_by_concept(concept: str, category_id: int) -> int:
 
 # ── Categorías ────────────────────────────────────────────────────────────────
 
+PROTECTED_CATEGORY = "Sin categoría"
+
+
 def get_all_categories():
     with get_conn() as conn:
         return conn.execute(
@@ -317,11 +320,73 @@ def get_all_categories():
         ).fetchall()
 
 
+def get_category_by_id(category_id: int):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM categories WHERE id = ?", (category_id,)
+        ).fetchone()
+
+
 def get_category_by_name(name: str):
     with get_conn() as conn:
         return conn.execute(
             "SELECT * FROM categories WHERE name = ?", (name,)
         ).fetchone()
+
+
+def get_expense_count_by_category() -> dict:
+    """Retorna {category_id: count} para categorías con al menos 1 gasto."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT category_id, COUNT(*) AS cnt FROM expenses GROUP BY category_id"
+        ).fetchall()
+    return {r["category_id"]: r["cnt"] for r in rows if r["category_id"] is not None}
+
+
+def create_category(name: str, icon: str, color: str) -> int | None:
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO categories (name, icon, color) VALUES (?, ?, ?)",
+                (name.strip(), icon.strip(), color.strip()),
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def update_category(category_id: int, name: str, icon: str, color: str) -> tuple[bool, str | None]:
+    existing = get_category_by_id(category_id)
+    if existing is None:
+        return False, "Categoría no encontrada"
+    if existing["name"] == PROTECTED_CATEGORY:
+        return False, "Esta categoría no se puede modificar"
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "UPDATE categories SET name=?, icon=?, color=? WHERE id=?",
+                (name.strip(), icon.strip(), color.strip(), category_id),
+            )
+            return (cur.rowcount > 0, None)
+    except sqlite3.IntegrityError:
+        return False, f"Ya existe una categoría llamada '{name}'"
+
+
+def delete_category(category_id: int) -> tuple[bool, str | None]:
+    existing = get_category_by_id(category_id)
+    if existing is None:
+        return False, "Categoría no encontrada"
+    if existing["name"] == PROTECTED_CATEGORY:
+        return False, "Esta categoría no se puede eliminar"
+    with get_conn() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM expenses WHERE category_id = ?", (category_id,)
+        ).fetchone()[0]
+    if count > 0:
+        return False, f"Tiene {count} gasto{'s' if count != 1 else ''} asociado{'s' if count != 1 else ''}"
+    with get_conn() as conn:
+        conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    return True, None
 
 
 # ── Keywords ──────────────────────────────────────────────────────────────────

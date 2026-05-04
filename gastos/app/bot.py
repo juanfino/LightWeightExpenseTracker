@@ -279,8 +279,60 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "   <code>/add_keyword nafta Vehiculos</code>\n"
         "   /categorias → lista de categorías\n"
         "\n"
+        "⚙️ <b>CATEGORÍAS</b>\n"
+        "   <code>/nueva_categoria Mascotas 🐶 #f59e0b</code>\n"
+        "   (gestión completa en el dashboard web)\n"
+        "\n"
         "❓ <b>AYUDA</b>\n"
         "   /ayuda → este mensaje",
+        parse_mode="HTML",
+    )
+
+
+async def cmd_nueva_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Uso: <code>/nueva_categoria Nombre Emoji Color</code>\n"
+            "Ejemplo: <code>/nueva_categoria Mascotas 🐶 #f59e0b</code>\n"
+            "Emoji y color son opcionales.",
+            parse_mode="HTML",
+        )
+        return
+
+    icon = "💰"
+    color = "#6366f1"
+    name_parts = []
+
+    for arg in context.args:
+        if arg.startswith("#") and len(arg) == 7:
+            color = arg
+        elif any(ord(c) > 127 for c in arg):
+            icon = arg
+        else:
+            name_parts.append(arg)
+
+    name = " ".join(name_parts).strip()
+    if not name:
+        await update.message.reply_text(
+            "❌ El nombre de la categoría es obligatorio.",
+            parse_mode="HTML",
+        )
+        return
+
+    cat_id = db.create_category(name, icon, color)
+    if cat_id is None:
+        await update.message.reply_text(
+            f"❌ Ya existe una categoría llamada <b>{name}</b>.",
+            parse_mode="HTML",
+        )
+        return
+
+    await update.message.reply_text(
+        f"✅ Categoría creada: {icon} <b>{name}</b>",
         parse_mode="HTML",
     )
 
@@ -445,9 +497,10 @@ def build_app():
     app.add_handler(CommandHandler("editar",      cmd_editar))
     app.add_handler(CommandHandler("recat",       cmd_recat))
     app.add_handler(CommandHandler("borrar",      cmd_borrar))
-    app.add_handler(CommandHandler("add_keyword", cmd_add_keyword))
-    app.add_handler(CommandHandler("categorias",  cmd_categorias))
-    app.add_handler(CommandHandler("ayuda",       cmd_ayuda))
+    app.add_handler(CommandHandler("add_keyword",       cmd_add_keyword))
+    app.add_handler(CommandHandler("categorias",        cmd_categorias))
+    app.add_handler(CommandHandler("nueva_categoria",   cmd_nueva_categoria))
+    app.add_handler(CommandHandler("ayuda",             cmd_ayuda))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     return app

@@ -10,6 +10,7 @@
   border-radius: 50%;
   vertical-align: middle;
   margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .add-form {
@@ -36,6 +37,50 @@
   color: var(--muted);
 }
 
+/* Color picker reset */
+input[type="color"] {
+  padding: 2px 4px;
+  width: 52px;
+  height: 34px;
+  cursor: pointer;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.72);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-backdrop.open { display: flex; }
+
+.modal-box {
+  max-width: 420px;
+  width: 92%;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.modal-field {
+  margin-bottom: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+/* Toast */
 #toast {
   position: fixed;
   bottom: 24px;
@@ -50,40 +95,59 @@
   pointer-events: none;
   z-index: 200;
 }
-
 #toast.show { opacity: 1; }
+
+/* Disabled delete btn */
+button[disabled] {
+  opacity: .38;
+  cursor: not-allowed;
+}
 {% endblock %}
 
 {% block content %}
 <div class="container">
 
-  <!-- Categories (read-only) -->
+  <!-- ── Categorías ──────────────────────────────────────────────────────── -->
   <div class="card">
-    <div class="section-title" style="margin-bottom:16px">Categorías</div>
+    <div class="section-header">
+      <div class="section-title">Categorías</div>
+      <span id="cat-count" style="font-size:12px; color:var(--muted)">
+        {{ categories | length }} categorías
+      </span>
+    </div>
+
     <table>
       <thead>
         <tr>
           <th>Icono</th>
           <th>Nombre</th>
           <th>Color</th>
+          <th>Gastos</th>
+          <th></th>
         </tr>
       </thead>
-      <tbody>
-        {% for cat in categories %}
-        <tr>
-          <td style="font-size:20px">{{ cat.icon }}</td>
-          <td>{{ cat.name }}</td>
-          <td>
-            <span class="color-dot" style="background:{{ cat.color }}"></span>
-            <span class="mono" style="font-size:12px; color:var(--muted)">{{ cat.color }}</span>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
+      <tbody id="cat-body"></tbody>
     </table>
+
+    <!-- Add category form -->
+    <div class="add-form">
+      <div class="form-group">
+        <label class="form-label" for="new-cat-name">Nombre</label>
+        <input id="new-cat-name" type="text" placeholder="ej: Mascotas" style="width:160px">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-cat-icon">Emoji</label>
+        <input id="new-cat-icon" type="text" placeholder="🐶" style="width:60px; text-align:center; font-size:18px">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="new-cat-color">Color</label>
+        <input id="new-cat-color" type="color" value="#6366f1">
+      </div>
+      <button class="btn btn-primary" id="btn-add-cat">Agregar</button>
+    </div>
   </div>
 
-  <!-- Keywords -->
+  <!-- ── Keywords ───────────────────────────────────────────────────────── -->
   <div class="card mt-24">
     <div class="section-header">
       <div class="section-title">Keywords de categorización</div>
@@ -104,9 +168,7 @@
         {% for kw in keywords %}
         <tr id="kw-row-{{ kw.id }}">
           <td class="mono">{{ kw.keyword }}</td>
-          <td>
-            <span class="badge">{{ kw.category_name }}</span>
-          </td>
+          <td><span class="badge">{{ kw.category_name }}</span></td>
           <td>
             <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
               onclick="deleteKeyword({{ kw.id }}, '{{ kw.keyword }}')">
@@ -125,8 +187,8 @@
         <input id="new-keyword" type="text" placeholder="ej: carrefour" style="width:180px">
       </div>
       <div class="form-group">
-        <label class="form-label" for="new-category">Categoría</label>
-        <select id="new-category">
+        <label class="form-label" for="new-cat-kw">Categoría</label>
+        <select id="new-cat-kw">
           <option value="">Seleccioná una categoría</option>
           {% for cat in categories %}
           {% if cat.name != "Sin categoría" %}
@@ -141,11 +203,44 @@
 
 </div>
 
+<!-- ── Edit category modal ───────────────────────────────────────────────── -->
+<div id="cat-modal" class="modal-backdrop">
+  <div class="card modal-box">
+    <div class="modal-title">Editar categoría</div>
+
+    <input type="hidden" id="edit-cat-id">
+
+    <div class="modal-field form-group">
+      <label class="form-label" for="edit-cat-name">Nombre</label>
+      <input id="edit-cat-name" type="text" style="width:100%">
+    </div>
+    <div style="display:flex; gap:16px;">
+      <div class="modal-field form-group" style="flex:1">
+        <label class="form-label" for="edit-cat-icon">Emoji</label>
+        <input id="edit-cat-icon" type="text" style="width:60px; text-align:center; font-size:18px">
+      </div>
+      <div class="modal-field form-group">
+        <label class="form-label" for="edit-cat-color">Color</label>
+        <input id="edit-cat-color" type="color">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="edit-cat-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="edit-cat-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // ── Datos embebidos desde Jinja ─────────────────────────────────────────────
+  let categories = {{ categories | tojson }};
+
+  // ── Toast ───────────────────────────────────────────────────────────────────
   function showToast(msg, isError = false) {
     const t = document.getElementById("toast");
     t.textContent = msg;
@@ -154,47 +249,179 @@
     setTimeout(() => t.classList.remove("show"), 2800);
   }
 
-  // ── Delete keyword ─────────────────────────────────────────────────────────
-  async function deleteKeyword(id, name) {
-    if (!confirm(`¿Eliminar la keyword "${name}"?`)) return;
+  // ── Render categorías ───────────────────────────────────────────────────────
+  function renderCategories() {
+    const tbody = document.getElementById("cat-body");
+    tbody.innerHTML = categories.map(cat => {
+      const isProtected = cat.name === "Sin categoría";
+      const deleteDisabled = isProtected || cat.expense_count > 0;
+      const deleteTitle = isProtected
+        ? "Esta categoría no se puede eliminar"
+        : cat.expense_count > 0
+          ? `Tiene ${cat.expense_count} gasto${cat.expense_count !== 1 ? "s" : ""} asociado${cat.expense_count !== 1 ? "s" : ""}`
+          : "";
 
-    const res = await fetch("/api/keywords/delete", {
+      return `
+        <tr id="cat-row-${cat.id}">
+          <td style="font-size:20px">${cat.icon}</td>
+          <td>${cat.name}${isProtected ? ' <span style="font-size:11px;color:var(--muted)">(protegida)</span>' : ""}</td>
+          <td>
+            <span class="color-dot" style="background:${cat.color}"></span>
+            <span class="mono" style="font-size:12px; color:var(--muted)">${cat.color}</span>
+          </td>
+          <td style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">
+            ${cat.expense_count > 0 ? cat.expense_count : "—"}
+          </td>
+          <td>
+            <div style="display:flex; gap:6px; justify-content:flex-end">
+              ${isProtected ? "" : `
+                <button class="btn" style="padding:4px 10px; font-size:12px"
+                  onclick="openEditModal(${cat.id})">
+                  Editar
+                </button>
+              `}
+              <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
+                ${deleteDisabled ? `disabled title="${deleteTitle}"` : `onclick="deleteCategory(${cat.id}, '${cat.name.replace(/'/g, "\\'")}')"`}>
+                Borrar
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    document.getElementById("cat-count").textContent = `${categories.length} categorías`;
+  }
+
+  // ── Edit modal ──────────────────────────────────────────────────────────────
+  function openEditModal(id) {
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    document.getElementById("edit-cat-id").value    = cat.id;
+    document.getElementById("edit-cat-name").value  = cat.name;
+    document.getElementById("edit-cat-icon").value  = cat.icon;
+    document.getElementById("edit-cat-color").value = cat.color;
+    document.getElementById("cat-modal").classList.add("open");
+    document.getElementById("edit-cat-name").focus();
+  }
+
+  document.getElementById("edit-cat-cancel").addEventListener("click", () => {
+    document.getElementById("cat-modal").classList.remove("open");
+  });
+
+  document.getElementById("cat-modal").addEventListener("click", e => {
+    if (e.target === document.getElementById("cat-modal")) {
+      document.getElementById("cat-modal").classList.remove("open");
+    }
+  });
+
+  document.getElementById("edit-cat-save").addEventListener("click", async () => {
+    const id    = parseInt(document.getElementById("edit-cat-id").value);
+    const name  = document.getElementById("edit-cat-name").value.trim();
+    const icon  = document.getElementById("edit-cat-icon").value.trim() || "💰";
+    const color = document.getElementById("edit-cat-color").value;
+
+    if (!name) { showToast("El nombre no puede estar vacío.", true); return; }
+
+    const res = await fetch("/api/categories/update", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id, name, icon, color}),
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      const cat = categories.find(c => c.id === id);
+      if (cat) { cat.name = name; cat.icon = icon; cat.color = color; }
+      renderCategories();
+      document.getElementById("cat-modal").classList.remove("open");
+      showToast(`Categoría "${name}" actualizada.`);
+    } else {
+      showToast(data.error || "Error al actualizar.", true);
+    }
+  });
+
+  // ── Delete category ─────────────────────────────────────────────────────────
+  async function deleteCategory(id, name) {
+    if (!confirm(`¿Eliminar la categoría "${name}"? Esta acción no se puede deshacer.`)) return;
+
+    const res = await fetch("/api/categories/delete", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({id}),
     });
 
+    const data = await res.json();
+    if (data.ok) {
+      categories = categories.filter(c => c.id !== id);
+      renderCategories();
+      showToast(`Categoría "${name}" eliminada.`);
+    } else {
+      showToast(data.error || "Error al eliminar.", true);
+    }
+  }
+
+  // ── Add category ────────────────────────────────────────────────────────────
+  document.getElementById("btn-add-cat").addEventListener("click", async () => {
+    const name  = document.getElementById("new-cat-name").value.trim();
+    const icon  = document.getElementById("new-cat-icon").value.trim() || "💰";
+    const color = document.getElementById("new-cat-color").value;
+
+    if (!name) { showToast("Escribí el nombre de la categoría.", true); return; }
+
+    const res = await fetch("/api/categories/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name, icon, color}),
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      categories.push({id: data.id, name, icon, color, expense_count: 0});
+      categories.sort((a, b) => a.name.localeCompare(b.name));
+      renderCategories();
+      document.getElementById("new-cat-name").value  = "";
+      document.getElementById("new-cat-icon").value  = "";
+      document.getElementById("new-cat-color").value = "#6366f1";
+      showToast(`Categoría "${name}" creada.`);
+    } else {
+      showToast(data.error || "Error al crear la categoría.", true);
+    }
+  });
+
+  document.getElementById("new-cat-name").addEventListener("keydown", e => {
+    if (e.key === "Enter") document.getElementById("btn-add-cat").click();
+  });
+
+  // ── Keywords ─────────────────────────────────────────────────────────────────
+  async function deleteKeyword(id, name) {
+    if (!confirm(`¿Eliminar la keyword "${name}"?`)) return;
+    const res = await fetch("/api/keywords/delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id}),
+    });
     if (res.ok) {
       document.getElementById(`kw-row-${id}`)?.remove();
-      updateCount(-1);
+      updateKwCount(-1);
       showToast(`Keyword "${name}" eliminada.`);
     } else {
       showToast("Error al eliminar la keyword.", true);
     }
   }
 
-  // ── Add keyword ────────────────────────────────────────────────────────────
   document.getElementById("btn-add-kw").addEventListener("click", async () => {
     const keyword    = document.getElementById("new-keyword").value.trim().toLowerCase();
-    const categoryId = document.getElementById("new-category").value;
-
-    if (!keyword) {
-      showToast("Escribí una keyword.", true);
-      return;
-    }
-    if (!categoryId) {
-      showToast("Seleccioná una categoría.", true);
-      return;
-    }
+    const categoryId = document.getElementById("new-cat-kw").value;
+    if (!keyword)    { showToast("Escribí una keyword.", true); return; }
+    if (!categoryId) { showToast("Seleccioná una categoría.", true); return; }
 
     const res = await fetch("/api/keywords/add", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({keyword, category_id: parseInt(categoryId)}),
     });
-
     if (res.ok) {
-      // Reload page to get the new row with correct category name
       showToast(`Keyword "${keyword}" agregada.`);
       setTimeout(() => location.reload(), 900);
     } else {
@@ -203,16 +430,17 @@
     }
   });
 
-  // ── Enter to submit ────────────────────────────────────────────────────────
   document.getElementById("new-keyword").addEventListener("keydown", e => {
     if (e.key === "Enter") document.getElementById("btn-add-kw").click();
   });
 
-  // ── Count helper ──────────────────────────────────────────────────────────
-  function updateCount(delta) {
+  function updateKwCount(delta) {
     const el = document.getElementById("kw-count");
     const n  = parseInt(el.textContent) + delta;
     el.textContent = `${n} keywords`;
   }
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  renderCategories();
 </script>
 {% endblock %}
