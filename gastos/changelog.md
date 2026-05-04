@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.9
+- Actualización de documentación
+
 ## 1.0.8
 - Fix timezone: timestamps se muestran en America/Argentina/Buenos_Aires (UTC-3)
 - _to_baires_str() en dashboard convierte created_at UTC → BA en todas las respuestas JSON
