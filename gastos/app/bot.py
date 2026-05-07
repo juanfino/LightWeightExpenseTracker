@@ -706,8 +706,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = db.get_category_by_id(cat_id)
         cat_name = cat["name"] if cat else "?"
         cat_icon = cat["icon"] if cat else "❓"
-        await query.edit_message_reply_markup(reply_markup=_build_edit_only_keyboard(expense_id))
-        await query.answer(f"{cat_icon} {cat_name}", show_alert=False)
+        await query.edit_message_text(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {expense['concept']}\n"
+            f"💰 {fmt_amount(expense['amount'])}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=_build_edit_only_keyboard(expense_id),
+        )
 
     elif data.startswith("cm:"):
         _, expense_id_str, page_str = data.split(":")
