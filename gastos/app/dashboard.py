@@ -99,18 +99,37 @@ def api_monthly():
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    by_category = db.get_expenses_summary_by_category(year, month)
-    by_week     = db.get_expenses_by_week_of_month(year, month)
-    by_user_rows = db.get_expenses_by_user(year, month)
+    by_category      = db.get_expenses_summary_by_category(year, month)
+    by_week          = db.get_expenses_by_week_of_month(year, month)
+    by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month)
+    by_user_rows     = db.get_expenses_by_user(year, month)
     total = sum(r["total"] for r in by_category)
 
     return jsonify({
-        "month":       _month_label(year, month),
-        "total":       total,
-        "by_category": by_category,
-        "by_week":     by_week,
-        "by_user":     [{"name": r["name"], "total": r["total"]} for r in by_user_rows],
+        "month":           _month_label(year, month),
+        "total":           total,
+        "by_category":     by_category,
+        "by_week":         by_week,
+        "by_week_by_user": by_week_by_user,
+        "by_user":         [{"name": r["name"], "total": r["total"]} for r in by_user_rows],
     })
+
+
+@app.route("/api/users")
+def api_users():
+    return jsonify([{"id": u["id"], "name": u["name"]} for u in db.get_all_users()])
+
+
+@app.route("/api/annual/<int:year>")
+def api_annual(year: int):
+    if year < 2020 or year > 2099:
+        return jsonify({"error": "Año inválido"}), 400
+    return jsonify(db.get_annual_data(year))
+
+
+@app.route("/api/sparklines")
+def api_sparklines():
+    return jsonify(db.get_monthly_totals(6))
 
 
 @app.route("/api/weekly")

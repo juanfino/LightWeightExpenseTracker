@@ -400,6 +400,179 @@ def delete_category(category_id: int) -> tuple[bool, str | None]:
     return True, None
 
 
+# ── Usuarios ─────────────────────────────────────────────────────────────────
+
+def get_all_users():
+    with get_conn() as conn:
+        return conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
+
+
+def get_expenses_by_week_of_month_by_user(year: int, month: int):
+    """Groups expenses by week-of-month and user for the stacked weekly bar chart."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT CAST(strftime('%d', e.created_at) AS INTEGER) AS day,
+                   u.id   AS user_id,
+                   u.name AS user_name,
+                   SUM(e.amount) AS total
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            WHERE strftime('%Y', e.created_at) = ?
+              AND strftime('%m', e.created_at) = ?
+            GROUP BY day, e.user_id
+            """,
+            (str(year), f"{month:02d}"),
+        ).fetchall()
+
+    users_seen: dict[int, str] = {}
+    for r in rows:
+        users_seen[r["user_id"]] = r["user_name"]
+
+    weekly: dict[int, dict[int, float]] = {}
+    for r in rows:
+        week_num = (r["day"] - 1) // 7 + 1
+        if week_num not in weekly:
+            weekly[week_num] = {}
+        uid = r["user_id"]
+        weekly[week_num][uid] = weekly[week_num].get(uid, 0) + r["total"]
+
+    return [
+        {
+            "week":    w,
+            "label":   f"Sem {w}",
+            "total":   sum(weekly[w].values()),
+            "by_user": {users_seen[uid]: weekly[w].get(uid, 0) for uid in users_seen},
+        }
+        for w in range(1, 6)
+        if w in weekly
+    ]
+
+
+def get_annual_data(year: int) -> dict:
+    """Returns full-year expense data broken down by month and category."""
+    import calendar
+    from datetime import date
+    today = date.today()
+    active_months = 12 if year < today.year else today.month
+
+    MONTHS_SHORT = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT CAST(strftime('%m', e.created_at) AS INTEGER) AS month_num,
+                   COALESCE(c.name,  'Sin categoría') AS cat_name,
+                   COALESCE(c.color, '#707080')        AS cat_color,
+                   SUM(e.amount) AS total
+            FROM expenses e
+            LEFT JOIN categories c ON c.id = e.category_id
+            WHERE strftime('%Y', e.created_at) = ?
+            GROUP BY month_num, e.category_id
+            ORDER BY cat_name, month_num
+            """,
+            (str(year),),
+        ).fetchall()
+
+    cats: dict[str, list] = {}
+    cat_colors: dict[str, str] = {}
+    for r in rows:
+        n = r["cat_name"]
+        if n not in cats:
+            cats[n] = [0.0] * 12
+            cat_colors[n] = r["cat_color"]
+        cats[n][r["month_num"] - 1] += r["total"]
+
+    monthly_totals = [0.0] * 12
+    for values in cats.values():
+        for i, v in enumerate(values):
+            monthly_totals[i] += v
+
+    annual_total = sum(monthly_totals[:active_months])
+    monthly_avg  = annual_total / active_months if active_months > 0 else 0
+
+    peak_idx   = max(range(active_months), key=lambda i: monthly_totals[i]) if active_months > 0 else 0
+    peak_month = {"name": MONTHS_SHORT[peak_idx], "amount": monthly_totals[peak_idx]}
+
+    cat_totals   = {n: sum(v[:active_months]) for n, v in cats.items()}
+    top_cat_name = max(cat_totals, key=cat_totals.get) if cat_totals else ""
+    top_cat_amt  = cat_totals.get(top_cat_name, 0)
+    top_cat_pct  = round(top_cat_amt / annual_total * 100) if annual_total else 0
+
+    with get_conn() as conn:
+        user_rows = conn.execute(
+            """
+            SELECT CAST(strftime('%m', e.created_at) AS INTEGER) AS month_num,
+                   u.name AS user_name,
+                   SUM(e.amount) AS total
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            WHERE strftime('%Y', e.created_at) = ?
+            GROUP BY month_num, e.user_id
+            ORDER BY month_num
+            """,
+            (str(year),),
+        ).fetchall()
+
+    by_user: dict[str, list] = {}
+    for r in user_rows:
+        nm = r["user_name"]
+        if nm not in by_user:
+            by_user[nm] = [0.0] * 12
+        by_user[nm][r["month_num"] - 1] += r["total"]
+
+    by_category_sorted = sorted(cats.keys(), key=lambda x: cat_totals.get(x, 0), reverse=True)
+
+    return {
+        "months":        MONTHS_SHORT,
+        "active_months": active_months,
+        "by_category": [
+            {"name": n, "color": cat_colors[n], "values": cats[n], "total": cat_totals.get(n, 0)}
+            for n in by_category_sorted
+        ],
+        "monthly_totals": monthly_totals,
+        "annual_total":   annual_total,
+        "monthly_avg":    monthly_avg,
+        "peak_month":     peak_month,
+        "top_category":   {"name": top_cat_name, "amount": top_cat_amt, "pct": top_cat_pct},
+        "by_user":        by_user,
+    }
+
+
+def get_monthly_totals(months: int = 6) -> list[dict]:
+    """Returns aggregated totals for the last N months, used for sparklines."""
+    import calendar
+    from datetime import date
+    today = date.today()
+    result = []
+    for i in range(months - 1, -1, -1):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        with get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
+                FROM expenses
+                WHERE strftime('%Y', created_at) = ?
+                  AND strftime('%m', created_at) = ?
+                """,
+                (str(y), f"{m:02d}"),
+            ).fetchone()
+        days_in_month = calendar.monthrange(y, m)[1]
+        days_elapsed  = today.day if (y == today.year and m == today.month) else days_in_month
+        result.append({
+            "year":      y,
+            "month":     m,
+            "total":     row["total"],
+            "count":     row["cnt"],
+            "avg_daily": round(row["total"] / days_elapsed, 2) if days_elapsed > 0 else 0,
+        })
+    return result
+
+
 # ── Keywords ──────────────────────────────────────────────────────────────────
 
 def get_all_keywords():

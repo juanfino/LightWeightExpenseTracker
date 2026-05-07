@@ -3,6 +3,7 @@
 {% block nav_dashboard %}active{% endblock %}
 
 {% block extra_styles %}
+/* ── Month nav ── */
 .month-nav {
   display: flex;
   align-items: center;
@@ -11,9 +12,9 @@
 
 .month-nav button {
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--muted);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--text2);
   cursor: pointer;
   font-size: 16px;
   width: 32px;
@@ -21,27 +22,106 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color .15s, border-color .15s;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: var(--font-sans);
 }
 
-.month-nav button:hover { color: var(--text); border-color: #3a3a3a; }
+.month-nav button:hover { color: var(--text); border-color: var(--text3); }
 
 .month-label {
   font-size: 22px;
   font-weight: 600;
-  min-width: 180px;
+  min-width: 200px;
   text-align: center;
+  letter-spacing: -0.02em;
 }
 
-.total-label {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  color: var(--muted);
+.header-total {
+  font-size: 13px;
+  color: var(--text2);
+  text-align: center;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
+/* ── View toggle ── */
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.view-btn {
+  padding: 5px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--font-sans);
+}
+
+.view-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+.view-btn:hover:not(.active) { color: var(--text); }
+
+/* ── KPI cards ── */
+.kpi-card {
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.kpi-card:hover::before { opacity: 1; }
+
+.card-trend {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.trend-up   { color: var(--green); }
+.trend-down { color: var(--red); }
+
+.sparkline-wrap {
+  margin-top: 10px;
+  height: 32px;
+  position: relative;
+}
+
+.sparkline-wrap canvas {
+  width: 100% !important;
+  height: 32px !important;
+}
+
+/* ── Charts grid ── */
 .charts-grid {
   display: grid;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 16px;
   align-items: start;
 }
@@ -52,126 +132,300 @@
 
 .chart-wrap {
   position: relative;
-  height: 260px;
+  height: 240px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* ── Monthly category legend ── */
 .legend {
-  margin-top: 16px;
+  margin-top: 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
 }
 
-.legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.legend-sq {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   flex-shrink: 0;
-  margin-right: 8px;
 }
 
 .legend-name {
   flex: 1;
-  display: flex;
-  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legend-bar-wrap {
+  width: 52px;
+  height: 3px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.legend-bar {
+  height: 100%;
+  border-radius: 2px;
 }
 
 .legend-amount {
-  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text2);
+  min-width: 80px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Transaction list ── */
+.expense-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.expense-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.18s, padding 0.18s;
+  border-radius: 0;
+}
+
+.expense-row:last-child { border-bottom: none; }
+
+.expense-row:hover {
+  background: var(--surface2);
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 0 -10px;
+  border-radius: 8px;
+  border-bottom-color: transparent;
+}
+
+.expense-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.expense-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.expense-concept {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expense-meta {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 1px;
+}
+
+.user-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.user-tag-main {
+  background: rgba(124,106,247,0.15);
+  color: var(--accent);
+}
+
+.user-tag-alt {
+  background: rgba(46,202,138,0.15);
+  color: var(--green);
+}
+
+.expense-amount {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Annual legend ── */
+.annual-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+}
+
+.ann-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.ann-legend-sq {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 {% endblock %}
 
 {% block content %}
 <div class="container">
 
-  <!-- Header -->
-  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:28px;">
+  <!-- Header: period navigator + view toggle -->
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:24px;">
     <div class="month-nav">
-      <button id="prev-month" title="Mes anterior">&#8592;</button>
+      <button id="prev-month" title="Anterior">&#8592;</button>
       <div>
         <div class="month-label" id="month-label">{{ month_label }}</div>
-        <div class="total-label" style="text-align:center" id="header-total">cargando...</div>
+        <div class="header-total" id="header-total">cargando…</div>
       </div>
-      <button id="next-month" title="Mes siguiente">&#8594;</button>
+      <button id="next-month" title="Siguiente">&#8594;</button>
+    </div>
+    <div class="view-toggle">
+      <button class="view-btn active" id="btn-view-monthly">Mensual</button>
+      <button class="view-btn" id="btn-view-annual">Anual</button>
     </div>
   </div>
 
-  <!-- Summary cards -->
-  <div class="grid-4">
-    <div class="card">
-      <div class="card-title">Total del mes</div>
-      <div class="card-value" id="card-total">—</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Gastos</div>
-      <div class="card-value" id="card-count">—</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Promedio diario</div>
-      <div class="card-value" id="card-avg">—</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Categoría top</div>
-      <div class="card-value" id="card-top-icon" style="font-size:28px">—</div>
-      <div class="card-sub" id="card-top-name"></div>
-    </div>
-  </div>
+  <!-- ── Monthly section ───────────────────────────────────────────────── -->
+  <div id="monthly-section">
 
-  <!-- Charts -->
-  <div class="charts-grid mt-24">
-    <!-- Doughnut -->
-    <div class="card">
-      <div class="section-title" style="margin-bottom:16px">Por categoría</div>
-      <div class="chart-wrap">
-        <canvas id="chart-doughnut"></canvas>
-        <div id="doughnut-empty" class="empty" style="display:none">Sin datos</div>
+    <!-- KPI cards -->
+    <div class="grid-4">
+      <div class="card kpi-card">
+        <div class="card-title">Total del mes</div>
+        <div class="card-value" id="card-total">—</div>
+        <div class="card-trend" id="trend-total"></div>
+        <div class="sparkline-wrap"><canvas id="spark-total"></canvas></div>
       </div>
-      <div class="legend" id="legend"></div>
-    </div>
-
-    <!-- Bar -->
-    <div class="card">
-      <div class="section-title" style="margin-bottom:16px">Por semana</div>
-      <div class="chart-wrap">
-        <canvas id="chart-bar"></canvas>
-        <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
+      <div class="card kpi-card">
+        <div class="card-title">Gastos</div>
+        <div class="card-value" id="card-count">—</div>
+        <div class="card-trend" id="trend-count"></div>
+        <div class="sparkline-wrap"><canvas id="spark-count"></canvas></div>
+      </div>
+      <div class="card kpi-card">
+        <div class="card-title">Promedio diario</div>
+        <div class="card-value" id="card-avg">—</div>
+        <div class="card-trend" id="trend-avg"></div>
+        <div class="sparkline-wrap"><canvas id="spark-avg"></canvas></div>
+      </div>
+      <div class="card kpi-card">
+        <div class="card-title">Categoría top</div>
+        <div class="card-value" id="card-top-icon" style="font-size:24px">—</div>
+        <div class="card-sub" id="card-top-name"></div>
+        <div class="sparkline-wrap"><canvas id="spark-top"></canvas></div>
       </div>
     </div>
-  </div>
 
-  <!-- Recent expenses -->
-  <div class="card mt-24">
-    <div class="section-header">
-      <div class="section-title">Últimos gastos</div>
-      <a href="/history" style="font-size:12px; color:var(--muted)">Ver todo →</a>
+    <!-- Charts -->
+    <div class="charts-grid mt-24">
+      <div class="card">
+        <div class="section-title" style="margin-bottom:14px">Por categoría</div>
+        <div class="chart-wrap">
+          <canvas id="chart-doughnut"></canvas>
+          <div id="doughnut-empty" class="empty" style="display:none">Sin datos</div>
+        </div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title" style="margin-bottom:14px">Por semana</div>
+        <div class="chart-wrap">
+          <canvas id="chart-bar"></canvas>
+          <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
+        </div>
+      </div>
     </div>
-    <div id="recent-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Concepto</th>
-            <th>Categoría</th>
-            <th>Monto</th>
-            <th>Usuario</th>
-          </tr>
-        </thead>
-        <tbody id="recent-body"></tbody>
-      </table>
+
+    <!-- Recent expenses -->
+    <div class="card mt-24">
+      <div class="section-header">
+        <div class="section-title">Últimos gastos</div>
+        <a href="/history" style="font-size:12px; color:var(--text2)">Ver todo →</a>
+      </div>
+      <div class="expense-list" id="recent-wrap"></div>
     </div>
-  </div>
+
+  </div><!-- /#monthly-section -->
+
+  <!-- ── Annual section ────────────────────────────────────────────────── -->
+  <div id="annual-section" style="display:none">
+
+    <!-- Annual KPI cards -->
+    <div class="grid-4">
+      <div class="card kpi-card">
+        <div class="card-title">Total del año</div>
+        <div class="card-value" id="ann-total">—</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="card-title">Promedio mensual</div>
+        <div class="card-value" id="ann-avg">—</div>
+      </div>
+      <div class="card kpi-card">
+        <div class="card-title">Mes más caro</div>
+        <div class="card-value" id="ann-peak-name">—</div>
+        <div class="card-sub" id="ann-peak-amount"></div>
+      </div>
+      <div class="card kpi-card">
+        <div class="card-title">Categoría del año</div>
+        <div class="card-value" id="ann-top-cat" style="font-size:16px; line-height:1.3">—</div>
+        <div class="card-sub" id="ann-top-pct"></div>
+      </div>
+    </div>
+
+    <!-- Stacked bar: evolution by category across months -->
+    <div class="card mt-24">
+      <div class="section-title" style="margin-bottom:14px">Evolución mensual</div>
+      <div id="ann-bar-wrap" style="position:relative; height:300px">
+        <canvas id="chart-annual-bar"></canvas>
+        <div id="ann-bar-empty" class="empty" style="display:none">Sin datos para este año</div>
+      </div>
+      <div class="annual-legend" id="annual-bar-legend"></div>
+    </div>
+
+    <!-- Line chart: top 5 categories trend -->
+    <div class="card mt-24">
+      <div class="section-title" style="margin-bottom:14px">Tendencia por categoría</div>
+      <div id="ann-line-wrap" style="position:relative; height:240px">
+        <canvas id="chart-annual-line"></canvas>
+        <div id="ann-line-empty" class="empty" style="display:none">Sin datos para este año</div>
+      </div>
+    </div>
+
+  </div><!-- /#annual-section -->
 
 </div>
 {% endblock %}
@@ -183,20 +437,64 @@
   const MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
                      "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-  let currentYear  = {{ year }};
-  let currentMonth = {{ month }};
+  let currentYear   = {{ year }};
+  let currentMonth  = {{ month }};
+  let currentView   = 'monthly';
 
-  let doughnutChart = null;
-  let barChart      = null;
+  let doughnutChart    = null;
+  let barChart         = null;
+  let annualBarChart   = null;
+  let annualLineChart  = null;
+  const sparkCharts    = {};
+  let currentExpenses  = [];
 
-  // ── Formateo ───────────────────────────────────────────────────────────────
+  // ── Color palette ──────────────────────────────────────────────────────────
+  const isDark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+  const CHART_GRID  = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const CHART_TICK  = isDark ? '#5a5a6a' : '#a0a0b0';
+  const SURFACE_CLR = isDark ? '#232328' : '#ffffff';
+  const ACCENT_CLR  = isDark ? '#7c6af7' : '#6c5ce7';
+  const GREEN_CLR   = '#2eca8a';
+  const AMBER_CLR   = isDark ? '#f0a030' : '#d08020';
+
+  const CAT_COLORS = {
+    'Educación':          '#7c6af7',
+    'Supermercado':       '#f0a030',
+    'Mantenimiento Casa': '#f06060',
+    'Vehículos':          '#4eb8e0',
+    'Alimentación':       '#2eca8a',
+    'Entretenimiento':    '#e060c0',
+    'Salud':              '#60d080',
+    'Sin categoría':      '#707080',
+  };
+
+  const COLOR_CYCLE = [
+    '#7c6af7','#f0a030','#f06060','#4eb8e0','#2eca8a',
+    '#e060c0','#60d080','#f0c040','#80b0f0','#c080a0',
+  ];
+  const _catColorCache = {};
+
+  function getCatColor(name, dbColor) {
+    if (_catColorCache[name]) return _catColorCache[name];
+    let color = (dbColor && dbColor !== '#6b7280' && dbColor !== '#707080')
+      ? dbColor
+      : (CAT_COLORS[name] || COLOR_CYCLE[Object.keys(_catColorCache).length % COLOR_CYCLE.length]);
+    _catColorCache[name] = color;
+    return color;
+  }
+
+  // ── Number formatting ──────────────────────────────────────────────────────
   function fmtAmount(n) {
     if (n === null || n === undefined) return "—";
     const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) {
-      return "$" + Math.round(n).toLocaleString("es-AR");
-    }
-    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function formatARS(n) {
+    if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
+    if (n >= 1_000)     return "$" + Math.round(n / 1_000) + "k";
+    return "$" + Math.round(n);
   }
 
   function fmtDate(s) {
@@ -207,23 +505,83 @@
     return `${d}/${m} ${h}:${mi}`;
   }
 
-  // ── Navigation ─────────────────────────────────────────────────────────────
+  function isAltUser(name) {
+    return name && name.toLowerCase().includes('cele');
+  }
+
+  function hexToRgba(hex, alpha) {
+    if (!hex || !hex.startsWith('#')) return `rgba(99,102,241,${alpha})`;
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  // ── View toggle ────────────────────────────────────────────────────────────
+  document.getElementById("btn-view-monthly").addEventListener("click", function() {
+    if (currentView === 'monthly') return;
+    currentView = 'monthly';
+    this.classList.add('active');
+    document.getElementById("btn-view-annual").classList.remove('active');
+    document.getElementById("monthly-section").style.display = '';
+    document.getElementById("annual-section").style.display  = 'none';
+    loadAll();
+  });
+
+  document.getElementById("btn-view-annual").addEventListener("click", function() {
+    if (currentView === 'annual') return;
+    currentView = 'annual';
+    this.classList.add('active');
+    document.getElementById("btn-view-monthly").classList.remove('active');
+    document.getElementById("monthly-section").style.display = 'none';
+    document.getElementById("annual-section").style.display  = '';
+    loadAll();
+  });
+
+  // ── Period navigation ──────────────────────────────────────────────────────
   document.getElementById("prev-month").addEventListener("click", () => {
-    currentMonth--;
-    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    if (currentView === 'annual') {
+      currentYear--;
+    } else {
+      currentMonth--;
+      if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    }
     loadAll();
   });
 
   document.getElementById("next-month").addEventListener("click", () => {
     const now = new Date();
-    if (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1) return;
-    currentMonth++;
-    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    if (currentView === 'annual') {
+      if (currentYear >= now.getFullYear()) return;
+      currentYear++;
+    } else {
+      if (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1) return;
+      currentMonth++;
+      if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    }
     loadAll();
   });
 
-  // ── Load data ──────────────────────────────────────────────────────────────
+  // ── User filter ────────────────────────────────────────────────────────────
+  window.addEventListener('userFilterChange', function() {
+    if (currentView === 'monthly') {
+      renderRecent(filterExpenses(currentExpenses).slice(0, 10));
+    }
+  });
+
+  function filterExpenses(list) {
+    if (!window.activeUserName) return list;
+    return list.filter(e => e.user_name === window.activeUserName);
+  }
+
+  // ── Main dispatcher ────────────────────────────────────────────────────────
   async function loadAll() {
+    if (currentView === 'annual') return loadAnnual();
+    return loadMonthly();
+  }
+
+  // ── Monthly view ───────────────────────────────────────────────────────────
+  async function loadMonthly() {
     document.getElementById("month-label").textContent =
       MONTHS_ES[currentMonth] + " " + currentYear;
 
@@ -232,24 +590,24 @@
       fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
     ]);
 
-    renderCards(summary, expenses);
+    currentExpenses = Array.isArray(expenses) ? expenses : [];
+
+    renderCards(summary, currentExpenses);
     renderDoughnut(summary.by_category);
-    renderBar(summary.by_week);
-    renderRecent(expenses.slice(0, 10));
+    renderBar(summary.by_week_by_user || []);
+    renderRecent(filterExpenses(currentExpenses).slice(0, 10));
   }
 
-  // ── Cards ──────────────────────────────────────────────────────────────────
   function renderCards(summary, expenses) {
     const total = summary.total || 0;
     document.getElementById("header-total").textContent = fmtAmount(total);
     document.getElementById("card-total").textContent   = fmtAmount(total);
     document.getElementById("card-count").textContent   = expenses.length;
 
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    const today = new Date();
-    const daysElapsed = (currentYear === today.getFullYear() && currentMonth === today.getMonth() + 1)
-      ? today.getDate()
-      : daysInMonth;
+    const daysInMonth  = new Date(currentYear, currentMonth, 0).getDate();
+    const today        = new Date();
+    const daysElapsed  = (currentYear === today.getFullYear() && currentMonth === today.getMonth() + 1)
+      ? today.getDate() : daysInMonth;
     const avg = daysElapsed > 0 ? total / daysElapsed : 0;
     document.getElementById("card-avg").textContent = fmtAmount(avg);
 
@@ -263,10 +621,69 @@
     }
   }
 
+  // ── Sparklines ─────────────────────────────────────────────────────────────
+  function makeSparkline(id, data, color) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    if (sparkCharts[id]) sparkCharts[id].destroy();
+    const rv = parseInt(color.slice(1,3), 16);
+    const gv = parseInt(color.slice(3,5), 16);
+    const bv = parseInt(color.slice(5,7), 16);
+    sparkCharts[id] = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: data.map((_, i) => i),
+        datasets: [{
+          data,
+          borderColor: color,
+          borderWidth: 1.5,
+          fill: true,
+          backgroundColor: `rgba(${rv},${gv},${bv},0.10)`,
+          pointRadius: 0,
+          tension: 0.4,
+        }],
+      },
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: { x: { display: false }, y: { display: false } },
+      },
+    });
+  }
+
+  function setTrend(id, cur, prev) {
+    const el = document.getElementById(id);
+    if (!el || !prev || prev === 0) { if (el) el.innerHTML = ''; return; }
+    const pct  = ((cur - prev) / prev * 100).toFixed(0);
+    const isUp = cur >= prev;
+    const cls  = isUp ? 'trend-up' : 'trend-down';
+    const icon = isUp ? '↑' : '↓';
+    el.innerHTML = `<span class="${cls}">${icon} ${Math.abs(pct)}%</span>`
+                 + `<span style="color:var(--text3)">vs mes anterior</span>`;
+  }
+
+  async function loadSparklines() {
+    const data = await fetch('/api/sparklines').then(r => r.json()).catch(() => []);
+    if (!data || data.length < 2) return;
+
+    makeSparkline('spark-total', data.map(d => d.total),     ACCENT_CLR);
+    makeSparkline('spark-count', data.map(d => d.count),     AMBER_CLR);
+    makeSparkline('spark-avg',   data.map(d => d.avg_daily), GREEN_CLR);
+    makeSparkline('spark-top',   data.map(d => d.total),     ACCENT_CLR);
+
+    const cur  = data[data.length - 1];
+    const prev = data[data.length - 2];
+    setTrend('trend-total', cur.total,     prev.total);
+    setTrend('trend-count', cur.count,     prev.count);
+    setTrend('trend-avg',   cur.avg_daily, prev.avg_daily);
+  }
+
   // ── Doughnut chart ─────────────────────────────────────────────────────────
   function renderDoughnut(byCategory) {
-    const canvas   = document.getElementById("chart-doughnut");
-    const emptyEl  = document.getElementById("doughnut-empty");
+    const canvas  = document.getElementById("chart-doughnut");
+    const emptyEl = document.getElementById("doughnut-empty");
     if (doughnutChart) { doughnutChart.destroy(); doughnutChart = null; }
 
     if (!byCategory || byCategory.length === 0) {
@@ -286,7 +703,7 @@
         datasets: [{
           data:            byCategory.map(r => r.total),
           backgroundColor: byCategory.map(r => r.color),
-          borderColor:     "#1a1a1a",
+          borderColor:     SURFACE_CLR,
           borderWidth:     3,
           hoverOffset:     6,
         }],
@@ -294,7 +711,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: "62%",
+        cutout: "64%",
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -306,25 +723,25 @@
       },
     });
 
-    const legend = document.getElementById("legend");
-    legend.innerHTML = byCategory.map(r => `
+    document.getElementById("legend").innerHTML = byCategory.map(r => `
       <div class="legend-item">
-        <span class="legend-name">
-          <span class="legend-dot" style="background:${r.color}"></span>
-          ${r.icon} ${r.name}
-        </span>
+        <span class="legend-sq" style="background:${r.color}"></span>
+        <span class="legend-name">${r.icon} ${r.name}</span>
+        <div class="legend-bar-wrap">
+          <div class="legend-bar" style="width:${r.pct}%; background:${r.color}"></div>
+        </div>
         <span class="legend-amount">${fmtAmount(r.total)}</span>
       </div>
     `).join("");
   }
 
-  // ── Bar chart ──────────────────────────────────────────────────────────────
-  function renderBar(byWeek) {
+  // ── Weekly stacked bar (by user) ───────────────────────────────────────────
+  function renderBar(byWeekByUser) {
     const canvas  = document.getElementById("chart-bar");
     const emptyEl = document.getElementById("bar-empty");
     if (barChart) { barChart.destroy(); barChart = null; }
 
-    if (!byWeek || byWeek.length === 0) {
+    if (!byWeekByUser || byWeekByUser.length === 0) {
       canvas.style.display  = "none";
       emptyEl.style.display = "flex";
       return;
@@ -333,68 +750,225 @@
     canvas.style.display  = "";
     emptyEl.style.display = "none";
 
+    const userNames = new Set();
+    byWeekByUser.forEach(w => Object.keys(w.by_user || {}).forEach(n => userNames.add(n)));
+    const names = [...userNames];
+
     barChart = new Chart(canvas, {
       type: "bar",
       data: {
-        labels:   byWeek.map(r => r.label),
-        datasets: [{
-          label:           "Gastos",
-          data:            byWeek.map(r => r.total),
-          backgroundColor: "#6366f1",
-          borderRadius:    6,
+        labels:   byWeekByUser.map(r => r.label),
+        datasets: names.map(name => ({
+          label:           name,
+          data:            byWeekByUser.map(w => (w.by_user || {})[name] || 0),
+          backgroundColor: isAltUser(name) ? GREEN_CLR : ACCENT_CLR,
+          borderRadius:    4,
           borderSkipped:   false,
-        }],
+        })),
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: names.length > 1,
+            labels: {
+              color: CHART_TICK,
+              usePointStyle: true,
+              pointStyle: 'circle',
+              padding: 16,
+              font: { family: "'DM Sans', sans-serif", size: 12 },
+            },
+          },
           tooltip: {
-            callbacks: { label: ctx => ` ${fmtAmount(ctx.parsed.y)}` },
+            callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtAmount(ctx.parsed.y)}` },
           },
         },
         scales: {
-          x: {
-            grid:  { color: "#2a2a2a" },
-            ticks: { color: "#888" },
-          },
+          x: { stacked: true, grid: { color: CHART_GRID }, ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" } } },
           y: {
-            grid:  { color: "#2a2a2a" },
-            ticks: {
-              color: "#888",
-              callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0)+"k" : v),
-            },
+            stacked: true,
+            grid: { color: CHART_GRID },
+            ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" }, callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0) + "k" : v) },
           },
         },
       },
     });
   }
 
-  // ── Recent table ───────────────────────────────────────────────────────────
+  // ── Recent expenses ────────────────────────────────────────────────────────
   function renderRecent(expenses) {
-    const tbody = document.getElementById("recent-body");
+    const wrap = document.getElementById("recent-wrap");
     if (!expenses || expenses.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin gastos este mes</td></tr>';
+      wrap.innerHTML = '<div class="empty">Sin gastos este mes</div>';
       return;
     }
-    tbody.innerHTML = expenses.map(r => `
-      <tr>
-        <td class="mono" style="color:var(--muted); white-space:nowrap">${fmtDate(r.created_at)}</td>
-        <td>${r.concept}</td>
-        <td>
-          <span class="badge">
-            <span>${r.category_icon}</span>
-            <span>${r.category_name}</span>
-          </span>
-        </td>
-        <td class="mono" style="font-weight:600">${fmtAmount(r.amount)}</td>
-        <td style="color:var(--muted)">${r.user_name}</td>
-      </tr>
-    `).join("");
+    wrap.innerHTML = expenses.map(r => {
+      const tagCls = isAltUser(r.user_name) ? 'user-tag-alt' : 'user-tag-main';
+      const iconBg = hexToRgba(r.category_color, 0.13);
+      return `
+        <div class="expense-row">
+          <div class="expense-icon" style="background:${iconBg}">${r.category_icon}</div>
+          <div class="expense-info">
+            <div class="expense-concept">${r.concept}</div>
+            <div class="expense-meta">${fmtDate(r.created_at)} · ${r.category_name}</div>
+          </div>
+          <span class="user-tag ${tagCls}">${r.user_name}</span>
+          <span class="expense-amount">${fmtAmount(r.amount)}</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // ── Annual view ────────────────────────────────────────────────────────────
+  async function loadAnnual() {
+    document.getElementById("month-label").textContent = String(currentYear);
+    document.getElementById("header-total").textContent = "vista anual";
+
+    const data = await fetch(`/api/annual/${currentYear}`).then(r => r.json());
+    renderAnnualKPIs(data);
+    renderAnnualBar(data);
+    renderAnnualLine(data);
+  }
+
+  function renderAnnualKPIs(data) {
+    document.getElementById("ann-total").textContent     = fmtAmount(data.annual_total);
+    document.getElementById("ann-avg").textContent       = fmtAmount(data.monthly_avg);
+    document.getElementById("ann-peak-name").textContent = data.peak_month.name || "—";
+    document.getElementById("ann-peak-amount").textContent = fmtAmount(data.peak_month.amount);
+
+    const top = data.top_category;
+    document.getElementById("ann-top-cat").textContent = top.name || "—";
+    document.getElementById("ann-top-pct").textContent = top.name ? top.pct + "% del total" : "";
+  }
+
+  function renderAnnualBar(data) {
+    const canvas  = document.getElementById("chart-annual-bar");
+    const emptyEl = document.getElementById("ann-bar-empty");
+    if (annualBarChart) { annualBarChart.destroy(); annualBarChart = null; }
+
+    const n = data.active_months || 12;
+    const cats = data.by_category || [];
+
+    if (!cats.length || data.annual_total === 0) {
+      canvas.style.display  = "none";
+      emptyEl.style.display = "flex";
+      document.getElementById("annual-bar-legend").innerHTML = "";
+      return;
+    }
+
+    canvas.style.display  = "";
+    emptyEl.style.display = "none";
+
+    const labels   = data.months.slice(0, n);
+    const datasets = cats.map(cat => {
+      const color = getCatColor(cat.name, cat.color);
+      return {
+        label:           cat.name,
+        data:            cat.values.slice(0, n),
+        backgroundColor: color,
+        borderRadius:    3,
+        borderSkipped:   false,
+      };
+    });
+
+    annualBarChart = new Chart(canvas, {
+      type: "bar",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label:  ctx => ` ${ctx.dataset.label}: ${fmtAmount(ctx.parsed.y)}`,
+              footer: items => ' Total: ' + fmtAmount(items.reduce((s, i) => s + i.parsed.y, 0)),
+            },
+            footerColor: CHART_TICK,
+          },
+        },
+        scales: {
+          x: { stacked: true, grid: { color: CHART_GRID }, ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" } } },
+          y: {
+            stacked: true,
+            grid: { color: CHART_GRID },
+            ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" }, callback: v => formatARS(v) },
+          },
+        },
+      },
+    });
+
+    // HTML legend
+    document.getElementById("annual-bar-legend").innerHTML = cats.map(cat => {
+      const color = getCatColor(cat.name, cat.color);
+      return `<div class="ann-legend-item">
+        <span class="ann-legend-sq" style="background:${color}"></span>
+        <span>${cat.name}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function renderAnnualLine(data) {
+    const canvas  = document.getElementById("chart-annual-line");
+    const emptyEl = document.getElementById("ann-line-empty");
+    if (annualLineChart) { annualLineChart.destroy(); annualLineChart = null; }
+
+    const n    = data.active_months || 12;
+    const cats = (data.by_category || []).slice(0, 5); // top 5 only
+
+    if (!cats.length || data.annual_total === 0) {
+      canvas.style.display  = "none";
+      emptyEl.style.display = "flex";
+      return;
+    }
+
+    canvas.style.display  = "";
+    emptyEl.style.display = "none";
+
+    const labels   = data.months.slice(0, n);
+    const datasets = cats.map(cat => {
+      const color = getCatColor(cat.name, cat.color);
+      return {
+        label:           cat.name,
+        data:            cat.values.slice(0, n),
+        borderColor:     color,
+        backgroundColor: hexToRgba(color, 0.08),
+        borderWidth:     2,
+        pointRadius:     4,
+        pointHoverRadius:6,
+        tension:         0.35,
+        fill:            false,
+      };
+    });
+
+    annualLineChart = new Chart(canvas, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${fmtAmount(ctx.parsed.y)}`,
+            },
+          },
+        },
+        scales: {
+          x: { grid: { color: CHART_GRID }, ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" } } },
+          y: {
+            grid: { color: CHART_GRID },
+            ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" }, callback: v => formatARS(v) },
+          },
+        },
+      },
+    });
   }
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadAll();
+  loadSparklines();
 </script>
 {% endblock %}

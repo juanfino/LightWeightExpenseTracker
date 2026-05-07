@@ -5,21 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Gastos Familiares{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #0f0f0f;
-      --surface:   #1a1a1a;
-      --border:    #2a2a2a;
-      --text:      #ffffff;
-      --muted:     #888888;
-      --accent:    #6366f1;
-      --danger:    #ef4444;
-      --success:   #22c55e;
-      --font-mono: 'JetBrains Mono', monospace;
-      --font-sans: 'Inter', sans-serif;
+      --bg:      #0f0f11;
+      --bg2:     #17171a;
+      --bg3:     #1e1e22;
+      --surface: #232328;
+      --surface2:#2a2a30;
+      --border:  rgba(255,255,255,0.07);
+      --border2: rgba(255,255,255,0.12);
+      --text:    #f0f0f2;
+      --text2:   #9090a0;
+      --text3:   #5a5a6a;
+      --accent:  #7c6af7;
+      --green:   #2eca8a;
+      --red:     #f06060;
+      --amber:   #f0a030;
+      --font-sans: 'DM Sans', sans-serif;
+      /* backward-compat aliases */
+      --muted:     #9090a0;
+      --danger:    #f06060;
+      --success:   #2eca8a;
+      --font-mono: 'DM Sans', sans-serif;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg:      #f4f3f8;
+        --bg2:     #ededf2;
+        --bg3:     #e6e5ec;
+        --surface: #ffffff;
+        --surface2:#f8f7fc;
+        --border:  rgba(0,0,0,0.07);
+        --border2: rgba(0,0,0,0.12);
+        --text:    #1a1a24;
+        --text2:   #606078;
+        --text3:   #a0a0b0;
+        --accent:  #6c5ce7;
+        --green:   #22a870;
+        --red:     #e04040;
+        --amber:   #d08020;
+        --muted:   #606078;
+        --danger:  #e04040;
+        --success: #22a870;
+      }
     }
 
     body {
@@ -29,77 +62,160 @@
       font-size: 14px;
       line-height: 1.5;
       min-height: 100vh;
+      opacity: 0;
+      transition: opacity 0.3s ease;
     }
+
+    body.loaded { opacity: 1; }
 
     a { color: inherit; text-decoration: none; }
 
-    /* ── Nav ── */
-    nav {
-      background: var(--surface);
+    /* ── Topbar ── */
+    .topbar {
+      height: 52px;
+      background: var(--bg2);
       border-bottom: 1px solid var(--border);
-      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
       display: flex;
       align-items: center;
-      gap: 32px;
-      height: 52px;
+      padding: 0 20px;
+      gap: 12px;
     }
 
-    .nav-brand {
-      font-weight: 600;
+    .topbar-brand {
       font-size: 15px;
-      color: var(--text);
-      margin-right: auto;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
-    .nav-link {
-      color: var(--muted);
+    .topbar-tabs {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--bg3);
+      border-radius: 10px;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+
+    .tab-link {
+      padding: 5px 14px;
+      border-radius: 7px;
       font-size: 13px;
       font-weight: 500;
-      padding: 6px 0;
-      border-bottom: 2px solid transparent;
-      transition: color .15s, border-color .15s;
+      color: var(--text2);
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
     }
 
-    .nav-link:hover,
-    .nav-link.active {
+    .tab-link:hover { color: var(--text); }
+
+    .tab-link.active {
+      background: var(--surface);
       color: var(--text);
-      border-bottom-color: var(--accent);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    }
+
+    .topbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .user-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+
+    .user-chip {
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--surface);
+      color: var(--text2);
+      border: 1px solid var(--border2);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+      font-family: var(--font-sans);
+    }
+
+    .user-chip:hover { color: var(--text); border-color: var(--text3); }
+
+    .user-chip.active-all {
+      background: var(--surface2);
+      color: var(--text);
+      border-color: var(--border2);
+    }
+
+    .user-chip.active-main {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .user-chip.active-alt {
+      background: var(--green);
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
 
     /* ── Layout ── */
     .container {
       max-width: 1100px;
       margin: 0 auto;
-      padding: 32px 24px;
+      padding: 28px 20px;
     }
 
     /* ── Cards ── */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px 24px;
+      border-radius: 12px;
+      padding: 20px;
     }
 
     .card-title {
       font-size: 11px;
       font-weight: 600;
-      letter-spacing: .08em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 8px;
+      color: var(--text3);
+      margin-bottom: 6px;
     }
 
     .card-value {
-      font-family: var(--font-mono);
-      font-size: 26px;
+      font-size: 22px;
       font-weight: 600;
       color: var(--text);
+      letter-spacing: -0.03em;
     }
 
     .card-sub {
       font-size: 12px;
-      color: var(--muted);
+      color: var(--text2);
       margin-top: 4px;
     }
 
@@ -107,7 +223,7 @@
     .grid-4 {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
+      gap: 12px;
     }
 
     .grid-2 {
@@ -136,9 +252,9 @@
       text-align: left;
       font-size: 11px;
       font-weight: 600;
-      letter-spacing: .06em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: var(--muted);
+      color: var(--text3);
       padding: 10px 12px;
       border-bottom: 1px solid var(--border);
     }
@@ -150,9 +266,9 @@
     }
 
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,.03); }
+    tr:hover td { background: var(--surface2); transition: background 0.18s; }
 
-    .mono { font-family: var(--font-mono); }
+    .mono { font-variant-numeric: tabular-nums; }
 
     /* ── Badges ── */
     .badge {
@@ -163,7 +279,8 @@
       border-radius: 999px;
       font-size: 11px;
       font-weight: 500;
-      background: rgba(255,255,255,.08);
+      background: var(--surface2);
+      border: 1px solid var(--border);
     }
 
     /* ── Buttons ── */
@@ -172,25 +289,26 @@
       align-items: center;
       gap: 6px;
       padding: 7px 14px;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      border: 1px solid var(--border);
+      border: 1px solid var(--border2);
       background: var(--surface);
       color: var(--text);
-      transition: background .15s, border-color .15s;
+      font-family: var(--font-sans);
+      transition: background 0.15s, border-color 0.15s;
     }
 
-    .btn:hover { background: #252525; border-color: #3a3a3a; }
+    .btn:hover { background: var(--surface2); }
 
     .btn-danger {
       border-color: transparent;
-      background: rgba(239,68,68,.12);
-      color: var(--danger);
+      background: rgba(240,96,96,0.12);
+      color: var(--red);
     }
 
-    .btn-danger:hover { background: rgba(239,68,68,.22); }
+    .btn-danger:hover { background: rgba(240,96,96,0.22); }
 
     .btn-primary {
       border-color: transparent;
@@ -198,19 +316,19 @@
       color: #fff;
     }
 
-    .btn-primary:hover { background: #5254cc; }
+    .btn-primary:hover { filter: brightness(1.1); }
 
     /* ── Form inputs ── */
     input, select {
       background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
       color: var(--text);
       font-family: var(--font-sans);
       font-size: 13px;
       padding: 7px 12px;
       outline: none;
-      transition: border-color .15s;
+      transition: border-color 0.15s;
     }
 
     input:focus, select:focus { border-color: var(--accent); }
@@ -238,23 +356,85 @@
     .empty {
       text-align: center;
       padding: 48px 0;
-      color: var(--muted);
+      color: var(--text2);
       font-size: 13px;
     }
+
+    /* ── Disabled ── */
+    button[disabled] { opacity: 0.38; cursor: not-allowed; }
 
     {% block extra_styles %}{% endblock %}
   </style>
 </head>
 <body>
-  <nav>
-    <span class="nav-brand">💸 Gastos Familiares</span>
-    <a href="/"        class="nav-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
-    <a href="/history" class="nav-link {% block nav_history %}{% endblock %}">Historial</a>
-    <a href="/settings"class="nav-link {% block nav_settings %}{% endblock %}">Configuración</a>
-  </nav>
+  <div class="topbar">
+    <span class="topbar-brand">💸 Gastos Familiares</span>
+
+    <nav class="topbar-tabs">
+      <a href="/"         class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
+      <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Historial</a>
+      <a href="/settings" class="tab-link {% block nav_settings %}{% endblock %}">Configuración</a>
+    </nav>
+
+    <div class="topbar-right">
+      <div class="user-chips" id="user-chips"></div>
+      <div class="user-avatar" id="user-avatar">T</div>
+    </div>
+  </div>
 
   {% block content %}{% endblock %}
 
   {% block scripts %}{% endblock %}
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      document.body.classList.add('loaded');
+    });
+
+    window.activeUserName = null;
+
+    (async function initUserChips() {
+      let users = [];
+      try {
+        const res = await fetch('/api/users');
+        users = await res.json();
+      } catch(e) { return; }
+
+      const container = document.getElementById('user-chips');
+      const avatarEl  = document.getElementById('user-avatar');
+
+      function isAlt(name) {
+        return name && name.toLowerCase().includes('cele');
+      }
+
+      function renderChips() {
+        let html = '<button class="user-chip ' + (window.activeUserName === null ? 'active-all' : '') + '" data-user="">Todos</button>';
+        users.forEach(function(u) {
+          const active = window.activeUserName === u.name;
+          const cls = active ? (isAlt(u.name) ? 'active-alt' : 'active-main') : '';
+          html += '<button class="user-chip ' + cls + '" data-user="' + u.name + '">' + u.name + '</button>';
+        });
+        container.innerHTML = html;
+
+        if (window.activeUserName === null) {
+          avatarEl.textContent = 'T';
+          avatarEl.style.background = 'var(--accent)';
+        } else {
+          avatarEl.textContent = window.activeUserName.charAt(0).toUpperCase();
+          avatarEl.style.background = isAlt(window.activeUserName) ? 'var(--green)' : 'var(--accent)';
+        }
+
+        container.querySelectorAll('.user-chip').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            window.activeUserName = this.dataset.user || null;
+            renderChips();
+            window.dispatchEvent(new CustomEvent('userFilterChange', { detail: window.activeUserName }));
+          });
+        });
+      }
+
+      renderChips();
+    })();
+  </script>
 </body>
 </html>

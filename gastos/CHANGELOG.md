@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.0
+- Vista Anual en el dashboard: toggle "Mensual | Anual" junto al navegador de período
+- Tarjetas KPI anuales: total del año, promedio mensual, mes más caro, categoría del año
+- Gráfico de barras apiladas "Evolución mensual": una barra por mes, apilada por categoría, leyenda HTML debajo
+- Gráfico de líneas "Tendencia por categoría": top 5 categorías por monto anual, sin leyenda propia
+- Navegador de período cambia entre meses (vista mensual) y años (vista anual)
+- Nuevo endpoint `/api/annual/<year>` con desglose mensual por categoría y usuario
+- Función `formatARS`: valores abreviados para ejes de gráficos ($Xk / $X.XM)
+- Mapa de colores de categorías (`CAT_COLORS`) compartido entre todos los gráficos
+
+## 1.3.0
+- Rediseño visual completo del dashboard: tipografía DM Sans, paleta de colores con soporte dark/light mode via `prefers-color-scheme`
+- Topbar nueva: sticky, con navegación por pills, chips de filtro por usuario y avatar de iniciales
+- Tarjetas KPI rediseñadas: tendencia vs mes anterior (↑/↓ %) y sparkline de los últimos 6 meses
+- Leyenda de categorías: cuadrado de color, barra de progreso proporcional y monto alineado a la derecha
+- Lista de gastos recientes: flex rows con ícono circular por categoría, tag de usuario y sin tabla
+- Gráfico semanal ahora es stacked bar por usuario (Juampi vs Cele)
+- Nuevos endpoints: `/api/users`, `/api/sparklines`; `/api/monthly` incluye desglose semanal por usuario
+
 ## 1.2.2
 - Al editar el monto por botón inline, muestra tarjeta completa "Gasto actualizado" con concepto, monto nuevo, categoría y usuario en lugar del mensaje de confirmación simple
 
