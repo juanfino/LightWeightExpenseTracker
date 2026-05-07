@@ -147,8 +147,8 @@ def get_expenses_by_month(year: int, month: int):
         ).fetchall()
 
 
-def get_expenses_by_week(year: int, week: int):
-    """Retorna gastos de la isoweek dada (lun–dom)."""
+def get_expenses_by_week(week_start: str, week_end: str):
+    """Retorna gastos entre week_start y week_end (YYYY-MM-DD), comparando en hora Buenos Aires (UTC-3)."""
     with get_conn() as conn:
         return conn.execute(
             """
@@ -158,11 +158,10 @@ def get_expenses_by_week(year: int, week: int):
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
-            WHERE strftime('%Y', e.created_at) = ?
-              AND CAST(strftime('%W', e.created_at) AS INTEGER) = ?
+            WHERE date(datetime(e.created_at, '-3 hours')) BETWEEN ? AND ?
             ORDER BY e.created_at DESC
             """,
-            (str(year), week),
+            (week_start, week_end),
         ).fetchall()
 
 
@@ -177,7 +176,7 @@ def get_expenses_today():
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
-            WHERE date(e.created_at) = date('now')
+            WHERE date(datetime(e.created_at, '-3 hours')) = date(datetime('now', '-3 hours'))
             ORDER BY e.created_at DESC
             """
         ).fetchall()

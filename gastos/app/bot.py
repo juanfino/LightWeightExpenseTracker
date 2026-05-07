@@ -235,10 +235,12 @@ async def cmd_semana(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user is None:
         return
 
-    from datetime import datetime
-    now = datetime.now()
-    iso = now.isocalendar()
-    expenses = db.get_expenses_by_week(iso.year, iso.week)
+    from datetime import datetime, date, timedelta, timezone
+    BAIRES = timezone(timedelta(hours=-3))
+    today = datetime.now(BAIRES).date()
+    week_start = today - timedelta(days=(today.weekday() + 1) % 7)  # domingo
+    week_end = week_start + timedelta(days=6)                       # sábado
+    expenses = db.get_expenses_by_week(week_start.isoformat(), week_end.isoformat())
 
     if not expenses:
         await update.message.reply_text("📭 No hay gastos esta semana.")
