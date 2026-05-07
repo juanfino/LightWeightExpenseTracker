@@ -1,8 +1,8 @@
 import logging
 import os
 
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 import db
 import parser as msg_parser
@@ -15,6 +15,8 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 
 # Gastos pendientes de confirmación tras OCR, keyed por chat_id
 pending_ocr: dict[int, dict] = {}
+# Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
+pending_amount_edit: dict[int, int] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -40,6 +42,51 @@ def fmt_date(dt_str: str) -> str:
         return f"{d}/{m} {h}:{mi}"
     except Exception:
         return dt_str
+
+
+# ── Teclados inline ───────────────────────────────────────────────────────────
+
+_PAGE_SIZE = 8
+
+def _sorted_categories():
+    """Categorías ordenadas por uso descendente, sin 'Sin categoría'."""
+    usage = db.get_expense_count_by_category()
+    cats = [c for c in db.get_all_categories() if c["name"] != "Sin categoría"]
+    return sorted(cats, key=lambda c: (-usage.get(c["id"], 0), c["name"]))
+
+
+def _build_category_keyboard(expense_id: int, page: int = 0) -> InlineKeyboardMarkup:
+    cats = _sorted_categories()
+    start = page * _PAGE_SIZE
+    page_cats = cats[start:start + _PAGE_SIZE]
+
+    rows = []
+    for i in range(0, len(page_cats), 2):
+        row = [
+            InlineKeyboardButton(
+                f"{c['icon']} {c['name']}",
+                callback_data=f"c:{expense_id}:{c['id']}"
+            )
+            for c in page_cats[i:i + 2]
+        ]
+        rows.append(row)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Atrás", callback_data=f"cb:{expense_id}:{page - 1}"))
+    if start + _PAGE_SIZE < len(cats):
+        nav.append(InlineKeyboardButton("➡️ Más", callback_data=f"cm:{expense_id}:{page + 1}"))
+    if nav:
+        rows.append(nav)
+
+    rows.append([InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")
+    ]])
 
 
 # ── Guard de usuario ──────────────────────────────────────────────────────────
@@ -120,6 +167,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text.strip()
 
+    if chat_id in pending_amount_edit:
+        expense_id = pending_amount_edit.pop(chat_id)
+        amount = msg_parser._normalize_amount(text)
+        if amount is None:
+            pending_amount_edit[chat_id] = expense_id
+            await update.message.reply_text(
+                "❌ Monto inválido. Ejemplos: <code>15000</code>, <code>2500,50</code>",
+                parse_mode="HTML",
+            )
+            return
+        db.update_expense_amount(expense_id, user["id"], amount)
+        await update.message.reply_text(
+            f"✅ Monto actualizado — <code>#ID{expense_id}</code>: <b>{fmt_amount(amount)}</b>",
+            parse_mode="HTML",
+        )
+        return
+
     if chat_id in pending_ocr:
         response = text.lower()
         if response in ("sí", "si", "s", "dale", "ok"):
@@ -196,6 +260,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Hubo un error al guardar el gasto. Intentá de nuevo.")
         return
 
+    if category_id is None:
+        keyboard = _build_category_keyboard(expense_id)
+    else:
+        keyboard = _build_edit_only_keyboard(expense_id)
+
     await update.message.reply_text(
         f"✅ <b>Gasto registrado</b>\n"
         f"📋 {parsed['concept']}\n"
@@ -204,6 +273,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 {user['name']}\n"
         f"<code>#ID{expense_id}</code>",
         parse_mode="HTML",
+        reply_markup=keyboard,
     )
 
 
@@ -249,9 +319,11 @@ async def cmd_semana(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = sum(r["amount"] for r in expenses)
     lines = [f"📅 <b>Gastos de la semana</b> — {fmt_amount(total)}\n"]
     for r in expenses:
+        date_part = fmt_date(r["created_at"])[:5]  # dd/mm
         lines.append(
-            f"• {fmt_date(r['created_at'])}  {r['concept']}  "
-            f"<b>{fmt_amount(r['amount'])}</b>  [{r['category_name']}]  {r['user_name']}"
+            f"{r['category_icon']} {date_part}  {r['concept']}  "
+            f"<b>{fmt_amount(r['amount'])}</b>  {r['user_name']}"
+            f"  <code>#ID{r['id']}</code>"
         )
 
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
@@ -611,6 +683,50 @@ async def cmd_recat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# ── Callback de botones inline ────────────────────────────────────────────────
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    user = db.get_user_by_telegram_id(str(chat_id))
+    if user is None:
+        return
+
+    data = query.data
+
+    if data.startswith("c:"):
+        _, expense_id_str, cat_id_str = data.split(":")
+        expense_id, cat_id = int(expense_id_str), int(cat_id_str)
+        db.update_expense_category(expense_id, user["id"], cat_id)
+        expense = db.get_expense_by_id(expense_id)
+        if expense:
+            db.add_keyword(categorizer.normalize(expense["concept"]), cat_id)
+        cat = db.get_category_by_id(cat_id)
+        cat_name = cat["name"] if cat else "?"
+        cat_icon = cat["icon"] if cat else "❓"
+        await query.edit_message_reply_markup(reply_markup=_build_edit_only_keyboard(expense_id))
+        await query.answer(f"{cat_icon} {cat_name}", show_alert=False)
+
+    elif data.startswith("cm:"):
+        _, expense_id_str, page_str = data.split(":")
+        await query.edit_message_reply_markup(
+            reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
+        )
+
+    elif data.startswith("cb:"):
+        _, expense_id_str, page_str = data.split(":")
+        await query.edit_message_reply_markup(
+            reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
+        )
+
+    elif data.startswith("ea:"):
+        expense_id = int(data.split(":")[1])
+        pending_amount_edit[chat_id] = expense_id
+        await query.message.reply_text("💰 Enviá el nuevo monto:")
+
+
 # ── Arranque ──────────────────────────────────────────────────────────────────
 
 def build_app():
@@ -627,6 +743,7 @@ def build_app():
     app.add_handler(CommandHandler("categorias",        cmd_categorias))
     app.add_handler(CommandHandler("nueva_categoria",   cmd_nueva_categoria))
     app.add_handler(CommandHandler("ayuda",             cmd_ayuda))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

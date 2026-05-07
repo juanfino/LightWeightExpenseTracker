@@ -154,7 +154,8 @@ def get_expenses_by_week(week_start: str, week_end: str):
             """
             SELECT e.id, e.concept, e.amount, e.created_at,
                    u.name AS user_name,
-                   COALESCE(c.name, 'Sin categoría') AS category_name
+                   COALESCE(c.name, 'Sin categoría') AS category_name,
+                   COALESCE(c.icon, '❓')             AS category_icon
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
