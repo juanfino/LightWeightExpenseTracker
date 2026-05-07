@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+- Inline keyboards al registrar un gasto: botones de categoría paginados por frecuencia de uso cuando el gasto queda sin categoría
+- Botón "✏️ Editar monto" siempre visible tras registrar un gasto
+- Al seleccionar categoría por botón, aprende el concepto como keyword automáticamente
+- /semana: nuevo layout con ícono de categoría, fecha dd/mm y #ID (igual que /hoy)
+
+## 1.1.2
+- Fix /hoy: comparaba date('now') UTC contra timestamps UTC, fallando cuando la fecha BA (UTC-3) difería de la UTC
+- Fix /semana: usaba strftime('%W') que no es ISO week y calculaba inicio de semana en lunes; en Argentina la semana arranca el domingo
+- /semana ahora filtra por rango domingo–sábado en hora Buenos Aires
+
 ## 1.1.1
 - Fix: parseo de montos en formato argentino (punto como miles, coma como decimal)
 

@@ -39,7 +39,7 @@ python3 gastos/app/categorizer.py
 4. Starts the Telegram bot (blocks main thread via polling)
 
 **Module responsibilities:**
-- `bot.py` — Telegram command handlers and message routing. Holds `pending_ocr` dict for OCR confirmation flow. Uses `TELEGRAM_TOKEN` and `USERS` module-level globals set by `main.py`.
+- `bot.py` — Telegram command handlers and message routing. Holds `pending_ocr` (OCR confirmation flow) and `pending_amount_edit` (waiting for user to type new amount after tapping inline button) module-level dicts keyed by `chat_id`. Uses `TELEGRAM_TOKEN` and `USERS` module-level globals set by `main.py`.
 - `parser.py` — Parses free-text messages into `{concept, amount}`. Handles Argentine number formats (dot=thousands, comma=decimal). Returns `None` if no valid amount found.
 - `categorizer.py` — Matches concept against keyword list from DB (accent/case-insensitive). Returns first matching `category_id` or `None`.
 - `db.py` — All SQLite operations. Uses a `get_conn()` context manager that auto-commits/rollbacks. `DB_PATH` is a module-level global set by `main.py`.
@@ -59,6 +59,12 @@ The app version lives in `gastos/config.yaml` (`version` field). HA uses this to
 - patch (`1.1.x`) — bugfixes
 - minor (`1.x.0`) — new features
 - major (`x.0.0`) — breaking changes to config schema or DB
+
+Also update `gastos/CHANGELOG.md` with a new entry matching the bumped version. Follow the existing format: one bullet per meaningful change, concise and in Spanish.
+
+## Before starting any task
+
+Make sure to fully understand what is being asked before writing any code. If anything is unclear — scope, edge cases, expected behavior — ask first. It's better to ask too many questions than to implement the wrong thing.
 
 ## Key conventions
 
