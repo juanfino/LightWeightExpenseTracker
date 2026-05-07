@@ -178,9 +178,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         db.update_expense_amount(expense_id, user["id"], amount)
+        expense = db.get_expense_by_id(expense_id)
+        cat = db.get_category_by_id(expense["category_id"]) if expense and expense["category_id"] else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
         await update.message.reply_text(
-            f"✅ Monto actualizado — <code>#ID{expense_id}</code>: <b>{fmt_amount(amount)}</b>",
+            f"✅ <b>Gasto actualizado</b>\n"
+            f"📋 {expense['concept']}\n"
+            f"💰 {fmt_amount(amount)}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
+            reply_markup=_build_edit_only_keyboard(expense_id),
         )
         return
 

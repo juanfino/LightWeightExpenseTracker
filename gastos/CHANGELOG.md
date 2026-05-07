@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.2
+- Al editar el monto por botón inline, muestra tarjeta completa "Gasto actualizado" con concepto, monto nuevo, categoría y usuario en lugar del mensaje de confirmación simple
+
 ## 1.2.1
 - Fix: al seleccionar categoría por botón inline, el mensaje ahora refleja el ícono y nombre de la categoría elegida en lugar de seguir mostrando "Sin categoría"
 
