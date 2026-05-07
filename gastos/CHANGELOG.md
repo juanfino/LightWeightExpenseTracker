@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.1
+- Fix: al seleccionar categoría por botón inline, el mensaje ahora refleja el ícono y nombre de la categoría elegida en lugar de seguir mostrando "Sin categoría"
+
 ## 1.2.0
 - Inline keyboards al registrar un gasto: botones de categoría paginados por frecuencia de uso cuando el gasto queda sin categoría
 - Botón "✏️ Editar monto" siempre visible tras registrar un gasto
