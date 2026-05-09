@@ -427,17 +427,6 @@
 
   </div><!-- /#annual-section -->
 
-  <!-- Backup status -->
-  <div class="card mt-24" style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 20px;">
-    <div style="display:flex; align-items:center; gap:10px;">
-      <span style="font-size:18px">🗄</span>
-      <div>
-        <div style="font-size:13px; font-weight:500; color:var(--text)">Base de datos</div>
-        <div style="font-size:12px; color:var(--text2)" id="backup-status-label">cargando…</div>
-      </div>
-    </div>
-    <button class="btn btn-primary" id="btn-backup-now" style="white-space:nowrap">Backup ahora</button>
-  </div>
 
 </div>
 {% endblock %}
@@ -983,49 +972,5 @@
   loadAll();
   loadSparklines();
 
-  // ── Backup status ──────────────────────────────────────────────────────────
-  function relativeTime(isoTs) {
-    const diff = Math.floor((Date.now() - new Date(isoTs).getTime()) / 1000);
-    if (diff < 60)        return "hace menos de un minuto";
-    if (diff < 3600)      return `hace ${Math.floor(diff / 60)} min`;
-    if (diff < 86400)     return `hace ${Math.floor(diff / 3600)} hs`;
-    return `hace ${Math.floor(diff / 86400)} días`;
-  }
-
-  async function refreshBackupStatus() {
-    const label = document.getElementById("backup-status-label");
-    try {
-      const res  = await fetch("/api/backup-status");
-      const data = await res.json();
-      label.textContent = data.last_backup
-        ? `Último backup: ${relativeTime(data.last_backup)}`
-        : "Sin backups aún";
-    } catch (_) {
-      label.textContent = "Sin backups aún";
-    }
-  }
-
-  document.getElementById("btn-backup-now").addEventListener("click", async function() {
-    const btn   = this;
-    const label = document.getElementById("backup-status-label");
-    btn.disabled = true;
-    btn.textContent = "Enviando…";
-    try {
-      const res  = await fetch("/admin/backup-now", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        label.textContent = `Último backup: ${relativeTime(data.timestamp)}`;
-      } else {
-        label.textContent = "Error al enviar backup";
-      }
-    } catch (_) {
-      label.textContent = "Error al enviar backup";
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Backup ahora";
-    }
-  });
-
-  refreshBackupStatus();
 </script>
 {% endblock %}
