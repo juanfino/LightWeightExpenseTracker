@@ -154,8 +154,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏪 Comercio: {comercio_str}\n"
         f"💰 Monto: {fmt_amount(data['monto'])}\n"
         f"📅 Fecha: {fecha_str}{fecha_note}\n\n"
-        "¿Guardamos? Respondé <b>sí</b> o <b>no</b>",
+        "¿Guardamos?",
         parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, guardar", callback_data="ocr:confirm"),
+            InlineKeyboardButton("❌ Cancelar",    callback_data="ocr:cancel"),
+        ]]),
     )
 
 
@@ -704,10 +708,52 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user is None:
         return
 
-    data = query.data
+    cb = query.data
 
-    if data.startswith("c:"):
-        _, expense_id_str, cat_id_str = data.split(":")
+    if cb == "ocr:confirm":
+        if chat_id not in pending_ocr:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        ocr_data = pending_ocr.pop(chat_id)
+        concept = ocr_data["comercio"] or "Ticket"
+        keywords = db.get_all_keywords()
+        category_id = categorizer.categorize(concept, keywords)
+        categories = {r["id"]: r for r in db.get_all_categories()}
+        cat = categories.get(category_id)
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+        try:
+            expense_id = db.create_expense(
+                user_id=user["id"],
+                category_id=category_id,
+                concept=concept,
+                amount=ocr_data["monto"],
+                raw_text=f"[OCR] {concept} {ocr_data['monto']}",
+            )
+        except Exception as e:
+            logger.error("Error guardando gasto OCR: %s", e)
+            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+            return
+        keyboard = _build_category_keyboard(expense_id) if category_id is None else _build_edit_only_keyboard(expense_id)
+        await query.edit_message_text(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {concept}\n"
+            f"💰 {fmt_amount(ocr_data['monto'])}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return
+
+    elif cb == "ocr:cancel":
+        pending_ocr.pop(chat_id, None)
+        await query.edit_message_text("❌ Carga cancelada.")
+        return
+
+    if cb.startswith("c:"):
+        _, expense_id_str, cat_id_str = cb.split(":")
         expense_id, cat_id = int(expense_id_str), int(cat_id_str)
         db.update_expense_category(expense_id, user["id"], cat_id)
         expense = db.get_expense_by_id(expense_id)
@@ -727,20 +773,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=_build_edit_only_keyboard(expense_id),
         )
 
-    elif data.startswith("cm:"):
-        _, expense_id_str, page_str = data.split(":")
+    elif cb.startswith("cm:"):
+        _, expense_id_str, page_str = cb.split(":")
         await query.edit_message_reply_markup(
             reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
         )
 
-    elif data.startswith("cb:"):
-        _, expense_id_str, page_str = data.split(":")
+    elif cb.startswith("cb:"):
+        _, expense_id_str, page_str = cb.split(":")
         await query.edit_message_reply_markup(
             reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
         )
 
-    elif data.startswith("ea:"):
-        expense_id = int(data.split(":")[1])
+    elif cb.startswith("ea:"):
+        expense_id = int(cb.split(":")[1])
         pending_amount_edit[chat_id] = expense_id
         await query.message.reply_text("💰 Enviá el nuevo monto:")
 

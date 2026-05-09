@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+- Fix: filtro "Sin categoría" en Historial ahora trae los gastos sin categoría asignada
+- Favicon para el dashboard: ícono de ticket en color violeta
+- OCR: confirmación de ticket con botones inline "✅ Sí, guardar / ❌ Cancelar" (ya no hay que escribir)
+- OCR: al confirmar un ticket sin categoría, aparece el teclado para asignar categoría, igual que en carga manual
+
 ## 1.4.0
 - Vista Anual en el dashboard: toggle "Mensual | Anual" junto al navegador de período
 - Tarjetas KPI anuales: total del año, promedio mensual, mes más caro, categoría del año

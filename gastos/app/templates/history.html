@@ -75,7 +75,7 @@
         <select id="f-category">
           <option value="">Todas</option>
           {% for cat in categories %}
-          <option value="{{ cat.id }}">{{ cat.icon }} {{ cat.name }}</option>
+          <option value="{% if cat.name == 'Sin categoría' %}null{% else %}{{ cat.id }}{% endif %}">{{ cat.icon }} {{ cat.name }}</option>
           {% endfor %}
         </select>
       </div>
