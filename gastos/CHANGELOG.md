@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+- Backup automático diario de la DB a las 03:00 ART vía Telegram (se envía gastos.db como documento a todos los usuarios configurados)
+- Endpoint `POST /admin/backup-now` para disparar el backup manualmente desde el dashboard
+- Endpoint `POST /admin/restore-db` para restaurar la DB subiendo un archivo (guarda backup .bak antes de sobreescribir)
+- Tarjeta de estado de backup en el dashboard: muestra "Último backup: hace X hs" y botón "Backup ahora"
+
 ## 1.4.1
 - Fix: filtro "Sin categoría" en Historial ahora trae los gastos sin categoría asignada
 - Favicon para el dashboard: ícono de ticket en color violeta

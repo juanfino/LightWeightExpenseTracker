@@ -66,13 +66,26 @@ def main():
     database.init_db(users)
     logger.info("Base de datos lista en %s", db_path)
 
-    # 4. Iniciar Flask en thread daemon
+    # 4. Configurar módulo de backup y programar envío diario
+    import backup as backup_module
+    backup_module.TELEGRAM_TOKEN = token
+    backup_module.USERS = users
+    backup_module.DB_PATH = db_path
+
+    from apscheduler.schedulers.background import BackgroundScheduler
+    scheduler = BackgroundScheduler()
+    # 03:00 ART = 06:00 UTC
+    scheduler.add_job(backup_module.send_db_backup, "cron", hour=6, minute=0)
+    scheduler.start()
+    logger.info("Scheduler de backup iniciado (03:00 ART diario)")
+
+    # 5. Iniciar Flask en thread daemon
     import dashboard
     dash_thread = threading.Thread(target=dashboard.run_dashboard, daemon=True, name="dashboard")
     dash_thread.start()
     logger.info("Dashboard iniciado en puerto 5000")
 
-    # 5. Iniciar bot Telegram (bloquea el hilo principal)
+    # 6. Iniciar bot Telegram (bloquea el hilo principal)
     import bot
     bot.TELEGRAM_TOKEN = token
     bot.USERS = users

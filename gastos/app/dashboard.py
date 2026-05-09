@@ -1,8 +1,10 @@
 import os
+import shutil
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, jsonify
 
 import db
+import backup as backup_module
 
 app = Flask(__name__)
 
@@ -271,6 +273,47 @@ def api_categories_delete():
     if ok:
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": err}), 409
+
+
+@app.route("/admin/restore-db", methods=["POST"])
+def admin_restore_db():
+    if "file" not in request.files:
+        return "Falta el campo 'file'", 400
+    f = request.files["file"]
+    if not f.filename:
+        return "Archivo vacío", 400
+    db_path = db.DB_PATH
+    bak_path = db_path + ".bak"
+    try:
+        shutil.copy2(db_path, bak_path)
+    except Exception as e:
+        return f"Error al crear backup: {e}", 500
+    try:
+        f.save(db_path)
+    except Exception as e:
+        return f"Error al guardar la DB: {e}", 500
+    return f"DB restaurada. Backup guardado en {bak_path}", 200
+
+
+@app.route("/admin/backup-now", methods=["POST"])
+def admin_backup_now():
+    ts = backup_module.send_db_backup()
+    if ts is None:
+        return jsonify({"success": False, "error": "Backup fallido — revisá los logs"}), 500
+    return jsonify({"success": True, "timestamp": ts})
+
+
+@app.route("/api/backup-status")
+def api_backup_status():
+    path = backup_module.LAST_BACKUP_PATH
+    if not os.path.exists(path):
+        return jsonify({"last_backup": None})
+    try:
+        with open(path) as f:
+            ts = f.read().strip()
+        return jsonify({"last_backup": ts})
+    except Exception:
+        return jsonify({"last_backup": None})
 
 
 def run_dashboard():
