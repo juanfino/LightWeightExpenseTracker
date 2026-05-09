@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1
+- Nueva página "Sistema" (`/config`) en la navegación con sección de base de datos
+- Tarjeta de backup: estado del último backup y botón "Backup ahora" con feedback visual
+- Tarjeta de restauración: pegar URL pública HTTPS de un `gastos.db`, guarda `.bak` y reinicia la app automáticamente
+- Endpoint `POST /admin/restore-db-url` reemplaza el anterior endpoint de upload de archivo
+- Eliminado endpoint `POST /admin/restore-db` (upload de archivo)
+
 ## 1.5.0
 - Backup automático diario de la DB a las 03:00 ART vía Telegram (se envía gastos.db como documento a todos los usuarios configurados)
 - Endpoint `POST /admin/backup-now` para disparar el backup manualmente desde el dashboard

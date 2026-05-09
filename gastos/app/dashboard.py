@@ -1,7 +1,12 @@
 import os
 import shutil
+import sys
+import threading
+import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, jsonify
+
+import requests as http_requests
 
 import db
 import backup as backup_module
@@ -275,24 +280,46 @@ def api_categories_delete():
     return jsonify({"ok": False, "error": err}), 409
 
 
-@app.route("/admin/restore-db", methods=["POST"])
-def admin_restore_db():
-    if "file" not in request.files:
-        return "Falta el campo 'file'", 400
-    f = request.files["file"]
-    if not f.filename:
-        return "Archivo vacío", 400
+@app.route("/config")
+def config_page():
+    return render_template("config.html")
+
+
+@app.route("/admin/restore-db-url", methods=["POST"])
+def admin_restore_db_url():
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url.startswith("https://"):
+        return jsonify({"success": False, "error": "La URL debe comenzar con https://"}), 400
+
     db_path = db.DB_PATH
     bak_path = db_path + ".bak"
+
     try:
         shutil.copy2(db_path, bak_path)
     except Exception as e:
-        return f"Error al crear backup: {e}", 500
+        return jsonify({"success": False, "error": f"Error al crear backup: {e}"}), 500
+
     try:
-        f.save(db_path)
+        resp = http_requests.get(url, stream=True, timeout=60)
+        resp.raise_for_status()
+        with open(db_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=65536):
+                f.write(chunk)
     except Exception as e:
-        return f"Error al guardar la DB: {e}", 500
-    return f"DB restaurada. Backup guardado en {bak_path}", 200
+        # Restore backup on failure
+        try:
+            shutil.copy2(bak_path, db_path)
+        except Exception:
+            pass
+        return jsonify({"success": False, "error": f"Error al descargar la DB: {e}"}), 500
+
+    def _restart():
+        time.sleep(0.5)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    threading.Thread(target=_restart, daemon=True).start()
+    return jsonify({"success": True})
 
 
 @app.route("/admin/backup-now", methods=["POST"])
