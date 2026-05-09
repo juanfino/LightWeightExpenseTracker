@@ -162,7 +162,10 @@ def api_expenses():
     result = [_row_to_dict(r) for r in rows]
 
     if category_id:
-        result = [r for r in result if str(r.get("category_id")) == str(category_id)]
+        if category_id == "null":
+            result = [r for r in result if r.get("category_id") is None]
+        else:
+            result = [r for r in result if str(r.get("category_id")) == str(category_id)]
     if user_id:
         result = [r for r in result if str(r.get("user_id")) == str(user_id)]
 
