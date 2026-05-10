@@ -1,7 +1,10 @@
 import sqlite3
 import os
+import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "/data/gastos.db")
 
@@ -60,8 +63,17 @@ def get_conn():
 def init_db(users: dict | None = None):
     """Crea tablas. Si la DB es nueva, ejecuta seed y crea los usuarios configurados."""
     is_new = not os.path.exists(DB_PATH)
-    with get_conn() as conn:
-        conn.executescript(SCHEMA)
+    try:
+        with get_conn() as conn:
+            conn.executescript(SCHEMA)
+    except sqlite3.DatabaseError:
+        logger.warning(
+            "DB corrupta en %s — eliminando y creando base de datos nueva.", DB_PATH
+        )
+        os.remove(DB_PATH)
+        is_new = True
+        with get_conn() as conn:
+            conn.executescript(SCHEMA)
     if is_new:
         import seed
         seed.run()
