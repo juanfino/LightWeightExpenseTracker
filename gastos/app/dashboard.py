@@ -307,12 +307,23 @@ def admin_restore_db_url():
             for chunk in resp.iter_content(chunk_size=65536):
                 f.write(chunk)
     except Exception as e:
-        # Restore backup on failure
         try:
             shutil.copy2(bak_path, db_path)
         except Exception:
             pass
         return jsonify({"success": False, "error": f"Error al descargar la DB: {e}"}), 500
+
+    # Validate SQLite magic header before restarting
+    try:
+        with open(db_path, "rb") as f:
+            header = f.read(16)
+    except Exception as e:
+        shutil.copy2(bak_path, db_path)
+        return jsonify({"success": False, "error": f"Error al leer el archivo descargado: {e}"}), 500
+
+    if header != b"SQLite format 3\x00":
+        shutil.copy2(bak_path, db_path)
+        return jsonify({"success": False, "error": "El archivo descargado no es una base de datos SQLite válida"}), 400
 
     def _restart():
         time.sleep(0.5)
