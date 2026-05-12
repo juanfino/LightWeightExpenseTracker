@@ -1127,8 +1127,10 @@
         ? `<span class="fijos-row-amount paid">${fmtAmount(r.actual_amount)}</span>`
         : `<span class="fijos-row-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
       const payBtn = r.paid ? '' :
-        `<button class="btn" style="font-size:11px;padding:4px 9px"
-           onclick="openDashPayModal(${r.id},'${r.concept.replace(/'/g,"\\'")}',${r.estimated_amount || 0},${year},${month})">Registrar</button>`;
+        `<button class="btn btn-primary" style="font-size:11px;padding:4px 9px"
+           onclick="openDashPayModal(${r.id},'${r.concept.replace(/'/g,"\\'")}',${r.estimated_amount || 0},${year},${month})">+ Registrar</button>
+         <button class="btn" style="font-size:11px;padding:4px 9px;color:var(--text2)"
+           onclick="dashMarkPaid(${r.id},${year},${month})">✓ Ya pagué</button>`;
       return `
         <div class="fijos-row">
           <span class="fijos-row-icon">${statusIcon}</span>
@@ -1146,6 +1148,17 @@
     document.getElementById('dash-pay-amount').value      = estimated || '';
     document.getElementById('dash-modal-pay').classList.add('open');
     document.getElementById('dash-pay-amount').focus();
+  }
+
+  async function dashMarkPaid(feId, year, month) {
+    const res  = await fetch('/api/fixed-expenses/mark-paid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_expense_id: feId, year, month }),
+    });
+    const data = await res.json();
+    if (data.ok) loadFijosWidget(year, month);
+    else alert('Error: ' + (data.error || 'desconocido'));
   }
 
   document.getElementById('dash-btn-pay-cancel').addEventListener('click', () => {

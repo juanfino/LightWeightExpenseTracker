@@ -386,6 +386,18 @@ def api_fixed_expenses_deactivate():
     return jsonify({"ok": True})
 
 
+@app.route("/api/fixed-expenses/mark-paid", methods=["POST"])
+def api_fixed_expenses_mark_paid():
+    data             = request.get_json(silent=True) or {}
+    fixed_expense_id = data.get("fixed_expense_id")
+    year             = data.get("year")
+    month            = data.get("month")
+    if not fixed_expense_id or not year or not month:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    db.create_fixed_payment_without_expense(int(fixed_expense_id), int(year), int(month))
+    return jsonify({"ok": True})
+
+
 @app.route("/api/fixed-expenses/pay", methods=["POST"])
 def api_fixed_expenses_pay():
     data             = request.get_json(silent=True) or {}

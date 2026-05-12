@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.1
+- Gastos Fijos: botón "Registrar pago" reemplazado por dos acciones distintas — "**+ Registrar pago**" (abre modal, crea gasto y marca como pagado) y "**✓ Ya lo pagué**" (marca como pagado sin crear gasto ni abrir modal)
+- Nuevo endpoint `POST /api/fixed-expenses/mark-paid` y función `db.create_fixed_payment_without_expense()`
+- `expense_id` en `fixed_expense_payments` ahora es nullable; migración automática para DBs existentes
+
 ## 1.6.0
 - **Gastos Fijos**: nueva funcionalidad completa para registrar y hacer seguimiento de gastos recurrentes
 - Dos tablas nuevas en la DB: `fixed_expenses` y `fixed_expense_payments` (con UNIQUE por fijo+mes)

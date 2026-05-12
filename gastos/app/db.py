@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS fixed_expenses (
 CREATE TABLE IF NOT EXISTS fixed_expense_payments (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     fixed_expense_id INTEGER NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
-    expense_id       INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+    expense_id       INTEGER REFERENCES expenses(id) ON DELETE SET NULL,
     year             INTEGER NOT NULL,
     month            INTEGER NOT NULL,
     created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
@@ -89,6 +89,31 @@ def _migrate_users_color():
             pass  # column already exists
 
 
+def _migrate_fixed_payment_nullable_expense():
+    """Rebuilds fixed_expense_payments to make expense_id nullable (v1.6.0 had it NOT NULL)."""
+    with get_conn() as conn:
+        info = conn.execute("PRAGMA table_info(fixed_expense_payments)").fetchall()
+        if not info:
+            return  # table doesn't exist yet; SCHEMA CREATE will handle it
+        for col in info:
+            if col["name"] == "expense_id" and col["notnull"] == 1:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS _fep_new (
+                        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                        fixed_expense_id INTEGER NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
+                        expense_id       INTEGER REFERENCES expenses(id) ON DELETE SET NULL,
+                        year             INTEGER NOT NULL,
+                        month            INTEGER NOT NULL,
+                        created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now')),
+                        UNIQUE(fixed_expense_id, year, month)
+                    );
+                    INSERT INTO _fep_new SELECT * FROM fixed_expense_payments;
+                    DROP TABLE fixed_expense_payments;
+                    ALTER TABLE _fep_new RENAME TO fixed_expense_payments;
+                """)
+                break
+
+
 def init_db(users: dict | None = None):
     """Crea tablas. Si la DB es nueva, ejecuta seed y crea los usuarios configurados."""
     is_new = not os.path.exists(DB_PATH)
@@ -104,6 +129,7 @@ def init_db(users: dict | None = None):
         with get_conn() as conn:
             conn.executescript(SCHEMA)
     _migrate_users_color()
+    _migrate_fixed_payment_nullable_expense()
     if is_new:
         import seed
         seed.run()
@@ -753,6 +779,7 @@ def get_fixed_payments_for_month(year: int, month: int) -> list[dict]:
                    COALESCE(c.name,  'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')        AS category_color,
                    COALESCE(c.icon,  '❓')              AS category_icon,
+                   fep.id         AS payment_id,
                    fep.expense_id AS payment_expense_id,
                    e.amount       AS actual_amount
             FROM fixed_expenses fe
@@ -769,7 +796,7 @@ def get_fixed_payments_for_month(year: int, month: int) -> list[dict]:
     result = []
     for r in rows:
         d = dict(r)
-        d["paid"] = d["payment_expense_id"] is not None
+        d["paid"] = d["payment_id"] is not None
         result.append(d)
     return result
 
@@ -780,6 +807,15 @@ def create_fixed_payment(fixed_expense_id: int, expense_id: int, year: int, mont
             "INSERT OR IGNORE INTO fixed_expense_payments (fixed_expense_id, expense_id, year, month)"
             " VALUES (?, ?, ?, ?)",
             (fixed_expense_id, expense_id, year, month),
+        )
+
+
+def create_fixed_payment_without_expense(fixed_expense_id: int, year: int, month: int):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO fixed_expense_payments (fixed_expense_id, expense_id, year, month)"
+            " VALUES (?, NULL, ?, ?)",
+            (fixed_expense_id, year, month),
         )
 
 

@@ -308,7 +308,8 @@
         ? `<span class="fixed-amount paid">${fmtAmount(r.actual_amount)}</span>`
         : `<span class="fixed-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
       const payBtn = r.paid ? '' :
-        `<button class="btn" style="font-size:12px;padding:5px 10px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">Registrar pago</button>`;
+        `<button class="btn btn-primary" style="font-size:12px;padding:5px 10px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Registrar pago</button>
+         <button class="btn" style="font-size:12px;padding:5px 10px;color:var(--text2)" onclick="markPaid(${r.id})">✓ Ya lo pagué</button>`;
       return `
         <div class="fixed-row">
           <span class="status-icon">${statusIcon}</span>
@@ -335,6 +336,17 @@
     document.getElementById('pay-amount').value       = estimated || '';
     document.getElementById('modal-pay').classList.add('open');
     document.getElementById('pay-amount').focus();
+  }
+
+  async function markPaid(feId) {
+    const res  = await fetch('/api/fixed-expenses/mark-paid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_expense_id: feId, year: selYear, month: selMonth }),
+    });
+    const data = await res.json();
+    if (data.ok) loadStatus();
+    else alert('Error: ' + (data.error || 'desconocido'));
   }
 
   document.getElementById('btn-pay-cancel').addEventListener('click', () => {
