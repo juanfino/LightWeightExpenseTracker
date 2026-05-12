@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.6
+- Historial: cabeceras de columna ordenables (Fecha, Concepto, Categoría, Monto, Usuario); orden por defecto: Fecha descendente
+- Configuración: cabeceras ordenables en tabla de categorías (Nombre, Gastos) y tabla de keywords (Keyword, Categoría)
+- Indicador visual ▲/▼ en la columna activa; ordenamiento client-side sin llamadas adicionales a la API
+
 ## 1.5.5
 - Historial: botón "Agregar gasto" abre un modal para crear gastos manualmente (concepto, monto, categoría, usuario, fecha)
 - Nuevo endpoint `POST /api/expenses/add` y `GET /api/categories` en el dashboard

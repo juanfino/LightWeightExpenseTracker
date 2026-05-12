@@ -3,6 +3,14 @@
 {% block nav_settings %}active{% endblock %}
 
 {% block extra_styles %}
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover { color: var(--text2); }
+th.sort-asc::after  { content: " ▲"; font-size: 9px; opacity: .7; }
+th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
+
 .color-dot {
   display: inline-block;
   width: 12px;
@@ -120,9 +128,9 @@ button[disabled] {
       <thead>
         <tr>
           <th>Icono</th>
-          <th>Nombre</th>
+          <th class="sortable" data-sort-cat="name">Nombre</th>
           <th>Color</th>
-          <th>Gastos</th>
+          <th class="sortable" data-sort-cat="expense_count">Gastos</th>
           <th></th>
         </tr>
       </thead>
@@ -159,14 +167,14 @@ button[disabled] {
     <table id="kw-table">
       <thead>
         <tr>
-          <th>Keyword</th>
-          <th>Categoría</th>
+          <th class="sortable" data-sort-kw="keyword">Keyword</th>
+          <th class="sortable" data-sort-kw="category">Categoría</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="kw-body">
         {% for kw in keywords %}
-        <tr id="kw-row-{{ kw.id }}">
+        <tr id="kw-row-{{ kw.id }}" data-keyword="{{ kw.keyword }}" data-category="{{ kw.category_name }}">
           <td class="mono">{{ kw.keyword }}</td>
           <td><span class="badge">{{ kw.category_name }}</span></td>
           <td>
@@ -448,6 +456,68 @@ button[disabled] {
     const n  = parseInt(el.textContent) + delta;
     el.textContent = `${n} keywords`;
   }
+
+  // ── Category sort ─────────────────────────────────────────────────────────────
+  let catSortCol = null;
+  let catSortDir = 1;
+
+  function sortAndRenderCategories() {
+    if (catSortCol) {
+      categories.sort(function(a, b) {
+        if (catSortCol === "expense_count") {
+          return catSortDir * ((a.expense_count || 0) - (b.expense_count || 0));
+        }
+        var av = (a[catSortCol] || "").toLowerCase();
+        var bv = (b[catSortCol] || "").toLowerCase();
+        return catSortDir * av.localeCompare(bv);
+      });
+    }
+    renderCategories();
+    document.querySelectorAll("th[data-sort-cat]").forEach(function(th) {
+      th.classList.remove("sort-asc", "sort-desc");
+      if (th.dataset.sortCat === catSortCol) {
+        th.classList.add(catSortDir === 1 ? "sort-asc" : "sort-desc");
+      }
+    });
+  }
+
+  document.querySelectorAll("th[data-sort-cat]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      var col = this.dataset.sortCat;
+      if (catSortCol === col) { catSortDir *= -1; } else { catSortCol = col; catSortDir = 1; }
+      sortAndRenderCategories();
+    });
+  });
+
+  // ── Keyword sort ──────────────────────────────────────────────────────────────
+  let kwSortCol = null;
+  let kwSortDir = 1;
+
+  function sortKeywords() {
+    if (!kwSortCol) return;
+    var tbody = document.getElementById("kw-body");
+    var rows  = Array.from(tbody.querySelectorAll("tr"));
+    rows.sort(function(a, b) {
+      var av = (a.dataset[kwSortCol] || "").toLowerCase();
+      var bv = (b.dataset[kwSortCol] || "").toLowerCase();
+      return kwSortDir * av.localeCompare(bv);
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+    document.querySelectorAll("th[data-sort-kw]").forEach(function(th) {
+      th.classList.remove("sort-asc", "sort-desc");
+      if (th.dataset.sortKw === kwSortCol) {
+        th.classList.add(kwSortDir === 1 ? "sort-asc" : "sort-desc");
+      }
+    });
+  }
+
+  document.querySelectorAll("th[data-sort-kw]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      var col = this.dataset.sortKw;
+      if (kwSortCol === col) { kwSortDir *= -1; } else { kwSortCol = col; kwSortDir = 1; }
+      sortKeywords();
+    });
+  });
 
   // ── Init ─────────────────────────────────────────────────────────────────────
   renderCategories();
