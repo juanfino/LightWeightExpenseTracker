@@ -265,6 +265,98 @@
   flex-shrink: 0;
 }
 
+/* ── Fijos widget ── */
+.fijos-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fijos-progress-bar-wrap {
+  height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.fijos-progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+  transition: width 0.4s ease;
+}
+
+.fijos-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fijos-row:last-child { border-bottom: none; }
+
+.fijos-row-icon {
+  font-size: 15px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.fijos-row-concept {
+  flex: 1;
+  font-size: 13px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fijos-row-amount {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fijos-row-amount.paid   { color: var(--green); }
+.fijos-row-amount.unpaid { color: var(--text2); }
+
+/* ── Pay modal (dashboard) ── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-title   { font-size: 16px; font-weight: 600; }
+.form-row      { display: flex; flex-direction: column; gap: 6px; }
+.form-label    { font-size: 12px; font-weight: 500; color: var(--text2); }
+.form-row input,
+.form-row select { width: 100%; }
+.modal-footer  { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
 /* ── Annual legend ── */
 .annual-legend {
   display: flex;
@@ -341,6 +433,19 @@
       </div>
     </div>
 
+    <!-- Fijos del mes widget -->
+    <div class="card mt-24" id="fijos-widget" style="display:none">
+      <div class="fijos-widget-header">
+        <div class="section-title">📌 Fijos del mes</div>
+        <a href="/fijos" style="font-size:12px; color:var(--text2)">Ver todo →</a>
+      </div>
+      <div id="fijos-progress-summary" style="font-size:12px; color:var(--text2); margin-bottom:8px"></div>
+      <div class="fijos-progress-bar-wrap">
+        <div class="fijos-progress-bar" id="fijos-progress-bar" style="width:0%"></div>
+      </div>
+      <div id="fijos-list"></div>
+    </div>
+
     <!-- Charts -->
     <div class="charts-grid mt-24">
       <div class="card">
@@ -371,6 +476,25 @@
     </div>
 
   </div><!-- /#monthly-section -->
+
+  <!-- ── Pay modal ─────────────────────────────────────────────────────── -->
+  <div class="modal-backdrop" id="dash-modal-pay">
+    <div class="modal">
+      <div class="modal-title" id="dash-pay-title">Registrar pago</div>
+      <div class="form-row">
+        <label class="form-label">Monto pagado</label>
+        <input type="number" id="dash-pay-amount" placeholder="Ej: 150000" min="1" step="any">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Usuario</label>
+        <select id="dash-pay-user"></select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="dash-btn-pay-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="dash-btn-pay-save">Guardar</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Annual section ────────────────────────────────────────────────── -->
   <div id="annual-section" style="display:none">
@@ -577,6 +701,8 @@
       fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
       fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
     ]);
+
+    loadFijosWidget(currentYear, currentMonth);
 
     currentExpenses = Array.isArray(expenses) ? expenses : [];
 
@@ -954,6 +1080,100 @@
       },
     });
   }
+
+  // ── Fijos del mes widget ───────────────────────────────────────────────────
+  let dashPayFixedId  = null;
+  let dashPayUsers    = [];
+
+  (async function initDashPayUsers() {
+    try {
+      const res = await fetch('/api/users');
+      dashPayUsers = await res.json();
+      const sel = document.getElementById('dash-pay-user');
+      sel.innerHTML = dashPayUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+    } catch(e) {}
+  })();
+
+  async function loadFijosWidget(year, month) {
+    try {
+      const res  = await fetch(`/api/fixed-expenses/status?year=${year}&month=${month}`);
+      const rows = await res.json();
+      renderFijosWidget(rows, year, month);
+    } catch(e) {
+      document.getElementById('fijos-widget').style.display = 'none';
+    }
+  }
+
+  function renderFijosWidget(rows, year, month) {
+    const widget = document.getElementById('fijos-widget');
+    if (!rows || !rows.length) { widget.style.display = 'none'; return; }
+
+    widget.style.display = '';
+    const countPaid  = rows.filter(r => r.paid).length;
+    const total      = rows.length;
+    const totalEst   = rows.reduce((s, r) => s + (r.estimated_amount || 0), 0);
+    const totalPaid  = rows.filter(r => r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0);
+    const pct        = total > 0 ? Math.round(countPaid / total * 100) : 0;
+
+    document.getElementById('fijos-progress-bar').style.width = pct + '%';
+
+    let summary = `${countPaid} de ${total} pagados`;
+    if (totalEst) summary += ` &nbsp;·&nbsp; ${fmtAmount(totalPaid)} de ~${fmtAmount(totalEst)} estimado`;
+    document.getElementById('fijos-progress-summary').innerHTML = summary;
+
+    document.getElementById('fijos-list').innerHTML = rows.map(r => {
+      const statusIcon = r.paid ? '✅' : '⬜';
+      const amountHtml = r.paid
+        ? `<span class="fijos-row-amount paid">${fmtAmount(r.actual_amount)}</span>`
+        : `<span class="fijos-row-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
+      const payBtn = r.paid ? '' :
+        `<button class="btn" style="font-size:11px;padding:4px 9px"
+           onclick="openDashPayModal(${r.id},'${r.concept.replace(/'/g,"\\'")}',${r.estimated_amount || 0},${year},${month})">Registrar</button>`;
+      return `
+        <div class="fijos-row">
+          <span class="fijos-row-icon">${statusIcon}</span>
+          <span class="fijos-row-concept">${r.concept}</span>
+          ${amountHtml}
+          ${payBtn}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openDashPayModal(feId, concept, estimated, year, month) {
+    dashPayFixedId = { feId, year, month };
+    document.getElementById('dash-pay-title').textContent = `Registrar pago: ${concept}`;
+    document.getElementById('dash-pay-amount').value      = estimated || '';
+    document.getElementById('dash-modal-pay').classList.add('open');
+    document.getElementById('dash-pay-amount').focus();
+  }
+
+  document.getElementById('dash-btn-pay-cancel').addEventListener('click', () => {
+    document.getElementById('dash-modal-pay').classList.remove('open');
+  });
+
+  document.getElementById('dash-modal-pay').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('open');
+  });
+
+  document.getElementById('dash-btn-pay-save').addEventListener('click', async () => {
+    const amount = parseFloat(document.getElementById('dash-pay-amount').value);
+    const userId = document.getElementById('dash-pay-user').value;
+    if (!amount || amount <= 0) { alert('Ingresá un monto válido.'); return; }
+    const { feId, year, month } = dashPayFixedId;
+    const res  = await fetch('/api/fixed-expenses/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_expense_id: feId, amount, year, month, user_id: userId }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('dash-modal-pay').classList.remove('open');
+      loadFijosWidget(year, month);
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  });
 
   // ── Init ───────────────────────────────────────────────────────────────────
   loadAll();

@@ -43,6 +43,25 @@ CREATE TABLE IF NOT EXISTS expenses (
     FOREIGN KEY (user_id)     REFERENCES users(id),
     FOREIGN KEY (category_id) REFERENCES categories(id)
 );
+
+CREATE TABLE IF NOT EXISTS fixed_expenses (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept          TEXT    NOT NULL,
+    estimated_amount REAL,
+    category_id      INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    active           INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS fixed_expense_payments (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    fixed_expense_id INTEGER NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
+    expense_id       INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+    year             INTEGER NOT NULL,
+    month            INTEGER NOT NULL,
+    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    UNIQUE(fixed_expense_id, year, month)
+);
 """
 
 
@@ -668,3 +687,111 @@ def delete_keyword(keyword_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
         return cur.rowcount > 0
+
+
+# ── Gastos Fijos ──────────────────────────────────────────────────────────────
+
+def get_all_fixed_expenses():
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+                   COALESCE(c.name,  'Sin categoría') AS category_name,
+                   COALESCE(c.color, '#6b7280')        AS category_color,
+                   COALESCE(c.icon,  '❓')              AS category_icon
+            FROM fixed_expenses fe
+            LEFT JOIN categories c ON c.id = fe.category_id
+            WHERE fe.active = 1
+            ORDER BY fe.concept
+            """
+        ).fetchall()
+
+
+def get_fixed_expense_by_id(fe_id: int):
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+                   COALESCE(c.name,  'Sin categoría') AS category_name,
+                   COALESCE(c.color, '#6b7280')        AS category_color,
+                   COALESCE(c.icon,  '❓')              AS category_icon
+            FROM fixed_expenses fe
+            LEFT JOIN categories c ON c.id = fe.category_id
+            WHERE fe.id = ?
+            """,
+            (fe_id,),
+        ).fetchone()
+
+
+def create_fixed_expense(concept: str, estimated_amount: float | None, category_id: int | None) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO fixed_expenses (concept, estimated_amount, category_id) VALUES (?, ?, ?)",
+            (concept.strip(), estimated_amount, category_id),
+        )
+        return cur.lastrowid
+
+
+def update_fixed_expense(fe_id: int, concept: str, estimated_amount: float | None, category_id: int | None):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE fixed_expenses SET concept=?, estimated_amount=?, category_id=? WHERE id=?",
+            (concept.strip(), estimated_amount, category_id, fe_id),
+        )
+
+
+def deactivate_fixed_expense(fe_id: int):
+    with get_conn() as conn:
+        conn.execute("UPDATE fixed_expenses SET active=0 WHERE id=?", (fe_id,))
+
+
+def get_fixed_payments_for_month(year: int, month: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+                   COALESCE(c.name,  'Sin categoría') AS category_name,
+                   COALESCE(c.color, '#6b7280')        AS category_color,
+                   COALESCE(c.icon,  '❓')              AS category_icon,
+                   fep.expense_id AS payment_expense_id,
+                   e.amount       AS actual_amount
+            FROM fixed_expenses fe
+            LEFT JOIN categories c ON c.id = fe.category_id
+            LEFT JOIN fixed_expense_payments fep
+                ON fep.fixed_expense_id = fe.id AND fep.year = ? AND fep.month = ?
+            LEFT JOIN expenses e ON e.id = fep.expense_id
+            WHERE fe.active = 1
+            ORDER BY fe.concept
+            """,
+            (year, month),
+        ).fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["paid"] = d["payment_expense_id"] is not None
+        result.append(d)
+    return result
+
+
+def create_fixed_payment(fixed_expense_id: int, expense_id: int, year: int, month: int):
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO fixed_expense_payments (fixed_expense_id, expense_id, year, month)"
+            " VALUES (?, ?, ?, ?)",
+            (fixed_expense_id, expense_id, year, month),
+        )
+
+
+def get_fixed_expense_monthly_summary(year: int, month: int) -> dict:
+    rows = get_fixed_payments_for_month(year, month)
+    count_total     = len(rows)
+    count_paid      = sum(1 for r in rows if r["paid"])
+    total_estimated = sum(r["estimated_amount"] or 0 for r in rows)
+    total_paid      = sum(r["actual_amount"] or 0 for r in rows if r["paid"])
+    return {
+        "count_total":     count_total,
+        "count_paid":      count_paid,
+        "total_estimated": total_estimated,
+        "total_paid":      total_paid,
+    }
