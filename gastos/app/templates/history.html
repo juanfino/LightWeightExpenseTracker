@@ -3,6 +3,14 @@
 {% block nav_history %}active{% endblock %}
 
 {% block extra_styles %}
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover { color: var(--text2); }
+th.sort-asc::after  { content: " ▲"; font-size: 9px; opacity: .7; }
+th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
+
 .filters {
   display: flex;
   flex-wrap: wrap;
@@ -101,11 +109,11 @@
         <thead>
           <tr>
             <th>ID</th>
-            <th>Fecha</th>
-            <th>Concepto</th>
-            <th>Categoría</th>
-            <th>Monto</th>
-            <th>Usuario</th>
+            <th class="sortable" data-sort="created_at">Fecha</th>
+            <th class="sortable" data-sort="concept">Concepto</th>
+            <th class="sortable" data-sort="category_name">Categoría</th>
+            <th class="sortable" data-sort="amount">Monto</th>
+            <th class="sortable" data-sort="user_name">Usuario</th>
             <th></th>
           </tr>
         </thead>
@@ -190,6 +198,43 @@
   let allExpenses = [];
   let page        = 0;
   const categories = JSON.parse(document.getElementById("cat-data").textContent);
+
+  // ── Sorting ────────────────────────────────────────────────────────────────
+  let sortCol = "created_at";
+  let sortDir = -1; // -1 = desc, 1 = asc
+
+  function sortExpenses() {
+    allExpenses.sort(function(a, b) {
+      var av = a[sortCol];
+      var bv = b[sortCol];
+      if (sortCol === "amount") {
+        return sortDir * ((av || 0) - (bv || 0));
+      }
+      av = (av || "").toLowerCase();
+      bv = (bv || "").toLowerCase();
+      return sortDir * av.localeCompare(bv);
+    });
+  }
+
+  function updateSortHeaders() {
+    document.querySelectorAll("th[data-sort]").forEach(function(th) {
+      th.classList.remove("sort-asc", "sort-desc");
+      if (th.dataset.sort === sortCol) {
+        th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
+      }
+    });
+  }
+
+  document.querySelectorAll("th[data-sort]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      var col = this.dataset.sort;
+      if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
+      sortExpenses();
+      page = 0;
+      render();
+      updateSortHeaders();
+    });
+  });
 
   // ── Formateo ───────────────────────────────────────────────────────────────
   function fmtAmount(n) {
@@ -348,8 +393,10 @@
 
     const data = await fetch(url).then(function(r) { return r.json(); });
     allExpenses = Array.isArray(data) ? data : [];
+    sortExpenses();
     page = 0;
     render();
+    updateSortHeaders();
   }
 
   // ── Pagination ─────────────────────────────────────────────────────────────
