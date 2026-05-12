@@ -1,7 +1,4 @@
-import sqlite3
-import os
-
-DB_PATH = os.environ.get("DB_PATH", "/data/gastos.db")
+import db
 
 DEFAULT_CATEGORIES = [
     {"name": "Alimentación",    "color": "#22c55e", "icon": "🛒"},
@@ -33,16 +30,14 @@ DEFAULT_KEYWORDS = {
 
 
 def run():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
+    with db.get_conn() as conn:
         for cat in DEFAULT_CATEGORIES:
             conn.execute(
                 "INSERT OR IGNORE INTO categories (name, color, icon) VALUES (?, ?, ?)",
                 (cat["name"], cat["color"], cat["icon"]),
             )
-        conn.commit()
 
+    with db.get_conn() as conn:
         for cat_name, keywords in DEFAULT_KEYWORDS.items():
             row = conn.execute(
                 "SELECT id FROM categories WHERE name = ?", (cat_name,)
@@ -55,6 +50,3 @@ def run():
                     "INSERT OR IGNORE INTO keywords (keyword, category_id) VALUES (?, ?)",
                     (kw, cat_id),
                 )
-        conn.commit()
-    finally:
-        conn.close()

@@ -124,7 +124,7 @@ def api_monthly():
 
 @app.route("/api/users")
 def api_users():
-    return jsonify([{"id": u["id"], "name": u["name"]} for u in db.get_all_users()])
+    return jsonify([{"id": u["id"], "name": u["name"], "color": u["color"]} for u in db.get_all_users()])
 
 
 @app.route("/api/annual/<int:year>")
@@ -141,6 +141,8 @@ def api_sparklines():
 
 @app.route("/api/weekly")
 def api_weekly():
+    # Standalone API endpoint — not surfaced in the dashboard UI.
+    # Accepts ?year=YYYY&week=N (ISO week number) and returns that week's expenses.
     try:
         year = int(request.args.get("year", datetime.now().year))
         week = int(request.args.get("week", datetime.now().isocalendar().week))

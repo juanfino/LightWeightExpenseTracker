@@ -394,6 +394,7 @@
     });
 
     window.activeUserName = null;
+    window.userColors = {};
 
     (async function initUserChips() {
       let users = [];
@@ -405,16 +406,16 @@
       const container = document.getElementById('user-chips');
       const avatarEl  = document.getElementById('user-avatar');
 
-      function isAlt(name) {
-        return name && name.toLowerCase().includes('cele');
-      }
+      // Populate global color lookup for page-specific scripts (e.g. chart colors)
+      users.forEach(function(u) { window.userColors[u.name] = u.color || 'var(--accent)'; });
 
       function renderChips() {
         let html = '<button class="user-chip ' + (window.activeUserName === null ? 'active-all' : '') + '" data-user="">Todos</button>';
         users.forEach(function(u) {
           const active = window.activeUserName === u.name;
-          const cls = active ? (isAlt(u.name) ? 'active-alt' : 'active-main') : '';
-          html += '<button class="user-chip ' + cls + '" data-user="' + u.name + '">' + u.name + '</button>';
+          const color  = u.color || 'var(--accent)';
+          const style  = active ? ' style="background:' + color + ';color:#fff;border-color:transparent"' : '';
+          html += '<button class="user-chip" data-user="' + u.name + '"' + style + '>' + u.name + '</button>';
         });
         container.innerHTML = html;
 
@@ -422,8 +423,9 @@
           avatarEl.textContent = 'T';
           avatarEl.style.background = 'var(--accent)';
         } else {
+          const activeUser = users.find(function(u) { return u.name === window.activeUserName; });
           avatarEl.textContent = window.activeUserName.charAt(0).toUpperCase();
-          avatarEl.style.background = isAlt(window.activeUserName) ? 'var(--green)' : 'var(--accent)';
+          avatarEl.style.background = (activeUser && activeUser.color) ? activeUser.color : 'var(--accent)';
         }
 
         container.querySelectorAll('.user-chip').forEach(function(btn) {
