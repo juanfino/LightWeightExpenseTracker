@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.5
+- Historial: botón "Agregar gasto" abre un modal para crear gastos manualmente (concepto, monto, categoría, usuario, fecha)
+- Nuevo endpoint `POST /api/expenses/add` y `GET /api/categories` en el dashboard
+- Nueva función `db.create_expense_full()` que acepta fecha explícita en lugar de usar la hora actual
+- Backup diario cambiado de las 03:00 ART a las 21:00 ART (00:00 UTC)
+
 ## 1.5.4
 - Pinned `anthropic==0.101.0` en requirements.txt
 - Columna `color` (TEXT, default `#6366f1`) agregada a la tabla `users`; migración automática para DBs existentes via `ALTER TABLE`

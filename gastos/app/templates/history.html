@@ -50,6 +50,11 @@
 {% block content %}
 <div class="container">
 
+  <!-- Add expense button -->
+  <div style="display:flex; justify-content:flex-end; margin-bottom:16px">
+    <button class="btn btn-primary" id="btn-add-expense">+ Agregar gasto</button>
+  </div>
+
   <!-- Filters -->
   <div class="card">
     <div class="section-title" style="margin-bottom:16px">Filtros</div>
@@ -128,6 +133,51 @@
     <div style="display:flex; gap:10px; justify-content:flex-end">
       <button class="btn" id="modal-cancel">Cancelar</button>
       <button class="btn btn-danger" id="modal-confirm">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add expense modal -->
+<div id="add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+     align-items:center; justify-content:center; z-index:100;">
+  <div class="card" style="max-width:440px; width:90%">
+    <div class="section-title" style="margin-bottom:20px">Agregar gasto</div>
+    <div style="display:flex; flex-direction:column; gap:14px">
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-concept">Concepto</label>
+        <input id="add-concept" type="text" placeholder="Ej: Supermercado" style="width:100%">
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-amount">Monto</label>
+        <input id="add-amount" type="number" placeholder="0" min="0.01" step="0.01"
+               style="width:100%; font-family:var(--font-mono)">
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-category">Categoría</label>
+        <select id="add-category" style="width:100%">
+          <option value="">Sin categoría</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-user">Usuario</label>
+        <select id="add-user" style="width:100%"></select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-date">Fecha</label>
+        <input id="add-date" type="date" style="width:100%">
+      </div>
+
+      <span id="add-error" style="font-size:12px; color:var(--danger); display:none"></span>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:4px">
+        <button class="btn" id="add-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="add-confirm">Guardar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -341,6 +391,84 @@
     pendingDeleteId = null;
     if (res.ok) loadExpenses();
     else alert("Error al eliminar el gasto.");
+  });
+
+  // ── Add expense modal ──────────────────────────────────────────────────────
+  async function openAddModal() {
+    const errEl = document.getElementById("add-error");
+    errEl.style.display = "none";
+    document.getElementById("add-concept").value = "";
+    document.getElementById("add-amount").value  = "";
+
+    const today = new Date();
+    const pad = function(n) { return String(n).padStart(2, "0"); };
+    document.getElementById("add-date").value =
+      today.getFullYear() + "-" + pad(today.getMonth() + 1) + "-" + pad(today.getDate());
+
+    const catSel  = document.getElementById("add-category");
+    const userSel = document.getElementById("add-user");
+
+    const [cats, users] = await Promise.all([
+      fetch("/api/categories").then(function(r) { return r.json(); }),
+      fetch("/api/users").then(function(r) { return r.json(); }),
+    ]);
+
+    catSel.innerHTML = '<option value="">Sin categoría</option>';
+    cats.forEach(function(c) {
+      const opt = document.createElement("option");
+      opt.value       = c.id;
+      opt.textContent = c.icon + " " + c.name;
+      catSel.appendChild(opt);
+    });
+
+    userSel.innerHTML = "";
+    users.forEach(function(u) {
+      const opt = document.createElement("option");
+      opt.value       = u.id;
+      opt.textContent = u.name;
+      userSel.appendChild(opt);
+    });
+
+    document.getElementById("add-modal").style.display = "flex";
+    document.getElementById("add-concept").focus();
+  }
+
+  document.getElementById("btn-add-expense").addEventListener("click", openAddModal);
+
+  document.getElementById("add-cancel").addEventListener("click", function() {
+    document.getElementById("add-modal").style.display = "none";
+  });
+
+  document.getElementById("add-confirm").addEventListener("click", async function() {
+    const concept  = document.getElementById("add-concept").value.trim();
+    const amount   = parseFloat(document.getElementById("add-amount").value);
+    const catId    = document.getElementById("add-category").value || null;
+    const userId   = document.getElementById("add-user").value;
+    const date     = document.getElementById("add-date").value;
+    const errEl    = document.getElementById("add-error");
+
+    errEl.style.display = "none";
+
+    if (!concept)                   { errEl.textContent = "El concepto es obligatorio."; errEl.style.display = "inline"; return; }
+    if (isNaN(amount) || amount <= 0) { errEl.textContent = "Ingresá un monto válido."; errEl.style.display = "inline"; return; }
+    if (!userId)                    { errEl.textContent = "Seleccioná un usuario."; errEl.style.display = "inline"; return; }
+    if (!date)                      { errEl.textContent = "Seleccioná una fecha."; errEl.style.display = "inline"; return; }
+
+    const res = await fetch("/api/expenses/add", {
+      method:  "POST",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({concept, amount, category_id: catId, user_id: userId, date}),
+    });
+    const data = await res.json().catch(function() { return {}; });
+
+    if (!data.ok) {
+      errEl.textContent = data.error || "Error al guardar.";
+      errEl.style.display = "inline";
+      return;
+    }
+
+    document.getElementById("add-modal").style.display = "none";
+    loadExpenses();
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────

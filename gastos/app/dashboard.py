@@ -181,6 +181,40 @@ def api_expenses():
     return jsonify(result)
 
 
+@app.route("/api/categories")
+def api_categories():
+    return jsonify([dict(c) for c in db.get_all_categories()])
+
+
+@app.route("/api/expenses/add", methods=["POST"])
+def api_expenses_add():
+    data        = request.get_json(silent=True) or {}
+    concept     = (data.get("concept") or "").strip()
+    amount      = data.get("amount")
+    category_id = data.get("category_id")
+    user_id     = data.get("user_id")
+    date_str    = (data.get("date") or "").strip()
+
+    if not concept or amount is None or not user_id or not date_str:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Monto inválido"}), 400
+
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"ok": False, "error": "Fecha inválida"}), 400
+
+    cat_id = int(category_id) if category_id else None
+    expense_id = db.create_expense_full(int(user_id), cat_id, concept, amount, date_str)
+    return jsonify({"ok": True, "id": expense_id})
+
+
 @app.route("/api/expenses/delete", methods=["POST"])
 def api_expenses_delete():
     data = request.get_json(silent=True) or {}
