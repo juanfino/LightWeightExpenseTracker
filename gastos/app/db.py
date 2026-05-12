@@ -125,6 +125,19 @@ def create_expense(user_id: int, category_id: int | None, concept: str, amount: 
         return cur.lastrowid
 
 
+def create_expense_full(user_id: int, category_id: int | None, concept: str, amount: float, date_str: str) -> int:
+    """Like create_expense but accepts an explicit date (YYYY-MM-DD in ART/UTC-3).
+    Stores as 03:00 UTC (= midnight ART) so date queries using '-3 hours' return the correct day."""
+    created_at = f"{date_str} 03:00:00"
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO expenses (user_id, category_id, concept, amount, raw_text, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, category_id, concept.strip(), amount, concept.strip(), created_at),
+        )
+        return cur.lastrowid
+
+
 def delete_expense(expense_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
