@@ -1,14 +1,17 @@
 # Changelog
 
 ## 1.5.6
+- **Gastos Fijos**: nueva funcionalidad completa para registrar y hacer seguimiento de gastos recurrentes
+- Dos tablas nuevas en la DB: `fixed_expenses` y `fixed_expense_payments` (con UNIQUE por fijo+mes)
+- Bot: al registrar un gasto, detecta automáticamente si coincide con un gasto fijo (matching por palabras ≥3 chars); ofrece registrarlo como fijo o normal con botones inline
+- Bot: comando `/fijos` muestra el estado del mes con ✅/⬜ por ítem y botones "Registrar pago" para los pendientes
+- Dashboard: nueva página `/fijos` con dos secciones — estado del mes con selector de período y tabla de administración (agregar, editar, desactivar)
+- Dashboard: widget "Fijos del mes" en el dashboard principal con barra de progreso, lista de items y botón de pago rápido
+- Dashboard: 6 endpoints nuevos — `GET /api/fixed-expenses`, `GET /api/fixed-expenses/status`, `POST /api/fixed-expenses/add`, `POST /api/fixed-expenses/update`, `POST /api/fixed-expenses/deactivate`, `POST /api/fixed-expenses/pay`
+- Navegación: "Fijos" agregado entre "Historial" y "Categorías" en el topbar
 - Historial: cabeceras de columna ordenables (Fecha, Concepto, Categoría, Monto, Usuario); orden por defecto: Fecha descendente
 - Configuración: cabeceras ordenables en tabla de categorías (Nombre, Gastos) y tabla de keywords (Keyword, Categoría)
-- Indicador visual ▲/▼ en la columna activa; ordenamiento client-side sin llamadas adicionales a la API
-
-## 1.5.5
 - Historial: botón "Agregar gasto" abre un modal para crear gastos manualmente (concepto, monto, categoría, usuario, fecha)
-- Nuevo endpoint `POST /api/expenses/add` y `GET /api/categories` en el dashboard
-- Nueva función `db.create_expense_full()` que acepta fecha explícita en lugar de usar la hora actual
 - Backup diario cambiado de las 03:00 ART a las 21:00 ART (00:00 UTC)
 
 ## 1.5.4

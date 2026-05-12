@@ -316,9 +316,109 @@ def api_categories_delete():
     return jsonify({"ok": False, "error": err}), 409
 
 
+@app.route("/fijos")
+def fijos_page():
+    return render_template("fijos.html")
+
+
 @app.route("/config")
 def config_page():
     return render_template("config.html")
+
+
+@app.route("/api/fixed-expenses")
+def api_fixed_expenses():
+    return jsonify([dict(fe) for fe in db.get_all_fixed_expenses()])
+
+
+@app.route("/api/fixed-expenses/status")
+def api_fixed_expenses_status():
+    try:
+        year  = int(request.args.get("year",  datetime.now().year))
+        month = int(request.args.get("month", datetime.now().month))
+    except ValueError:
+        return jsonify({"error": "Parámetros inválidos"}), 400
+    return jsonify(db.get_fixed_payments_for_month(year, month))
+
+
+@app.route("/api/fixed-expenses/add", methods=["POST"])
+def api_fixed_expenses_add():
+    data             = request.get_json(silent=True) or {}
+    concept          = (data.get("concept") or "").strip()
+    estimated_amount = data.get("estimated_amount")
+    category_id      = data.get("category_id")
+    if not concept:
+        return jsonify({"ok": False, "error": "El concepto es obligatorio"}), 400
+    try:
+        estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Monto inválido"}), 400
+    cat_id = int(category_id) if category_id else None
+    fe_id  = db.create_fixed_expense(concept, estimated_amount, cat_id)
+    return jsonify({"ok": True, "id": fe_id})
+
+
+@app.route("/api/fixed-expenses/update", methods=["POST"])
+def api_fixed_expenses_update():
+    data             = request.get_json(silent=True) or {}
+    fe_id            = data.get("id")
+    concept          = (data.get("concept") or "").strip()
+    estimated_amount = data.get("estimated_amount")
+    category_id      = data.get("category_id")
+    if not fe_id or not concept:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    try:
+        estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Monto inválido"}), 400
+    cat_id = int(category_id) if category_id else None
+    db.update_fixed_expense(int(fe_id), concept, estimated_amount, cat_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fixed-expenses/deactivate", methods=["POST"])
+def api_fixed_expenses_deactivate():
+    data  = request.get_json(silent=True) or {}
+    fe_id = data.get("id")
+    if not fe_id:
+        return jsonify({"ok": False, "error": "Falta el campo 'id'"}), 400
+    db.deactivate_fixed_expense(int(fe_id))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fixed-expenses/pay", methods=["POST"])
+def api_fixed_expenses_pay():
+    data             = request.get_json(silent=True) or {}
+    fixed_expense_id = data.get("fixed_expense_id")
+    amount           = data.get("amount")
+    year             = data.get("year")
+    month            = data.get("month")
+    user_id          = data.get("user_id")
+
+    if not fixed_expense_id or amount is None or not year or not month:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Monto inválido"}), 400
+
+    fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
+    if not fe:
+        return jsonify({"ok": False, "error": "Gasto fijo no encontrado"}), 404
+
+    if not user_id:
+        users = db.get_all_users()
+        if not users:
+            return jsonify({"ok": False, "error": "No hay usuarios configurados"}), 400
+        user_id = users[0]["id"]
+
+    y, m   = int(year), int(month)
+    date_str = f"{y}-{m:02d}-15"
+    expense_id = db.create_expense_full(int(user_id), fe["category_id"], fe["concept"], amount, date_str)
+    db.create_fixed_payment(int(fixed_expense_id), expense_id, y, m)
+    return jsonify({"ok": True, "expense_id": expense_id})
 
 
 @app.route("/admin/restore-db-url", methods=["POST"])

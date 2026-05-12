@@ -1,5 +1,7 @@
 import logging
 import os
+import re
+from datetime import datetime, timezone, timedelta
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -12,11 +14,19 @@ import ocr as ocr_module
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+BAIRES = timezone(timedelta(hours=-3))
+
+MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
 # Gastos pendientes de confirmación tras OCR, keyed por chat_id
 pending_ocr: dict[int, dict] = {}
 # Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
 pending_amount_edit: dict[int, int] = {}
+# Gasto parseado esperando confirmación de match con gasto fijo
+pending_fixed_match: dict[int, dict] = {}
+# Monto pendiente para registrar un gasto fijo directamente desde /fijos
+pending_fixed_direct: dict[int, dict] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -87,6 +97,18 @@ def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")
     ]])
+
+
+# ── Gastos fijos — helpers ────────────────────────────────────────────────────
+
+def _concept_words(concept: str) -> set[str]:
+    """Words of 3+ chars from a concept, lowercased, punctuation stripped."""
+    return {w for w in re.sub(r'[^\w\s]', '', concept.lower()).split() if len(w) >= 3}
+
+
+def _find_fixed_matches(concept: str, fixed_expenses) -> list:
+    words = _concept_words(concept)
+    return [fe for fe in fixed_expenses if words & _concept_words(fe["concept"])]
 
 
 # ── Guard de usuario ──────────────────────────────────────────────────────────
@@ -171,6 +193,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text.strip()
 
+    if chat_id in pending_fixed_direct:
+        fdata = pending_fixed_direct.pop(chat_id)
+        amount = msg_parser._normalize_amount(text)
+        if amount is None:
+            pending_fixed_direct[chat_id] = fdata
+            await update.message.reply_text(
+                "❌ Monto inválido. Ejemplos: <code>15000</code>, <code>2500,50</code>",
+                parse_mode="HTML",
+            )
+            return
+        fe = db.get_fixed_expense_by_id(fdata["fixed_expense_id"])
+        now = datetime.now(BAIRES)
+        date_str = now.strftime("%Y-%m-%d")
+        category_id = fe["category_id"] if fe else None
+        expense_id = db.create_expense_full(user["id"], category_id, fdata["concept"], amount, date_str)
+        db.create_fixed_payment(fdata["fixed_expense_id"], expense_id, now.year, now.month)
+        cat = db.get_category_by_id(category_id) if category_id else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+        await update.message.reply_text(
+            f"✅ <b>Gasto fijo registrado</b>\n"
+            f"📋 {fdata['concept']}\n"
+            f"💰 {fmt_amount(amount)}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=_build_edit_only_keyboard(expense_id),
+        )
+        return
+
     if chat_id in pending_amount_edit:
         expense_id = pending_amount_edit.pop(chat_id)
         amount = msg_parser._normalize_amount(text)
@@ -239,6 +292,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    # Abandon any stale pending_fixed_match if the user sends a new message
+    pending_fixed_match.pop(chat_id, None)
+
     parsed = msg_parser.parse_message(text)
 
     if parsed is None:
@@ -255,7 +311,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords = db.get_all_keywords()
     category_id = categorizer.categorize(parsed["concept"], keywords)
 
-    # Resolve category name for reply
+    # Check for fixed expense matches before saving
+    fixed_expenses = db.get_all_fixed_expenses()
+    matches = _find_fixed_matches(parsed["concept"], fixed_expenses)
+
+    if matches:
+        pending_fixed_match[chat_id] = {
+            "concept":     parsed["concept"],
+            "amount":      parsed["amount"],
+            "category_id": category_id,
+            "raw_text":    text,
+        }
+        if len(matches) == 1:
+            fe = matches[0]
+            est_str = fmt_amount(fe["estimated_amount"]) if fe["estimated_amount"] else "sin estimado"
+            msg = (
+                f"💡 '<b>{parsed['concept']}</b>' coincide con tu gasto fijo "
+                f"<b>{fe['concept']}</b> ({est_str}). ¿Cómo querés registrarlo?"
+            )
+            buttons = [[
+                InlineKeyboardButton("✅ Como gasto fijo",    callback_data=f"fix:confirm:{fe['id']}"),
+                InlineKeyboardButton("📝 Registrar normal",  callback_data="fix:normal"),
+            ]]
+        else:
+            msg = f"💡 '<b>{parsed['concept']}</b>' coincide con varios gastos fijos. ¿Cuál es?"
+            buttons = []
+            for fe in matches:
+                est_str = fmt_amount(fe["estimated_amount"]) if fe["estimated_amount"] else "sin est."
+                buttons.append([InlineKeyboardButton(
+                    f"✅ {fe['concept']} ({est_str})",
+                    callback_data=f"fix:confirm:{fe['id']}",
+                )])
+            buttons.append([InlineKeyboardButton("📝 Registrar normal", callback_data="fix:normal")])
+
+        await update.message.reply_text(
+            msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return
+
+    # No fixed match — save normally
     categories = {r["id"]: r for r in db.get_all_categories()}
     cat = categories.get(category_id)
     cat_name = cat["name"] if cat else "Sin categoría"
@@ -449,6 +543,45 @@ async def cmd_categorias(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
+async def cmd_fijos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    now = datetime.now(BAIRES)
+    rows = db.get_fixed_payments_for_month(now.year, now.month)
+
+    if not rows:
+        await update.message.reply_text(
+            "📋 No tenés gastos fijos configurados.\n"
+            "Podés agregar desde el dashboard web."
+        )
+        return
+
+    count_paid = sum(1 for r in rows if r["paid"])
+    month_name = MONTHS_ES[now.month]
+
+    lines = [f"📋 <b>Fijos — {month_name} {now.year}</b>\n"]
+    buttons = []
+
+    for r in rows:
+        if r["paid"]:
+            actual = fmt_amount(r["actual_amount"]) if r["actual_amount"] else "—"
+            lines.append(f"✅ {r['concept']} — {actual}")
+        else:
+            est = f"~{fmt_amount(r['estimated_amount'])}" if r["estimated_amount"] else "sin estimado"
+            lines.append(f"⬜ {r['concept']} — {est}")
+            buttons.append([InlineKeyboardButton(
+                f"Registrar pago: {r['concept']}",
+                callback_data=f"fix:direct_pay:{r['id']}",
+            )])
+
+    lines.append(f"\n{count_paid} de {len(rows)} pagados")
+
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML", reply_markup=markup)
+
+
 async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
@@ -466,6 +599,7 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "   /semana     → gastos de esta semana\n"
         "   /hoy        → gastos de hoy\n"
         "   /sincat     → gastos sin categoría\n"
+        "   /fijos      → estado gastos fijos del mes\n"
         "\n"
         "✏️ <b>EDITAR</b>\n"
         "   <code>/editar ID monto 15000</code>\n"
@@ -785,6 +919,91 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
         )
 
+    elif cb.startswith("fix:confirm:"):
+        fixed_expense_id = int(cb.split(":")[2])
+        if chat_id not in pending_fixed_match:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        data = pending_fixed_match.pop(chat_id)
+        now = datetime.now(BAIRES)
+        try:
+            expense_id = db.create_expense(
+                user_id=user["id"],
+                category_id=data["category_id"],
+                concept=data["concept"],
+                amount=data["amount"],
+                raw_text=data["raw_text"],
+            )
+        except Exception as e:
+            logger.error("Error guardando gasto fijo: %s", e)
+            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+            return
+        db.create_fixed_payment(fixed_expense_id, expense_id, now.year, now.month)
+        fe = db.get_fixed_expense_by_id(fixed_expense_id)
+        cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+        keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+        await query.edit_message_text(
+            f"✅ <b>Gasto fijo registrado</b>\n"
+            f"📋 {data['concept']}\n"
+            f"💰 {fmt_amount(data['amount'])}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"📌 {fe['concept'] if fe else 'Gasto fijo'}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+
+    elif cb == "fix:normal":
+        if chat_id not in pending_fixed_match:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        data = pending_fixed_match.pop(chat_id)
+        cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+        try:
+            expense_id = db.create_expense(
+                user_id=user["id"],
+                category_id=data["category_id"],
+                concept=data["concept"],
+                amount=data["amount"],
+                raw_text=data["raw_text"],
+            )
+        except Exception as e:
+            logger.error("Error guardando gasto normal: %s", e)
+            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+            return
+        keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+        await query.edit_message_text(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {data['concept']}\n"
+            f"💰 {fmt_amount(data['amount'])}\n"
+            f"{cat_icon} {cat_name}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+
+    elif cb.startswith("fix:direct_pay:"):
+        fixed_expense_id = int(cb.split(":")[2])
+        fe = db.get_fixed_expense_by_id(fixed_expense_id)
+        if not fe:
+            await query.answer("Gasto fijo no encontrado.", show_alert=True)
+            return
+        pending_fixed_direct[chat_id] = {
+            "fixed_expense_id": fixed_expense_id,
+            "concept":          fe["concept"],
+        }
+        est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe["estimated_amount"] else ""
+        await query.message.reply_text(
+            f"💰 ¿Cuánto pagaste por <b>{fe['concept']}</b>?{est_str}\nEnviá el monto:",
+            parse_mode="HTML",
+        )
+
     elif cb.startswith("ea:"):
         expense_id = int(cb.split(":")[1])
         pending_amount_edit[chat_id] = expense_id
@@ -800,6 +1019,7 @@ def build_app():
     app.add_handler(CommandHandler("semana",      cmd_semana))
     app.add_handler(CommandHandler("hoy",         cmd_hoy))
     app.add_handler(CommandHandler("sincat",      cmd_sincat))
+    app.add_handler(CommandHandler("fijos",       cmd_fijos))
     app.add_handler(CommandHandler("editar",      cmd_editar))
     app.add_handler(CommandHandler("recat",       cmd_recat))
     app.add_handler(CommandHandler("borrar",      cmd_borrar))

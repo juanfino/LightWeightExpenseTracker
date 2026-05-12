@@ -1,0 +1,504 @@
+{% extends "base.html" %}
+{% block title %}Fijos — Gastos Familiares{% endblock %}
+{% block nav_fijos %}active{% endblock %}
+
+{% block extra_styles %}
+.fijos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.month-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-selector select {
+  width: auto;
+}
+
+.fixed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fixed-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fixed-row:last-child { border-bottom: none; }
+
+.fixed-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.fixed-info { flex: 1; min-width: 0; }
+
+.fixed-concept {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.fixed-meta {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fixed-amount {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fixed-amount.paid   { color: var(--green); }
+.fixed-amount.unpaid { color: var(--text2); }
+
+.status-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+/* ── Admin table ── */
+.admin-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Modal ── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+}
+
+.form-row input,
+.form-row select {
+  width: 100%;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- ── Estado del mes ─────────────────────────────────────────────────── -->
+  <div class="fijos-header">
+    <div class="section-title">📋 Estado del mes</div>
+    <div class="month-selector">
+      <select id="sel-month">
+        <option value="1">Enero</option><option value="2">Febrero</option>
+        <option value="3">Marzo</option><option value="4">Abril</option>
+        <option value="5">Mayo</option><option value="6">Junio</option>
+        <option value="7">Julio</option><option value="8">Agosto</option>
+        <option value="9">Septiembre</option><option value="10">Octubre</option>
+        <option value="11">Noviembre</option><option value="12">Diciembre</option>
+      </select>
+      <select id="sel-year"></select>
+    </div>
+  </div>
+
+  <div class="card" id="status-card">
+    <div id="status-summary" style="margin-bottom:12px; font-size:13px; color:var(--text2)">Cargando…</div>
+    <div class="fixed-list" id="status-list"></div>
+  </div>
+
+  <!-- ── Administrar fijos ──────────────────────────────────────────────── -->
+  <div class="section-header mt-32">
+    <div class="section-title">⚙️ Administrar fijos</div>
+    <button class="btn btn-primary" id="btn-add-fijo">+ Agregar fijo</button>
+  </div>
+
+  <div class="card">
+    <table id="admin-table">
+      <thead>
+        <tr>
+          <th>Concepto</th>
+          <th>Estimado</th>
+          <th>Categoría</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="admin-tbody"></tbody>
+    </table>
+    <div id="admin-empty" class="empty" style="display:none">No hay gastos fijos configurados.</div>
+  </div>
+
+</div>
+
+<!-- ── Modal: pagar fijo ─────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-pay">
+  <div class="modal">
+    <div class="modal-title" id="pay-title">Registrar pago</div>
+    <div class="form-row">
+      <label class="form-label">Monto pagado</label>
+      <input type="number" id="pay-amount" placeholder="Ej: 150000" min="1" step="any">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Usuario</label>
+      <select id="pay-user"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="btn-pay-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-pay-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: agregar / editar fijo ─────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-edit">
+  <div class="modal">
+    <div class="modal-title" id="edit-title">Agregar gasto fijo</div>
+    <div class="form-row">
+      <label class="form-label">Concepto *</label>
+      <input type="text" id="edit-concept" placeholder="Ej: Expensas">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Monto estimado (opcional)</label>
+      <input type="number" id="edit-amount" placeholder="Ej: 180000" min="0" step="any">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Categoría</label>
+      <select id="edit-category"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="btn-edit-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-edit-save">Guardar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  const now = new Date();
+  let selYear  = now.getFullYear();
+  let selMonth = now.getMonth() + 1;
+
+  // ── Selectors ──────────────────────────────────────────────────────────────
+  const selMonthEl = document.getElementById('sel-month');
+  const selYearEl  = document.getElementById('sel-year');
+
+  // Populate year selector (last 2 + current + next)
+  for (let y = selYear - 1; y <= selYear + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    if (y === selYear) opt.selected = true;
+    selYearEl.appendChild(opt);
+  }
+  selMonthEl.value = selMonth;
+
+  selMonthEl.addEventListener('change', () => { selMonth = +selMonthEl.value; loadStatus(); });
+  selYearEl.addEventListener('change',  () => { selYear  = +selYearEl.value;  loadStatus(); });
+
+  // ── Formatting ─────────────────────────────────────────────────────────────
+  function fmtAmount(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function hexToRgba(hex, alpha) {
+    if (!hex || !hex.startsWith('#')) return `rgba(99,102,241,${alpha})`;
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  // ── Estado del mes ─────────────────────────────────────────────────────────
+  let statusRows = [];
+
+  async function loadStatus() {
+    const res = await fetch(`/api/fixed-expenses/status?year=${selYear}&month=${selMonth}`);
+    statusRows = await res.json();
+    renderStatus();
+  }
+
+  function renderStatus() {
+    const summaryEl = document.getElementById('status-summary');
+    const listEl    = document.getElementById('status-list');
+
+    if (!statusRows.length) {
+      summaryEl.textContent = 'No hay gastos fijos configurados.';
+      listEl.innerHTML = '';
+      return;
+    }
+
+    const countPaid  = statusRows.filter(r => r.paid).length;
+    const totalEst   = statusRows.reduce((s, r) => s + (r.estimated_amount || 0), 0);
+    const totalPaid  = statusRows.filter(r => r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0);
+    summaryEl.innerHTML =
+      `<b>${countPaid} de ${statusRows.length} pagados</b>` +
+      (totalEst ? ` &nbsp;·&nbsp; ${fmtAmount(totalPaid)} de ~${fmtAmount(totalEst)} estimado` : '');
+
+    listEl.innerHTML = statusRows.map(r => {
+      const iconBg = hexToRgba(r.category_color, 0.13);
+      const statusIcon  = r.paid ? '✅' : '⬜';
+      const amountHtml  = r.paid
+        ? `<span class="fixed-amount paid">${fmtAmount(r.actual_amount)}</span>`
+        : `<span class="fixed-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
+      const payBtn = r.paid ? '' :
+        `<button class="btn" style="font-size:12px;padding:5px 10px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">Registrar pago</button>`;
+      return `
+        <div class="fixed-row">
+          <span class="status-icon">${statusIcon}</span>
+          <div class="fixed-icon" style="background:${iconBg}">${r.category_icon}</div>
+          <div class="fixed-info">
+            <div class="fixed-concept">${r.concept}</div>
+            <div class="fixed-meta">
+              <span class="badge" style="background:${hexToRgba(r.category_color,0.13)};color:${r.category_color};border-color:${hexToRgba(r.category_color,0.25)}">${r.category_name}</span>
+            </div>
+          </div>
+          ${amountHtml}
+          ${payBtn}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ── Pay modal ──────────────────────────────────────────────────────────────
+  let payFixedId = null;
+
+  function openPayModal(feId, concept, estimated) {
+    payFixedId = feId;
+    document.getElementById('pay-title').textContent  = `Registrar pago: ${concept}`;
+    document.getElementById('pay-amount').value       = estimated || '';
+    document.getElementById('modal-pay').classList.add('open');
+    document.getElementById('pay-amount').focus();
+  }
+
+  document.getElementById('btn-pay-cancel').addEventListener('click', () => {
+    document.getElementById('modal-pay').classList.remove('open');
+  });
+
+  document.getElementById('btn-pay-save').addEventListener('click', async () => {
+    const amount  = parseFloat(document.getElementById('pay-amount').value);
+    const userId  = document.getElementById('pay-user').value;
+    if (!amount || amount <= 0) { alert('Ingresá un monto válido.'); return; }
+    const res = await fetch('/api/fixed-expenses/pay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fixed_expense_id: payFixedId, amount, year: selYear, month: selMonth, user_id: userId }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('modal-pay').classList.remove('open');
+      loadStatus();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  });
+
+  // ── Admin table ────────────────────────────────────────────────────────────
+  let allFixed      = [];
+  let allCategories = [];
+
+  async function loadAdmin() {
+    const [fRes, cRes] = await Promise.all([
+      fetch('/api/fixed-expenses'),
+      fetch('/api/categories'),
+    ]);
+    allFixed      = await fRes.json();
+    allCategories = await cRes.json();
+    renderAdmin();
+    populateCategoryDropdowns();
+  }
+
+  function renderAdmin() {
+    const tbody    = document.getElementById('admin-tbody');
+    const emptyEl  = document.getElementById('admin-empty');
+    const tableEl  = document.getElementById('admin-table');
+
+    if (!allFixed.length) {
+      tableEl.style.display  = 'none';
+      emptyEl.style.display  = 'block';
+      return;
+    }
+
+    tableEl.style.display = '';
+    emptyEl.style.display = 'none';
+
+    tbody.innerHTML = allFixed.map(fe => `
+      <tr>
+        <td>${fe.category_icon} ${fe.concept}</td>
+        <td class="mono">${fe.estimated_amount ? fmtAmount(fe.estimated_amount) : '—'}</td>
+        <td>
+          <span class="badge">${fe.category_name}</span>
+        </td>
+        <td>
+          <div class="admin-actions">
+            <button class="btn" style="font-size:12px;padding:5px 10px"
+              onclick="openEditModal(${fe.id})">Editar</button>
+            <button class="btn btn-danger" style="font-size:12px;padding:5px 10px"
+              onclick="deactivate(${fe.id}, '${fe.concept.replace(/'/g,"\\'")}')">Desactivar</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function populateCategoryDropdowns() {
+    [document.getElementById('edit-category'), document.getElementById('pay-user')].forEach((el, i) => {
+      if (i === 0) {
+        // Category dropdown
+        el.innerHTML = '<option value="">Sin categoría</option>' +
+          allCategories
+            .filter(c => c.name !== 'Sin categoría')
+            .map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`)
+            .join('');
+      }
+    });
+  }
+
+  async function loadPayUsers() {
+    const res   = await fetch('/api/users');
+    const users = await res.json();
+    const sel   = document.getElementById('pay-user');
+    sel.innerHTML = users.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+  }
+
+  // ── Edit modal ─────────────────────────────────────────────────────────────
+  let editFixedId = null;
+
+  function openEditModal(feId) {
+    editFixedId = feId || null;
+    const fe = feId ? allFixed.find(f => f.id === feId) : null;
+    document.getElementById('edit-title').textContent   = fe ? 'Editar gasto fijo' : 'Agregar gasto fijo';
+    document.getElementById('edit-concept').value       = fe ? fe.concept : '';
+    document.getElementById('edit-amount').value        = (fe && fe.estimated_amount) ? fe.estimated_amount : '';
+    const catSel = document.getElementById('edit-category');
+    catSel.value = (fe && fe.category_id) ? fe.category_id : '';
+    document.getElementById('modal-edit').classList.add('open');
+    document.getElementById('edit-concept').focus();
+  }
+
+  document.getElementById('btn-add-fijo').addEventListener('click', () => openEditModal(null));
+
+  document.getElementById('btn-edit-cancel').addEventListener('click', () => {
+    document.getElementById('modal-edit').classList.remove('open');
+  });
+
+  document.getElementById('btn-edit-save').addEventListener('click', async () => {
+    const concept  = document.getElementById('edit-concept').value.trim();
+    const amount   = document.getElementById('edit-amount').value;
+    const catId    = document.getElementById('edit-category').value;
+    if (!concept) { alert('El concepto es obligatorio.'); return; }
+
+    const url  = editFixedId ? '/api/fixed-expenses/update' : '/api/fixed-expenses/add';
+    const body = {
+      concept,
+      estimated_amount: amount ? parseFloat(amount) : null,
+      category_id: catId ? parseInt(catId) : null,
+    };
+    if (editFixedId) body.id = editFixedId;
+
+    const res  = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('modal-edit').classList.remove('open');
+      await loadAdmin();
+      loadStatus();
+    } else {
+      alert('Error: ' + (data.error || 'desconocido'));
+    }
+  });
+
+  async function deactivate(feId, concept) {
+    if (!confirm(`¿Desactivar "${concept}"? No se eliminará del historial.`)) return;
+    const res  = await fetch('/api/fixed-expenses/deactivate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: feId }),
+    });
+    const data = await res.json();
+    if (data.ok) { await loadAdmin(); loadStatus(); }
+    else alert('Error: ' + (data.error || 'desconocido'));
+  }
+
+  // Close modals on backdrop click
+  ['modal-pay','modal-edit'].forEach(id => {
+    document.getElementById(id).addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('open');
+    });
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  loadStatus();
+  loadAdmin();
+  loadPayUsers();
+</script>
+{% endblock %}
