@@ -256,15 +256,6 @@
   flex-shrink: 0;
 }
 
-.user-tag-main {
-  background: rgba(124,106,247,0.15);
-  color: var(--accent);
-}
-
-.user-tag-alt {
-  background: rgba(46,202,138,0.15);
-  color: var(--green);
-}
 
 .expense-amount {
   font-size: 14px;
@@ -504,10 +495,6 @@
     const [y, m, d] = datePart.split("-");
     const [h, mi]   = timePart.split(":");
     return `${d}/${m} ${h}:${mi}`;
-  }
-
-  function isAltUser(name) {
-    return name && name.toLowerCase().includes('cele');
   }
 
   function hexToRgba(hex, alpha) {
@@ -762,7 +749,7 @@
         datasets: names.map(name => ({
           label:           name,
           data:            byWeekByUser.map(w => (w.by_user || {})[name] || 0),
-          backgroundColor: isAltUser(name) ? GREEN_CLR : ACCENT_CLR,
+          backgroundColor: (window.userColors && window.userColors[name]) || ACCENT_CLR,
           borderRadius:    4,
           borderSkipped:   false,
         })),
@@ -805,8 +792,8 @@
       return;
     }
     wrap.innerHTML = expenses.map(r => {
-      const tagCls = isAltUser(r.user_name) ? 'user-tag-alt' : 'user-tag-main';
-      const iconBg = hexToRgba(r.category_color, 0.13);
+      const userColor = (window.userColors && window.userColors[r.user_name]) || ACCENT_CLR;
+      const iconBg    = hexToRgba(r.category_color, 0.13);
       return `
         <div class="expense-row">
           <div class="expense-icon" style="background:${iconBg}">${r.category_icon}</div>
@@ -814,7 +801,7 @@
             <div class="expense-concept">${r.concept}</div>
             <div class="expense-meta">${fmtDate(r.created_at)} · ${r.category_name}</div>
           </div>
-          <span class="user-tag ${tagCls}">${r.user_name}</span>
+          <span class="user-tag" style="background:${hexToRgba(userColor,0.15)};color:${userColor}">${r.user_name}</span>
           <span class="expense-amount">${fmtAmount(r.amount)}</span>
         </div>
       `;

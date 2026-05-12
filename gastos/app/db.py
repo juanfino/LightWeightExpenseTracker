@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     telegram_id TEXT    UNIQUE NOT NULL,
     name        TEXT    NOT NULL,
+    color       TEXT    NOT NULL DEFAULT '#6366f1',
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -60,6 +61,15 @@ def get_conn():
         conn.close()
 
 
+def _migrate_users_color():
+    """Adds color column to users table for existing databases."""
+    with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN color TEXT NOT NULL DEFAULT '#6366f1'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+
 def init_db(users: dict | None = None):
     """Crea tablas. Si la DB es nueva, ejecuta seed y crea los usuarios configurados."""
     is_new = not os.path.exists(DB_PATH)
@@ -74,6 +84,7 @@ def init_db(users: dict | None = None):
         is_new = True
         with get_conn() as conn:
             conn.executescript(SCHEMA)
+    _migrate_users_color()
     if is_new:
         import seed
         seed.run()
@@ -416,7 +427,7 @@ def delete_category(category_id: int) -> tuple[bool, str | None]:
 
 def get_all_users():
     with get_conn() as conn:
-        return conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()
+        return conn.execute("SELECT id, name, color FROM users ORDER BY name").fetchall()
 
 
 def get_expenses_by_week_of_month_by_user(year: int, month: int):
@@ -556,6 +567,30 @@ def get_monthly_totals(months: int = 6) -> list[dict]:
     import calendar
     from datetime import date
     today = date.today()
+
+    # Compute the first day of the oldest month in the window
+    start_m = today.month - months + 1
+    start_y = today.year
+    while start_m <= 0:
+        start_m += 12
+        start_y -= 1
+    start_date = f"{start_y}-{start_m:02d}-01"
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT strftime('%Y-%m', created_at) AS ym,
+                   COUNT(*)                      AS cnt,
+                   COALESCE(SUM(amount), 0)      AS total
+            FROM expenses
+            WHERE created_at >= ?
+            GROUP BY ym
+            ORDER BY ym
+            """,
+            (start_date,),
+        ).fetchall()
+
+    row_map = {r["ym"]: r for r in rows}
     result = []
     for i in range(months - 1, -1, -1):
         m = today.month - i
@@ -563,24 +598,18 @@ def get_monthly_totals(months: int = 6) -> list[dict]:
         while m <= 0:
             m += 12
             y -= 1
-        with get_conn() as conn:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS total
-                FROM expenses
-                WHERE strftime('%Y', created_at) = ?
-                  AND strftime('%m', created_at) = ?
-                """,
-                (str(y), f"{m:02d}"),
-            ).fetchone()
+        ym = f"{y}-{m:02d}"
         days_in_month = calendar.monthrange(y, m)[1]
         days_elapsed  = today.day if (y == today.year and m == today.month) else days_in_month
+        row   = row_map.get(ym)
+        total = row["total"] if row else 0.0
+        cnt   = row["cnt"]   if row else 0
         result.append({
             "year":      y,
             "month":     m,
-            "total":     row["total"],
-            "count":     row["cnt"],
-            "avg_daily": round(row["total"] / days_elapsed, 2) if days_elapsed > 0 else 0,
+            "total":     total,
+            "count":     cnt,
+            "avg_daily": round(total / days_elapsed, 2) if days_elapsed > 0 else 0,
         })
     return result
 

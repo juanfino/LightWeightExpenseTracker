@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.4
+- Pinned `anthropic==0.101.0` en requirements.txt
+- Columna `color` (TEXT, default `#6366f1`) agregada a la tabla `users`; migración automática para DBs existentes via `ALTER TABLE`
+- `/api/users` ahora expone el campo `color` de cada usuario
+- Dashboard: colores de chips, avatar, tags de usuario y barras semanales ahora se leen dinámicamente desde la DB; eliminado el chequeo hardcodeado `isAltUser`/`isAlt`
+- `/api/weekly` documentado como endpoint standalone (no expuesto en la UI)
+- `get_monthly_totals` reemplazado por una única query SQL con `GROUP BY strftime('%Y-%m', ...)`
+- `seed.py` migrado a `db.get_conn()` eliminando el `sqlite3.connect()` directo
+
 ## 1.5.1
 - Nueva página "Sistema" (`/config`) en la navegación con sección de base de datos
 - Tarjeta de backup: estado del último backup y botón "Backup ahora" con feedback visual
