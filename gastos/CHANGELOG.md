@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.5.6
+## 1.6.0
 - **Gastos Fijos**: nueva funcionalidad completa para registrar y hacer seguimiento de gastos recurrentes
 - Dos tablas nuevas en la DB: `fixed_expenses` y `fixed_expense_payments` (con UNIQUE por fijo+mes)
 - Bot: al registrar un gasto, detecta automáticamente si coincide con un gasto fijo (matching por palabras ≥3 chars); ofrece registrarlo como fijo o normal con botones inline
