@@ -54,8 +54,16 @@
     </div>
   </div>
 
+  <!-- ── USD por mes (full width) ─────────────────────────────────────────── -->
+  <div class="card mt-24">
+    <div class="section-title" style="margin-bottom:16px">USD cambiado por mes</div>
+    <div class="chart-wrap">
+      <canvas id="chart-usd-mes"></canvas>
+    </div>
+  </div>
+
   <!-- ── Charts ─────────────────────────────────────────────────────────────── -->
-  <div class="charts-grid">
+  <div class="charts-grid mt-24">
     <div class="card">
       <div class="section-title" style="margin-bottom:16px">Evolución de la cotización</div>
       <div class="chart-wrap">
@@ -124,6 +132,7 @@
   const tickColor  = isDark ? "#9090a0" : "#606078";
   const ACCENT     = "#7c6af7";
   const GREEN      = "#2eca8a";
+  const BLUE       = "#38bdf8";
 
   Chart.defaults.font.family = "'DM Sans', sans-serif";
   Chart.defaults.font.size   = 12;
@@ -135,6 +144,43 @@
     document.getElementById("val-usd").textContent = fmtUSD(data.total_usd_mes);
     document.getElementById("val-cot").textContent = fmtARS(data.cotizacion_promedio_mes);
     document.getElementById("val-ars").textContent = fmtARS(data.total_ars_mes);
+  }
+
+  let usdMesChart = null;
+  async function loadUsdMes() {
+    const res  = await fetch("/api/cambios/por_mes");
+    const all  = await res.json();
+    const rows = all.slice(-6);
+    if (usdMesChart) { usdMesChart.destroy(); }
+    usdMesChart = new Chart(document.getElementById("chart-usd-mes"), {
+      type: "bar",
+      data: {
+        labels: rows.map(r => fmtMes(r.mes)),
+        datasets: [{
+          label: "USD cambiado",
+          data: rows.map(r => r.total_usd),
+          backgroundColor: "rgba(56,189,248,0.7)",
+          borderColor: BLUE,
+          borderWidth: 1,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: {
+            ticks: {
+              color: tickColor,
+              callback: v => "U$S " + v.toLocaleString("es-AR"),
+            },
+            grid: { color: gridColor },
+          },
+        },
+      },
+    });
   }
 
   let cotChart = null;
@@ -240,6 +286,7 @@
   }
 
   loadResumen();
+  loadUsdMes();
   loadCotizacion();
   loadPorMes();
   loadHistorial();
