@@ -531,6 +531,43 @@ def api_cambios_cotizacion_historica():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/api/cambios/<int:cambio_id>", methods=["DELETE"])
+def api_cambios_delete(cambio_id: int):
+    deleted = db.delete_cambio(cambio_id)
+    if deleted:
+        return jsonify({"ok": True})
+    return jsonify({"error": "Cambio no encontrado"}), 404
+
+
+@app.route("/api/cambios/<int:cambio_id>", methods=["PUT"])
+def api_cambios_update(cambio_id: int):
+    data       = request.get_json(silent=True) or {}
+    fecha      = (data.get("fecha") or "").strip()
+    monto_usd  = data.get("monto_usd")
+    cotizacion = data.get("cotizacion")
+
+    if not fecha or monto_usd is None or cotizacion is None:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+
+    try:
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
+
+    try:
+        monto_usd  = float(monto_usd)
+        cotizacion = float(cotizacion)
+        if monto_usd <= 0 or cotizacion <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Montos inválidos"}), 400
+
+    updated = db.update_cambio(cambio_id, fecha, monto_usd, cotizacion)
+    if updated:
+        return jsonify({"ok": True, "monto_ars": monto_usd * cotizacion})
+    return jsonify({"ok": False, "error": "Cambio no encontrado"}), 404
+
+
 def run_dashboard():
     port = int(os.environ.get("DASHBOARD_PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
