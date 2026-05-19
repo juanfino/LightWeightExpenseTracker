@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Dólares — Gastos Familiares{% endblock %}
+{% block nav_dolares %}active{% endblock %}
+
+{% block extra_styles %}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 700px) {
+  .summary-grid { grid-template-columns: 1fr; }
+}
+
+.chart-wrap {
+  position: relative;
+  height: 260px;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 800px) {
+  .charts-grid { grid-template-columns: 1fr; }
+}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- ── Summary cards ──────────────────────────────────────────────────────── -->
+  <div class="section-header" style="margin-bottom:16px">
+    <div class="section-title">💵 Dólares</div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="card">
+      <div class="card-title">USD cambiado este mes</div>
+      <div class="card-value" id="val-usd">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Cotización promedio</div>
+      <div class="card-value" id="val-cot">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">ARS obtenidos este mes</div>
+      <div class="card-value" id="val-ars">—</div>
+    </div>
+  </div>
+
+  <!-- ── Charts ─────────────────────────────────────────────────────────────── -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="section-title" style="margin-bottom:16px">Evolución de la cotización</div>
+      <div class="chart-wrap">
+        <canvas id="chart-cotizacion"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-bottom:16px">ARS obtenidos por mes</div>
+      <div class="chart-wrap">
+        <canvas id="chart-por-mes"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Historial table ────────────────────────────────────────────────────── -->
+  <div class="section-header">
+    <div class="section-title">Historial de cambios</div>
+  </div>
+
+  <div class="card">
+    <table id="historial-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th class="mono">USD</th>
+          <th class="mono">Cotización</th>
+          <th class="mono">ARS obtenidos</th>
+        </tr>
+      </thead>
+      <tbody id="historial-tbody"></tbody>
+    </table>
+    <div id="historial-empty" class="empty" style="display:none">No hay cambios registrados.</div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  // ── Formatting ───────────────────────────────────────────────────────────────
+  function fmtARS(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function fmtUSD(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) return "U$S " + Math.round(n).toLocaleString("es-AR");
+    return "U$S " + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function fmtMes(ym) {
+    const MONTHS_ES = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    const [y, m] = ym.split("-");
+    return MONTHS_ES[parseInt(m, 10)] + " " + y;
+  }
+
+  // ── Chart defaults ───────────────────────────────────────────────────────────
+  const isDark = !window.matchMedia("(prefers-color-scheme: light)").matches;
+  const gridColor  = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+  const tickColor  = isDark ? "#9090a0" : "#606078";
+  const ACCENT     = "#7c6af7";
+  const GREEN      = "#2eca8a";
+
+  Chart.defaults.font.family = "'DM Sans', sans-serif";
+  Chart.defaults.font.size   = 12;
+
+  // ── Load & render ────────────────────────────────────────────────────────────
+  async function loadResumen() {
+    const res  = await fetch("/api/cambios/resumen");
+    const data = await res.json();
+    document.getElementById("val-usd").textContent = fmtUSD(data.total_usd_mes);
+    document.getElementById("val-cot").textContent = fmtARS(data.cotizacion_promedio_mes);
+    document.getElementById("val-ars").textContent = fmtARS(data.total_ars_mes);
+  }
+
+  let cotChart = null;
+  async function loadCotizacion() {
+    const res  = await fetch("/api/cambios/cotizacion_historica");
+    const rows = await res.json();
+    if (cotChart) { cotChart.destroy(); }
+    const labels = rows.map(r => r.fecha);
+    const values = rows.map(r => r.cotizacion);
+    cotChart = new Chart(document.getElementById("chart-cotizacion"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Cotización",
+          data: values,
+          borderColor: ACCENT,
+          backgroundColor: "rgba(124,106,247,0.1)",
+          borderWidth: 2,
+          pointRadius: rows.length <= 20 ? 4 : 2,
+          fill: true,
+          tension: 0.3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tickColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
+          y: {
+            ticks: {
+              color: tickColor,
+              callback: v => "$" + v.toLocaleString("es-AR"),
+            },
+            grid: { color: gridColor },
+          },
+        },
+      },
+    });
+  }
+
+  let mesChart = null;
+  async function loadPorMes() {
+    const res  = await fetch("/api/cambios/por_mes");
+    const rows = await res.json();
+    if (mesChart) { mesChart.destroy(); }
+    const labels = rows.map(r => fmtMes(r.mes));
+    const values = rows.map(r => r.total_ars);
+    mesChart = new Chart(document.getElementById("chart-por-mes"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "ARS obtenidos",
+          data: values,
+          backgroundColor: "rgba(46,202,138,0.7)",
+          borderColor: GREEN,
+          borderWidth: 1,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: {
+            ticks: {
+              color: tickColor,
+              callback: v => "$" + v.toLocaleString("es-AR"),
+            },
+            grid: { color: gridColor },
+          },
+        },
+      },
+    });
+  }
+
+  async function loadHistorial() {
+    const res  = await fetch("/api/cambios/historial");
+    const rows = await res.json();
+    const tbody   = document.getElementById("historial-tbody");
+    const tableEl = document.getElementById("historial-table");
+    const emptyEl = document.getElementById("historial-empty");
+    if (!rows.length) {
+      tableEl.style.display = "none";
+      emptyEl.style.display = "block";
+      return;
+    }
+    tableEl.style.display = "";
+    emptyEl.style.display = "none";
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.fecha}</td>
+        <td>${r.usuario}</td>
+        <td class="mono">${fmtUSD(r.monto_usd)}</td>
+        <td class="mono">${fmtARS(r.cotizacion)}</td>
+        <td class="mono">${fmtARS(r.monto_ars)}</td>
+      </tr>
+    `).join("");
+  }
+
+  loadResumen();
+  loadCotizacion();
+  loadPorMes();
+  loadHistorial();
+</script>
+{% endblock %}

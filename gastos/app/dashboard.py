@@ -502,6 +502,35 @@ def api_backup_status():
         return jsonify({"last_backup": None})
 
 
+@app.route("/dolares")
+def dolares_page():
+    return render_template("dolares.html")
+
+
+@app.route("/api/cambios/resumen")
+def api_cambios_resumen():
+    now = datetime.now(BAIRES)
+    return jsonify(db.get_cambios_resumen_mes(now.year, now.month))
+
+
+@app.route("/api/cambios/historial")
+def api_cambios_historial():
+    rows = db.get_cambios_historial(50)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/cambios/por_mes")
+def api_cambios_por_mes():
+    rows = db.get_cambios_por_mes(12)
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/cambios/cotizacion_historica")
+def api_cambios_cotizacion_historica():
+    rows = db.get_cambios_cotizacion_historica()
+    return jsonify([dict(r) for r in rows])
+
+
 def run_dashboard():
     port = int(os.environ.get("DASHBOARD_PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
