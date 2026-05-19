@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1
+- `categorizer.categorize()` ahora retorna `(category_id, subcategory_id)` en lugar de solo `category_id`; keywords de la DB incluyen `subcategory_id`
+- `db.create_expense()` y `db.create_expense_full()` aceptan parámetro opcional `subcategory_id=None` e incluyen el campo en el INSERT
+- Bot: todos los flujos de creación de gasto (texto, OCR por texto, OCR por botón inline, gasto fijo confirmado, gasto fijo normal) pasan `subcategory_id` al guardar
+- Bot: `pending_fixed_match` incluye `subcategory_id` para que se conserve hasta la confirmación del usuario
+
 ## 1.7.0
 - DB: nueva tabla `subcategories` (id, category_id, name) con FK a categories en CASCADE
 - DB: columna `subcategory_id` agregada a `expenses` y `keywords`; migraciones automáticas para DBs existentes
