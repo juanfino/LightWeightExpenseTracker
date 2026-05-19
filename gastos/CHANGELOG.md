@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.3
+- Dashboard: nuevo endpoint `POST /api/subcategories/add` — crea una subcategoría para la categoría dada
+- Dashboard: nuevo endpoint `POST /api/subcategories/delete` — elimina subcategoría con guard (bloquea si hay gastos asociados)
+- Dashboard: nuevo endpoint `PUT /api/keywords/<id>` — actualiza keyword, categoría y subcategoría de una keyword existente
+- DB: nuevas funciones `get_expense_count_by_subcategory()` y `update_keyword()`
+- Configuración — pestaña Categorías: panel expandible de subcategorías por categoría con botones agregar/eliminar inline (sin recarga)
+- Configuración — pestaña Keywords: nueva columna Subcategoría; botón Editar abre fila inline con campo keyword, dropdown categoría y dropdown subcategoría (se repopula al cambiar categoría); guarda via PUT sin recarga
+
 ## 1.7.2
 - Dashboard: `POST /api/expenses/update` acepta `subcategory_id` opcional y lo pasa a `update_expense()`
 - Dashboard: nuevo endpoint `GET /api/subcategories?category_id=X` — retorna subcategorías de la categoría dada; sin parámetro retorna todas con `category_id`
