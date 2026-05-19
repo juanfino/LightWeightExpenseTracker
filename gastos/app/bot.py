@@ -53,6 +53,16 @@ def fmt_usd(amount: float) -> str:
     return f"U$S {int_part},{dec_part}"
 
 
+def _parse_cambio_token(token: str) -> float | None:
+    """Parse an amount token using Argentine conventions: '.' = thousands sep, ',' = decimal sep."""
+    cleaned = token.replace(".", "").replace(",", ".")
+    try:
+        val = float(cleaned)
+        return val if val > 0 else None
+    except ValueError:
+        return None
+
+
 def fmt_date(dt_str: str) -> str:
     """'2026-05-03 14:32:00' → '03/05 14:32'"""
     try:
@@ -304,38 +314,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Abandon any stale pending_fixed_match if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
-
-    # ── CambioDolar handler ───────────────────────────────────────────────────
-    cambio_match = re.match(r'^cambiodolar\s+(\S+)\s+(\S+)$', text, re.IGNORECASE)
-    if cambio_match:
-        raw_usd = cambio_match.group(1).replace(".", "").replace(",", ".")
-        raw_cot = cambio_match.group(2).replace(".", "").replace(",", ".")
-        try:
-            monto_usd  = float(raw_usd)
-            cotizacion = float(raw_cot)
-            if monto_usd <= 0 or cotizacion <= 0:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Formato incorrecto. Usá: <code>CambioDolar &lt;monto_usd&gt; &lt;cotizacion&gt;</code>\n"
-                "Ejemplo: <code>CambioDolar 1000 1400</code>",
-                parse_mode="HTML",
-            )
-            return
-        monto_ars = monto_usd * cotizacion
-        fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
-        fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
-        db.registrar_cambio(fecha_str, monto_usd, cotizacion, user["name"])
-
-        await update.message.reply_text(
-            f"✅ Cambio registrado\n"
-            f"💵 USD: {fmt_usd(monto_usd)}\n"
-            f"💱 Cotización: {fmt_amount(cotizacion)}\n"
-            f"💰 ARS obtenidos: {fmt_amount(monto_ars)}\n"
-            f"📅 Fecha: {fecha_display}",
-            parse_mode="HTML",
-        )
-        return
 
     parsed = msg_parser.parse_message(text)
 
@@ -1052,6 +1030,48 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("💰 Enviá el nuevo monto:")
 
 
+# ── CambioDolar ───────────────────────────────────────────────────────────────
+
+async def handle_cambiodolar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    text = update.message.text.strip()
+    rest = text[len("cambiodolar"):].strip()
+    tokens = rest.split()
+
+    _fmt_error = (
+        "❌ Formato incorrecto. Usá: <code>CambioDolar &lt;monto_usd&gt; &lt;cotizacion&gt;</code>\n"
+        "Ejemplo: <code>CambioDolar 1000 1400</code>"
+    )
+
+    if len(tokens) != 2:
+        await update.message.reply_text(_fmt_error, parse_mode="HTML")
+        return
+
+    monto_usd  = _parse_cambio_token(tokens[0])
+    cotizacion = _parse_cambio_token(tokens[1])
+
+    if monto_usd is None or cotizacion is None:
+        await update.message.reply_text(_fmt_error, parse_mode="HTML")
+        return
+
+    monto_ars    = monto_usd * cotizacion
+    fecha_str    = datetime.now(BAIRES).strftime("%Y-%m-%d")
+    fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
+    db.registrar_cambio(fecha_str, monto_usd, cotizacion, user["name"])
+
+    await update.message.reply_text(
+        f"✅ Cambio registrado\n"
+        f"💵 USD: {fmt_usd(monto_usd)}\n"
+        f"💱 Cotización: {fmt_amount(cotizacion)}\n"
+        f"💰 ARS obtenidos: {fmt_amount(monto_ars)}\n"
+        f"📅 Fecha: {fecha_display}",
+        parse_mode="HTML",
+    )
+
+
 # ── Arranque ──────────────────────────────────────────────────────────────────
 
 def build_app():
@@ -1071,6 +1091,9 @@ def build_app():
     app.add_handler(CommandHandler("ayuda",             cmd_ayuda))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    _cambiodolar_filter = filters.TEXT & filters.Regex(r'(?i)^cambiodolar\b')
+    app.add_handler(MessageHandler(_cambiodolar_filter, handle_cambiodolar))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~_cambiodolar_filter, handle_message))
 
     return app
