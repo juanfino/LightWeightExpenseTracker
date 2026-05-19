@@ -25,21 +25,30 @@ CREATE TABLE IF NOT EXISTS categories (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS keywords (
+CREATE TABLE IF NOT EXISTS subcategories (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    keyword     TEXT    UNIQUE NOT NULL,
     category_id INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS keywords (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword        TEXT    UNIQUE NOT NULL,
+    category_id    INTEGER NOT NULL,
+    subcategory_id INTEGER REFERENCES subcategories(id),
     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS expenses (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    category_id INTEGER,
-    concept     TEXT    NOT NULL,
-    amount      REAL    NOT NULL,
-    raw_text    TEXT    NOT NULL,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL,
+    category_id    INTEGER,
+    subcategory_id INTEGER REFERENCES subcategories(id),
+    concept        TEXT    NOT NULL,
+    amount         REAL    NOT NULL,
+    raw_text       TEXT    NOT NULL,
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id)     REFERENCES users(id),
     FOREIGN KEY (category_id) REFERENCES categories(id)
 );
@@ -123,9 +132,22 @@ def _migrate_fixed_payment_nullable_expense():
                 break
 
 
+def _migrate_expenses_subcategory():
+    with get_conn() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(expenses)").fetchall()]
+        if "subcategory_id" not in cols:
+            conn.execute("ALTER TABLE expenses ADD COLUMN subcategory_id INTEGER REFERENCES subcategories(id)")
+
+
+def _migrate_keywords_subcategory():
+    with get_conn() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(keywords)").fetchall()]
+        if "subcategory_id" not in cols:
+            conn.execute("ALTER TABLE keywords ADD COLUMN subcategory_id INTEGER REFERENCES subcategories(id)")
+
+
 def init_db(users: dict | None = None):
-    """Crea tablas. Si la DB es nueva, ejecuta seed y crea los usuarios configurados."""
-    is_new = not os.path.exists(DB_PATH)
+    """Crea tablas, ejecuta migraciones y seed (idempotente). Sincroniza usuarios si se pasan."""
     try:
         with get_conn() as conn:
             conn.executescript(SCHEMA)
@@ -134,14 +156,15 @@ def init_db(users: dict | None = None):
             "DB corrupta en %s — eliminando y creando base de datos nueva.", DB_PATH
         )
         os.remove(DB_PATH)
-        is_new = True
         with get_conn() as conn:
             conn.executescript(SCHEMA)
     _migrate_users_color()
     _migrate_fixed_payment_nullable_expense()
-    if is_new:
-        import seed
-        seed.run()
+    _migrate_expenses_subcategory()
+    _migrate_keywords_subcategory()
+    import seed
+    with get_conn() as conn:
+        seed.seed(conn)
     if users:
         _sync_users(users)
 
@@ -206,10 +229,13 @@ def get_recent_expenses(limit: int = 50):
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')       AS category_color,
-                   COALESCE(c.icon,  '❓')             AS category_icon
+                   COALESCE(c.icon,  '❓')             AS category_icon,
+                   e.subcategory_id,
+                   s.name AS subcategory_name
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
             ORDER BY e.created_at DESC
             LIMIT ?
             """,
@@ -225,10 +251,13 @@ def get_expenses_by_month(year: int, month: int):
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')       AS category_color,
-                   COALESCE(c.icon,  '❓')             AS category_icon
+                   COALESCE(c.icon,  '❓')             AS category_icon,
+                   e.subcategory_id,
+                   s.name AS subcategory_name
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
             WHERE strftime('%Y', e.created_at) = ?
               AND strftime('%m', e.created_at) = ?
             ORDER BY e.created_at DESC
@@ -351,19 +380,31 @@ def get_expenses_by_user(year: int, month: int):
 
 # ── Edición de gastos ─────────────────────────────────────────────────────────
 
-def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None) -> bool:
+def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None, subcategory_id: int | None = None) -> bool:
     with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE expenses SET concept=?, amount=?, category_id=? WHERE id=?",
-            (concept.strip(), amount, category_id, expense_id),
-        )
+        if subcategory_id is not None:
+            cur = conn.execute(
+                "UPDATE expenses SET concept=?, amount=?, category_id=?, subcategory_id=? WHERE id=?",
+                (concept.strip(), amount, category_id, subcategory_id, expense_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE expenses SET concept=?, amount=?, category_id=? WHERE id=?",
+                (concept.strip(), amount, category_id, expense_id),
+            )
         return cur.rowcount > 0
 
 
 def get_expense_by_id(expense_id: int):
     with get_conn() as conn:
         return conn.execute(
-            "SELECT * FROM expenses WHERE id = ?", (expense_id,)
+            """
+            SELECT e.*, s.name AS subcategory_name
+            FROM expenses e
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
+            WHERE e.id = ?
+            """,
+            (expense_id,),
         ).fetchone()
 
 
@@ -687,9 +728,11 @@ def get_all_keywords():
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT k.id, k.keyword, k.category_id, c.name AS category_name
+            SELECT k.id, k.keyword, k.category_id, c.name AS category_name,
+                   k.subcategory_id, s.name AS subcategory_name
             FROM keywords k
             JOIN categories c ON c.id = k.category_id
+            LEFT JOIN subcategories s ON s.id = k.subcategory_id
             ORDER BY c.name, k.keyword
             """
         ).fetchall()
@@ -721,6 +764,68 @@ def add_keyword(keyword: str, category_id: int) -> str:
 def delete_keyword(keyword_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM keywords WHERE id = ?", (keyword_id,))
+        return cur.rowcount > 0
+
+
+# ── Subcategorías ─────────────────────────────────────────────────────────────
+
+def get_subcategories(category_id: int):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM subcategories WHERE category_id = ? ORDER BY name",
+            (category_id,),
+        ).fetchall()
+
+
+def get_all_subcategories():
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT s.id, s.category_id, s.name, c.name AS category_name
+            FROM subcategories s
+            JOIN categories c ON c.id = s.category_id
+            ORDER BY c.name, s.name
+            """
+        ).fetchall()
+
+
+def get_subcategory_by_id(subcategory_id: int):
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM subcategories WHERE id = ?", (subcategory_id,)
+        ).fetchone()
+
+
+def add_subcategory(category_id: int, name: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO subcategories (category_id, name) VALUES (?, ?)",
+            (category_id, name.strip()),
+        )
+        return cur.lastrowid
+
+
+def delete_subcategory(subcategory_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM subcategories WHERE id = ?", (subcategory_id,))
+        return cur.rowcount > 0
+
+
+def update_expense_subcategory(expense_id: int, subcategory_id: int | None) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET subcategory_id = ? WHERE id = ?",
+            (subcategory_id, expense_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_keyword_subcategory(keyword_id: int, subcategory_id: int | None) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE keywords SET subcategory_id = ? WHERE id = ?",
+            (subcategory_id, keyword_id),
+        )
         return cur.rowcount > 0
 
 
