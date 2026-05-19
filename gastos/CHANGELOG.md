@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.2
+- Dashboard: `POST /api/expenses/update` acepta `subcategory_id` opcional y lo pasa a `update_expense()`
+- Dashboard: nuevo endpoint `GET /api/subcategories?category_id=X` — retorna subcategorías de la categoría dada; sin parámetro retorna todas con `category_id`
+- Dashboard: nuevo endpoint `POST /api/expenses/<id>/subcategory` — asigna o limpia `subcategory_id` de un gasto
+- Historial: nueva columna "Subcategoría" entre Categoría y Monto; oculta en mobile (`hide-mobile`)
+- Historial: badge de subcategoría con estilo outlined/muted; celda vacía si no hay subcategoría
+- Historial: modal de edición inline agrega dropdown "Subcategoría (opcional)"; se repopula al cambiar categoría vía `GET /api/subcategories?category_id=X`; se guarda junto al gasto
+
 ## 1.7.1
 - `categorizer.categorize()` ahora retorna `(category_id, subcategory_id)` en lugar de solo `category_id`; keywords de la DB incluyen `subcategory_id`
 - `db.create_expense()` y `db.create_expense_full()` aceptan parámetro opcional `subcategory_id=None` e incluyen el campo en el INSERT
