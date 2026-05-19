@@ -191,26 +191,26 @@ def get_user_by_telegram_id(tg_id: str):
 
 # ── Gastos ────────────────────────────────────────────────────────────────────
 
-def create_expense(user_id: int, category_id: int | None, concept: str, amount: float, raw_text: str) -> int:
+def create_expense(user_id: int, category_id: int | None, concept: str, amount: float, raw_text: str, subcategory_id: int | None = None) -> int:
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO expenses (user_id, category_id, concept, amount, raw_text, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, concept, amount, raw_text, now_utc),
+            "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, raw_text, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, category_id, subcategory_id, concept, amount, raw_text, now_utc),
         )
         return cur.lastrowid
 
 
-def create_expense_full(user_id: int, category_id: int | None, concept: str, amount: float, date_str: str) -> int:
+def create_expense_full(user_id: int, category_id: int | None, concept: str, amount: float, date_str: str, subcategory_id: int | None = None) -> int:
     """Like create_expense but accepts an explicit date (YYYY-MM-DD in ART/UTC-3).
     Stores as 03:00 UTC (= midnight ART) so date queries using '-3 hours' return the correct day."""
     created_at = f"{date_str} 03:00:00"
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO expenses (user_id, category_id, concept, amount, raw_text, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, concept.strip(), amount, concept.strip(), created_at),
+            "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, raw_text, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, category_id, subcategory_id, concept.strip(), amount, concept.strip(), created_at),
         )
         return cur.lastrowid
 

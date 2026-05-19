@@ -277,7 +277,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data = pending_ocr.pop(chat_id)
             concept = data["comercio"] or "Ticket"
             keywords = db.get_all_keywords()
-            category_id = categorizer.categorize(concept, keywords)
+            category_id, subcategory_id = categorizer.categorize(concept, keywords)
             categories = {r["id"]: r for r in db.get_all_categories()}
             cat = categories.get(category_id)
             cat_name = cat["name"] if cat else "Sin categoría"
@@ -286,6 +286,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 expense_id = db.create_expense(
                     user_id=user["id"],
                     category_id=category_id,
+                    subcategory_id=subcategory_id,
                     concept=concept,
                     amount=data["monto"],
                     raw_text=f"[OCR] {concept} {data['monto']}",
@@ -329,7 +330,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keywords = db.get_all_keywords()
-    category_id = categorizer.categorize(parsed["concept"], keywords)
+    category_id, subcategory_id = categorizer.categorize(parsed["concept"], keywords)
 
     # Check for fixed expense matches before saving
     fixed_expenses = db.get_all_fixed_expenses()
@@ -337,10 +338,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if matches:
         pending_fixed_match[chat_id] = {
-            "concept":     parsed["concept"],
-            "amount":      parsed["amount"],
-            "category_id": category_id,
-            "raw_text":    text,
+            "concept":        parsed["concept"],
+            "amount":         parsed["amount"],
+            "category_id":    category_id,
+            "subcategory_id": subcategory_id,
+            "raw_text":       text,
         }
         if len(matches) == 1:
             fe = matches[0]
@@ -379,6 +381,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expense_id = db.create_expense(
             user_id=user["id"],
             category_id=category_id,
+            subcategory_id=subcategory_id,
             concept=parsed["concept"],
             amount=parsed["amount"],
             raw_text=text,
@@ -871,7 +874,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ocr_data = pending_ocr.pop(chat_id)
         concept = ocr_data["comercio"] or "Ticket"
         keywords = db.get_all_keywords()
-        category_id = categorizer.categorize(concept, keywords)
+        category_id, subcategory_id = categorizer.categorize(concept, keywords)
         categories = {r["id"]: r for r in db.get_all_categories()}
         cat = categories.get(category_id)
         cat_name = cat["name"] if cat else "Sin categoría"
@@ -880,6 +883,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expense_id = db.create_expense(
                 user_id=user["id"],
                 category_id=category_id,
+                subcategory_id=subcategory_id,
                 concept=concept,
                 amount=ocr_data["monto"],
                 raw_text=f"[OCR] {concept} {ocr_data['monto']}",
@@ -950,6 +954,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expense_id = db.create_expense(
                 user_id=user["id"],
                 category_id=data["category_id"],
+                subcategory_id=data.get("subcategory_id"),
                 concept=data["concept"],
                 amount=data["amount"],
                 raw_text=data["raw_text"],
@@ -988,6 +993,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expense_id = db.create_expense(
                 user_id=user["id"],
                 category_id=data["category_id"],
+                subcategory_id=data.get("subcategory_id"),
                 concept=data["concept"],
                 amount=data["amount"],
                 raw_text=data["raw_text"],
