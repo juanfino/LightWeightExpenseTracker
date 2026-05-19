@@ -252,11 +252,12 @@ def api_keywords_delete():
 
 @app.route("/api/expenses/update", methods=["POST"])
 def api_expenses_update():
-    data        = request.get_json(silent=True) or {}
-    expense_id  = data.get("id")
-    concept     = (data.get("concept") or "").strip()
-    amount      = data.get("amount")
-    category_id = data.get("category_id")   # may be None / null
+    data           = request.get_json(silent=True) or {}
+    expense_id     = data.get("id")
+    concept        = (data.get("concept") or "").strip()
+    amount         = data.get("amount")
+    category_id    = data.get("category_id")    # may be None / null
+    subcategory_id = data.get("subcategory_id") # may be None / null
 
     if not expense_id or not concept or amount is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -268,11 +269,31 @@ def api_expenses_update():
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
 
-    cat_id = int(category_id) if category_id else None
-    updated = db.update_expense(int(expense_id), concept, amount, cat_id)
+    cat_id    = int(category_id)    if category_id    else None
+    subcat_id = int(subcategory_id) if subcategory_id else None
+    updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id)
     if updated:
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
+
+
+@app.route("/api/subcategories")
+def api_subcategories():
+    category_id = request.args.get("category_id")
+    if category_id:
+        rows = db.get_subcategories(int(category_id))
+        return jsonify([{"id": r["id"], "name": r["name"]} for r in rows])
+    rows = db.get_all_subcategories()
+    return jsonify([{"id": r["id"], "category_id": r["category_id"], "name": r["name"]} for r in rows])
+
+
+@app.route("/api/expenses/<int:expense_id>/subcategory", methods=["POST"])
+def api_expenses_set_subcategory(expense_id: int):
+    data           = request.get_json(silent=True) or {}
+    subcategory_id = data.get("subcategory_id")  # may be None / null
+    subcat_id      = int(subcategory_id) if subcategory_id is not None else None
+    db.update_expense_subcategory(expense_id, subcat_id)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/categories/add", methods=["POST"])

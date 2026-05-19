@@ -36,6 +36,10 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   overflow-x: auto;
 }
 
+@media (max-width: 640px) {
+  .hide-mobile { display: none; }
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -112,6 +116,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
             <th class="sortable" data-sort="created_at">Fecha</th>
             <th class="sortable" data-sort="concept">Concepto</th>
             <th class="sortable" data-sort="category_name">Categoría</th>
+            <th class="hide-mobile">Subcategoría</th>
             <th class="sortable" data-sort="amount">Monto</th>
             <th class="sortable" data-sort="user_name">Usuario</th>
             <th></th>
@@ -255,11 +260,15 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   // ── Row builders ───────────────────────────────────────────────────────────
   function buildReadRow(r) {
     const safeConcept = r.concept.replace(/'/g, "\\'");
+    const subcatHtml  = r.subcategory_name
+      ? '<span style="font-size:11px;color:var(--muted);padding:2px 7px;border:1px solid var(--border);border-radius:4px;white-space:nowrap">' + r.subcategory_name + '</span>'
+      : '';
     return '<tr id="row-' + r.id + '">'
       + '<td class="mono" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td>' + r.concept + '</td>'
       + '<td><span class="badge"><span>' + (r.category_icon || "❓") + '</span><span>' + (r.category_name || "Sin categoría") + '</span></span></td>'
+      + '<td class="hide-mobile">' + subcatHtml + '</td>'
       + '<td class="mono" style="font-weight:600">' + fmtAmount(r.amount) + '</td>'
       + '<td style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td><div style="display:flex;gap:6px">'
@@ -282,6 +291,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td class="mono" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:120px"></td>'
       + '<td><select id="ei-cat-' + r.id + '" style="min-width:140px"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
+      + '<td class="hide-mobile"><select id="ei-subcat-' + r.id + '" style="min-width:130px"><option value="">— Sin subcategoría —</option></select></td>'
       + '<td><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100px;font-family:var(--font-mono)"></td>'
       + '<td style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
@@ -294,12 +304,39 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '</tr>';
   }
 
+  // ── Subcategory helpers ────────────────────────────────────────────────────
+  let subcatNameCache = {}; // subcategory_id → name
+
+  async function loadSubcategories(categoryId, selectEl, selectedId) {
+    selectEl.innerHTML = '<option value="">— Sin subcategoría —</option>';
+    if (!categoryId) return;
+    const subs = await fetch('/api/subcategories?category_id=' + categoryId)
+      .then(function(r) { return r.json(); }).catch(function() { return []; });
+    subs.forEach(function(s) {
+      subcatNameCache[s.id] = s.name;
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if (selectedId && s.id === selectedId) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+  }
+
   // ── Inline edit ────────────────────────────────────────────────────────────
-  function enterEditMode(id) {
+  async function enterEditMode(id) {
     const r = allExpenses.find(function(e) { return e.id === id; });
     if (!r) return;
     const tr = document.getElementById("row-" + id);
     if (tr) tr.outerHTML = buildEditRow(r);
+
+    const catEl    = document.getElementById("ei-cat-"    + id);
+    const subcatEl = document.getElementById("ei-subcat-" + id);
+
+    await loadSubcategories(r.category_id, subcatEl, r.subcategory_id);
+
+    catEl.addEventListener("change", function() {
+      loadSubcategories(catEl.value ? parseInt(catEl.value) : null, subcatEl, null);
+    });
   }
 
   function cancelEdit(id) {
@@ -312,12 +349,14 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   async function saveEdit(id) {
     const conceptEl = document.getElementById("ei-concept-" + id);
     const catEl     = document.getElementById("ei-cat-"     + id);
+    const subcatEl  = document.getElementById("ei-subcat-"  + id);
     const amountEl  = document.getElementById("ei-amount-"  + id);
     const errEl     = document.getElementById("ei-err-"     + id);
 
-    const concept = conceptEl.value.trim();
-    const amount  = parseFloat(amountEl.value);
-    const catId   = catEl.value ? parseInt(catEl.value) : null;
+    const concept  = conceptEl.value.trim();
+    const amount   = parseFloat(amountEl.value);
+    const catId    = catEl.value    ? parseInt(catEl.value)    : null;
+    const subcatId = subcatEl.value ? parseInt(subcatEl.value) : null;
 
     errEl.style.display = "none";
 
@@ -327,7 +366,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const res = await fetch("/api/expenses/update", {
       method:  "POST",
       headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({id, concept, amount, category_id: catId}),
+      body:    JSON.stringify({id, concept, amount, category_id: catId, subcategory_id: subcatId}),
     });
 
     const data = await res.json().catch(function() { return {}; });
@@ -342,12 +381,14 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     if (idx !== -1) {
       const cat = categories.find(function(c) { return c.id === catId; });
       allExpenses[idx] = Object.assign({}, allExpenses[idx], {
-        concept:        concept,
-        amount:         amount,
-        category_id:    catId,
-        category_name:  cat ? cat.name  : "Sin categoría",
-        category_icon:  cat ? cat.icon  : "❓",
-        category_color: cat ? cat.color : "#6b7280",
+        concept:          concept,
+        amount:           amount,
+        category_id:      catId,
+        category_name:    cat ? cat.name  : "Sin categoría",
+        category_icon:    cat ? cat.icon  : "❓",
+        category_color:   cat ? cat.color : "#6b7280",
+        subcategory_id:   subcatId,
+        subcategory_name: subcatId ? (subcatNameCache[subcatId] || null) : null,
       });
       const tr = document.getElementById("row-" + id);
       if (tr) tr.outerHTML = buildReadRow(allExpenses[idx]);
@@ -375,7 +416,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const tbody = document.getElementById("expense-body");
     if (slice.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin resultados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
       return;
     }
     tbody.innerHTML = slice.map(buildReadRow).join("");
