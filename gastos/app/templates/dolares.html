@@ -29,6 +29,43 @@
 @media (max-width: 800px) {
   .charts-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Sortable headers (same as history.html) ── */
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+th.sortable:hover { color: var(--text2); }
+th.sort-asc::after  { content: " ▲"; font-size: 9px; opacity: .7; }
+th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
+
+/* ── Edit modal (same as fijos.html) ── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 24px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.modal-title  { font-size: 16px; font-weight: 600; }
+.form-row     { display: flex; flex-direction: column; gap: 6px; }
+.form-label   { font-size: 12px; font-weight: 500; color: var(--text2); }
+.form-row input { width: 100%; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 {% endblock %}
 
 {% block content %}
@@ -54,7 +91,7 @@
     </div>
   </div>
 
-  <!-- ── USD por mes (full width) ─────────────────────────────────────────── -->
+  <!-- ── USD por mes (full width) ──────────────────────────────────────────── -->
   <div class="card mt-24">
     <div class="section-title" style="margin-bottom:16px">USD cambiado por mes</div>
     <div class="chart-wrap">
@@ -87,11 +124,12 @@
     <table id="historial-table">
       <thead>
         <tr>
-          <th>Fecha</th>
-          <th>Usuario</th>
-          <th class="mono">USD</th>
-          <th class="mono">Cotización</th>
-          <th class="mono">ARS obtenidos</th>
+          <th class="sortable" data-sort="fecha">Fecha</th>
+          <th class="sortable" data-sort="usuario">Usuario</th>
+          <th class="sortable mono" data-sort="monto_usd">USD</th>
+          <th class="sortable mono" data-sort="cotizacion">Cotización</th>
+          <th class="sortable mono" data-sort="monto_ars">ARS obtenidos</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="historial-tbody"></tbody>
@@ -99,6 +137,47 @@
     <div id="historial-empty" class="empty" style="display:none">No hay cambios registrados.</div>
   </div>
 
+</div>
+
+<!-- ── Delete confirmation modal (same style as history.html) ─────────────── -->
+<div id="modal-delete" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+     align-items:center; justify-content:center; z-index:100;">
+  <div class="card" style="max-width:360px; width:90%">
+    <div class="section-title" style="margin-bottom:12px">¿Eliminar este cambio?</div>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:20px" id="delete-modal-text"></p>
+    <div style="display:flex; gap:10px; justify-content:flex-end">
+      <button class="btn" id="btn-delete-cancel">Cancelar</button>
+      <button class="btn btn-danger" id="btn-delete-confirm">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit modal (same style as fijos.html) ─────────────────────────────── -->
+<div class="modal-backdrop" id="modal-edit">
+  <div class="modal">
+    <div class="modal-title">Editar cambio</div>
+    <div class="form-row">
+      <label class="form-label">Fecha</label>
+      <input type="date" id="edit-fecha">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Monto USD</label>
+      <input type="number" id="edit-usd" min="0.01" step="0.01" placeholder="Ej: 1000">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Cotización</label>
+      <input type="number" id="edit-cot" min="0.01" step="0.01" placeholder="Ej: 1400">
+    </div>
+    <div class="form-row">
+      <label class="form-label">ARS obtenidos (calculado)</label>
+      <input type="text" id="edit-ars-preview" disabled style="color:var(--text2)">
+    </div>
+    <span id="edit-error" style="font-size:12px; color:var(--danger); display:none"></span>
+    <div class="modal-footer">
+      <button class="btn" id="btn-edit-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-edit-save">Guardar</button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -128,16 +207,16 @@
 
   // ── Chart defaults ───────────────────────────────────────────────────────────
   const isDark = !window.matchMedia("(prefers-color-scheme: light)").matches;
-  const gridColor  = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-  const tickColor  = isDark ? "#9090a0" : "#606078";
-  const ACCENT     = "#7c6af7";
-  const GREEN      = "#2eca8a";
-  const BLUE       = "#38bdf8";
+  const gridColor = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+  const tickColor = isDark ? "#9090a0" : "#606078";
+  const ACCENT    = "#7c6af7";
+  const GREEN     = "#2eca8a";
+  const BLUE      = "#38bdf8";
 
   Chart.defaults.font.family = "'DM Sans', sans-serif";
   Chart.defaults.font.size   = 12;
 
-  // ── Load & render ────────────────────────────────────────────────────────────
+  // ── Load & render summary ────────────────────────────────────────────────────
   async function loadResumen() {
     const res  = await fetch("/api/cambios/resumen");
     const data = await res.json();
@@ -146,6 +225,7 @@
     document.getElementById("val-ars").textContent = fmtARS(data.total_ars_mes);
   }
 
+  // ── Charts ───────────────────────────────────────────────────────────────────
   let usdMesChart = null;
   async function loadUsdMes() {
     const res  = await fetch("/api/cambios/por_mes");
@@ -172,10 +252,7 @@
         scales: {
           x: { ticks: { color: tickColor }, grid: { color: gridColor } },
           y: {
-            ticks: {
-              color: tickColor,
-              callback: v => "U$S " + v.toLocaleString("es-AR"),
-            },
+            ticks: { color: tickColor, callback: v => "U$S " + v.toLocaleString("es-AR") },
             grid: { color: gridColor },
           },
         },
@@ -212,10 +289,7 @@
         scales: {
           x: { ticks: { color: tickColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
           y: {
-            ticks: {
-              color: tickColor,
-              callback: v => "$" + v.toLocaleString("es-AR"),
-            },
+            ticks: { color: tickColor, callback: v => "$" + v.toLocaleString("es-AR") },
             grid: { color: gridColor },
           },
         },
@@ -228,15 +302,13 @@
     const res  = await fetch("/api/cambios/por_mes");
     const rows = await res.json();
     if (mesChart) { mesChart.destroy(); }
-    const labels = rows.map(r => fmtMes(r.mes));
-    const values = rows.map(r => r.total_ars);
     mesChart = new Chart(document.getElementById("chart-por-mes"), {
       type: "bar",
       data: {
-        labels,
+        labels: rows.map(r => fmtMes(r.mes)),
         datasets: [{
           label: "ARS obtenidos",
-          data: values,
+          data: rows.map(r => r.total_ars),
           backgroundColor: "rgba(46,202,138,0.7)",
           borderColor: GREEN,
           borderWidth: 1,
@@ -250,10 +322,7 @@
         scales: {
           x: { ticks: { color: tickColor }, grid: { color: gridColor } },
           y: {
-            ticks: {
-              color: tickColor,
-              callback: v => "$" + v.toLocaleString("es-AR"),
-            },
+            ticks: { color: tickColor, callback: v => "$" + v.toLocaleString("es-AR") },
             grid: { color: gridColor },
           },
         },
@@ -261,30 +330,196 @@
     });
   }
 
-  async function loadHistorial() {
-    const res  = await fetch("/api/cambios/historial");
-    const rows = await res.json();
+  // ── Historial: state & sorting ───────────────────────────────────────────────
+  let allCambios = [];
+  let sortCol    = "fecha";
+  let sortDir    = -1; // -1 = desc, 1 = asc
+
+  function sortCambios() {
+    allCambios.sort(function(a, b) {
+      var av = a[sortCol];
+      var bv = b[sortCol];
+      if (sortCol === "monto_usd" || sortCol === "cotizacion" || sortCol === "monto_ars") {
+        return sortDir * ((av || 0) - (bv || 0));
+      }
+      av = (av || "").toLowerCase();
+      bv = (bv || "").toLowerCase();
+      return sortDir * av.localeCompare(bv);
+    });
+  }
+
+  function updateSortHeaders() {
+    document.querySelectorAll("#historial-table th[data-sort]").forEach(function(th) {
+      th.classList.remove("sort-asc", "sort-desc");
+      if (th.dataset.sort === sortCol) {
+        th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
+      }
+    });
+  }
+
+  document.querySelectorAll("#historial-table th[data-sort]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      var col = this.dataset.sort;
+      if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
+      sortCambios();
+      renderHistorial();
+      updateSortHeaders();
+    });
+  });
+
+  // ── Row builder ──────────────────────────────────────────────────────────────
+  function buildRow(r) {
+    return '<tr id="crow-' + r.id + '">'
+      + '<td class="mono" style="color:var(--text2)">' + r.fecha + '</td>'
+      + '<td>' + r.usuario + '</td>'
+      + '<td class="mono">' + fmtUSD(r.monto_usd) + '</td>'
+      + '<td class="mono">' + fmtARS(r.cotizacion) + '</td>'
+      + '<td class="mono">' + fmtARS(r.monto_ars) + '</td>'
+      + '<td><div style="display:flex;gap:6px">'
+      +   '<button class="btn" style="padding:4px 10px;font-size:12px" title="Editar" onclick="openEdit(' + r.id + ')">'
+      +     '<i class="ti ti-pencil"></i>'
+      +   '</button>'
+      +   '<button class="btn btn-danger" style="padding:4px 10px;font-size:12px" title="Eliminar" onclick="confirmDelete(' + r.id + ')">'
+      +     '<i class="ti ti-trash"></i>'
+      +   '</button>'
+      + '</div></td>'
+      + '</tr>';
+  }
+
+  function renderHistorial() {
     const tbody   = document.getElementById("historial-tbody");
     const tableEl = document.getElementById("historial-table");
     const emptyEl = document.getElementById("historial-empty");
-    if (!rows.length) {
+    if (!allCambios.length) {
       tableEl.style.display = "none";
       emptyEl.style.display = "block";
       return;
     }
     tableEl.style.display = "";
     emptyEl.style.display = "none";
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.fecha}</td>
-        <td>${r.usuario}</td>
-        <td class="mono">${fmtUSD(r.monto_usd)}</td>
-        <td class="mono">${fmtARS(r.cotizacion)}</td>
-        <td class="mono">${fmtARS(r.monto_ars)}</td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = allCambios.map(buildRow).join("");
   }
 
+  async function loadHistorial() {
+    const res  = await fetch("/api/cambios/historial");
+    allCambios = await res.json();
+    sortCambios();
+    renderHistorial();
+    updateSortHeaders();
+  }
+
+  // ── Delete ───────────────────────────────────────────────────────────────────
+  let pendingDeleteId = null;
+
+  function confirmDelete(id) {
+    pendingDeleteId = id;
+    const r = allCambios.find(function(c) { return c.id === id; });
+    document.getElementById("delete-modal-text").textContent =
+      r ? (fmtUSD(r.monto_usd) + " a $" + r.cotizacion + " el " + r.fecha + ". Esta acción no se puede deshacer.")
+        : "Esta acción no se puede deshacer.";
+    document.getElementById("modal-delete").style.display = "flex";
+  }
+
+  document.getElementById("btn-delete-cancel").addEventListener("click", function() {
+    document.getElementById("modal-delete").style.display = "none";
+    pendingDeleteId = null;
+  });
+
+  document.getElementById("btn-delete-confirm").addEventListener("click", async function() {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    document.getElementById("modal-delete").style.display = "none";
+    pendingDeleteId = null;
+    const res = await fetch("/api/cambios/" + id, { method: "DELETE" });
+    if (res.ok) {
+      allCambios = allCambios.filter(function(c) { return c.id !== id; });
+      renderHistorial();
+    } else {
+      alert("Error al eliminar el cambio.");
+    }
+  });
+
+  // ── Edit modal ───────────────────────────────────────────────────────────────
+  let editingId = null;
+
+  function updateArsPreview() {
+    const usd = parseFloat(document.getElementById("edit-usd").value);
+    const cot = parseFloat(document.getElementById("edit-cot").value);
+    document.getElementById("edit-ars-preview").value =
+      (!isNaN(usd) && !isNaN(cot) && usd > 0 && cot > 0) ? fmtARS(usd * cot) : "—";
+  }
+
+  document.getElementById("edit-usd").addEventListener("input", updateArsPreview);
+  document.getElementById("edit-cot").addEventListener("input", updateArsPreview);
+
+  function openEdit(id) {
+    const r = allCambios.find(function(c) { return c.id === id; });
+    if (!r) return;
+    editingId = id;
+    document.getElementById("edit-fecha").value        = r.fecha;
+    document.getElementById("edit-usd").value          = r.monto_usd;
+    document.getElementById("edit-cot").value          = r.cotizacion;
+    document.getElementById("edit-error").style.display = "none";
+    updateArsPreview();
+    document.getElementById("modal-edit").classList.add("open");
+    document.getElementById("edit-usd").focus();
+  }
+
+  document.getElementById("btn-edit-cancel").addEventListener("click", function() {
+    document.getElementById("modal-edit").classList.remove("open");
+    editingId = null;
+  });
+
+  document.getElementById("modal-edit").addEventListener("click", function(e) {
+    if (e.target === this) {
+      this.classList.remove("open");
+      editingId = null;
+    }
+  });
+
+  document.getElementById("btn-edit-save").addEventListener("click", async function() {
+    const errEl     = document.getElementById("edit-error");
+    const fecha     = document.getElementById("edit-fecha").value;
+    const monto_usd = parseFloat(document.getElementById("edit-usd").value);
+    const cotizacion = parseFloat(document.getElementById("edit-cot").value);
+
+    errEl.style.display = "none";
+
+    if (!fecha)                    { errEl.textContent = "La fecha es obligatoria."; errEl.style.display = "inline"; return; }
+    if (isNaN(monto_usd) || monto_usd <= 0) { errEl.textContent = "Monto USD inválido."; errEl.style.display = "inline"; return; }
+    if (isNaN(cotizacion) || cotizacion <= 0) { errEl.textContent = "Cotización inválida."; errEl.style.display = "inline"; return; }
+
+    const res  = await fetch("/api/cambios/" + editingId, {
+      method:  "PUT",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({fecha, monto_usd, cotizacion}),
+    });
+    const data = await res.json().catch(function() { return {}; });
+
+    if (!data.ok) {
+      errEl.textContent  = data.error || "Error al guardar.";
+      errEl.style.display = "inline";
+      return;
+    }
+
+    // Update local data and re-render the changed row
+    const idx = allCambios.findIndex(function(c) { return c.id === editingId; });
+    if (idx !== -1) {
+      allCambios[idx] = Object.assign({}, allCambios[idx], {
+        fecha,
+        monto_usd,
+        cotizacion,
+        monto_ars: data.monto_ars,
+      });
+      const tr = document.getElementById("crow-" + editingId);
+      if (tr) tr.outerHTML = buildRow(allCambios[idx]);
+    }
+
+    document.getElementById("modal-edit").classList.remove("open");
+    editingId = null;
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
   loadResumen();
   loadUsdMes();
   loadCotizacion();

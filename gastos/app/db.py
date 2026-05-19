@@ -914,3 +914,19 @@ def get_cambios_cotizacion_historica() -> list:
         return conn.execute(
             "SELECT fecha, cotizacion FROM cambios_dolar ORDER BY fecha ASC"
         ).fetchall()
+
+
+def delete_cambio(cambio_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM cambios_dolar WHERE id = ?", (cambio_id,))
+        return cur.rowcount > 0
+
+
+def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float) -> bool:
+    monto_ars = monto_usd * cotizacion
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=? WHERE id=?",
+            (fecha, monto_usd, cotizacion, monto_ars, cambio_id),
+        )
+        return cur.rowcount > 0

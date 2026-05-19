@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.5
+- Dólares: historial de cambios con cabeceras ordenables (Fecha, Usuario, USD, Cotización, ARS obtenidos); orden por defecto Fecha DESC
+- Dólares: botón eliminar (ícono papelera) con modal de confirmación; elimina la fila sin recargar la página (`DELETE /api/cambios/<id>`)
+- Dólares: botón editar (ícono lápiz) abre modal con campos fecha, monto USD y cotización; ARS se recalcula en tiempo real; guarda sin recargar (`PUT /api/cambios/<id>`)
+- DB: nuevas funciones `delete_cambio()` y `update_cambio()`
+
 ## 1.6.4
 - Dólares: nuevo gráfico de barras "USD cambiado por mes" (últimos 6 meses) a ancho completo, entre las tarjetas de resumen y los gráficos existentes; barras en azul (`#38bdf8`) para diferenciarlo visualmente del gráfico de ARS (verde)
 
