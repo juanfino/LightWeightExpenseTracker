@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0
+- DB: nueva tabla `subcategories` (id, category_id, name) con FK a categories en CASCADE
+- DB: columna `subcategory_id` agregada a `expenses` y `keywords`; migraciones automáticas para DBs existentes
+- DB: nuevas funciones `get_subcategories()`, `get_all_subcategories()`, `get_subcategory_by_id()`, `add_subcategory()`, `delete_subcategory()`, `update_expense_subcategory()`, `update_keyword_subcategory()`
+- DB: `get_recent_expenses()`, `get_expenses_by_month()`, `get_expense_by_id()`, `get_all_keywords()` incluyen `subcategory_id` y `subcategory_name` en el resultado
+- DB: `update_expense()` acepta parámetro opcional `subcategory_id`
+- Seed: reescrito con función idempotente `seed(conn)`; nuevas categorías padre (Hogar, Hijos, Gastos Generales, Trabajo) con subcategorías
+- Seed: migración de datos — reasigna gastos y keywords de categorías antiguas (Alimentación, Educación, Ropa, etc.) a la nueva jerarquía con subcategoría correspondiente
+
 ## 1.6.5
 - Dólares: historial de cambios con cabeceras ordenables (Fecha, Usuario, USD, Cotización, ARS obtenidos); orden por defecto Fecha DESC
 - Dólares: botón eliminar (ícono papelera) con modal de confirmación; elimina la fila sin recargar la página (`DELETE /api/cambios/<id>`)
