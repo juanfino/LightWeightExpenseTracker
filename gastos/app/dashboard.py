@@ -296,6 +296,47 @@ def api_expenses_set_subcategory(expense_id: int):
     return jsonify({"ok": True})
 
 
+@app.route("/api/subcategories/add", methods=["POST"])
+def api_subcategories_add():
+    data        = request.get_json(silent=True) or {}
+    category_id = data.get("category_id")
+    name        = (data.get("name") or "").strip()
+    if not category_id or not name:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    new_id = db.add_subcategory(int(category_id), name)
+    return jsonify({"ok": True, "id": new_id})
+
+
+@app.route("/api/subcategories/delete", methods=["POST"])
+def api_subcategories_delete():
+    data      = request.get_json(silent=True) or {}
+    subcat_id = data.get("id")
+    if not subcat_id:
+        return jsonify({"ok": False, "error": "Falta el campo 'id'"}), 400
+    count = db.get_expense_count_by_subcategory(int(subcat_id))
+    if count > 0:
+        return jsonify({"ok": False, "error": f"Hay {count} gasto{'s' if count != 1 else ''} con esta subcategoría"}), 400
+    deleted = db.delete_subcategory(int(subcat_id))
+    if deleted:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Subcategoría no encontrada"}), 404
+
+
+@app.route("/api/keywords/<int:keyword_id>", methods=["PUT"])
+def api_keywords_update(keyword_id: int):
+    data           = request.get_json(silent=True) or {}
+    keyword        = (data.get("keyword") or "").strip()
+    category_id    = data.get("category_id")
+    subcategory_id = data.get("subcategory_id")
+    if not keyword or not category_id:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+    subcat_id = int(subcategory_id) if subcategory_id else None
+    updated = db.update_keyword(keyword_id, keyword, int(category_id), subcat_id)
+    if updated:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Keyword no encontrada"}), 404
+
+
 @app.route("/api/categories/add", methods=["POST"])
 def api_categories_add():
     data  = request.get_json(silent=True) or {}

@@ -767,6 +767,23 @@ def delete_keyword(keyword_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def get_expense_count_by_subcategory(subcategory_id: int) -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM expenses WHERE subcategory_id = ?", (subcategory_id,)
+        ).fetchone()[0]
+
+
+def update_keyword(keyword_id: int, keyword: str, category_id: int, subcategory_id: int | None) -> bool:
+    kw = keyword.lower().strip()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE keywords SET keyword=?, category_id=?, subcategory_id=? WHERE id=?",
+            (kw, category_id, subcategory_id, keyword_id),
+        )
+        return cur.rowcount > 0
+
+
 # ── Subcategorías ─────────────────────────────────────────────────────────────
 
 def get_subcategories(category_id: int):

@@ -169,14 +169,27 @@ button[disabled] {
         <tr>
           <th class="sortable" data-sort-kw="keyword">Keyword</th>
           <th class="sortable" data-sort-kw="category">Categoría</th>
+          <th>Subcategoría</th>
+          <th></th>
           <th></th>
         </tr>
       </thead>
       <tbody id="kw-body">
         {% for kw in keywords %}
-        <tr id="kw-row-{{ kw.id }}" data-keyword="{{ kw.keyword }}" data-category="{{ kw.category_name }}">
+        <tr id="kw-row-{{ kw.id }}"
+            data-keyword="{{ kw.keyword }}"
+            data-category="{{ kw.category_name }}"
+            data-kw-id="{{ kw.id }}"
+            data-category-id="{{ kw.category_id or '' }}"
+            data-subcategory-id="{{ kw.subcategory_id or '' }}"
+            data-subcategory="{{ kw.subcategory_name or '' }}">
           <td class="mono">{{ kw.keyword }}</td>
           <td><span class="badge">{{ kw.category_name }}</span></td>
+          <td>{% if kw.subcategory_name %}<span style="font-size:12px; color:var(--muted)">{{ kw.subcategory_name }}</span>{% endif %}</td>
+          <td>
+            <button class="btn" style="padding:4px 10px; font-size:12px"
+              onclick="enterKwEditMode({{ kw.id }})">Editar</button>
+          </td>
           <td>
             <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
               onclick="deleteKeyword({{ kw.id }}, '{{ kw.keyword }}')">
@@ -293,6 +306,20 @@ button[disabled] {
                 + ' onclick="deleteCategory(' + cat.id + ', \'' + safeName + '\')">Borrar</button>';
     }
 
+    let subcatToggleBtn = '';
+    let subcatDetailRow = '';
+    if (!isProtected) {
+      const cnt = subcatCount(cat.id);
+      subcatToggleBtn = '<button id="subcat-toggle-' + cat.id + '" class="btn"'
+                      + ' style="padding:4px 10px;font-size:12px"'
+                      + ' onclick="toggleSubcats(' + cat.id + ')">Ver subcategorías (' + cnt + ')</button>';
+      subcatDetailRow = '<tr id="subcat-row-' + cat.id + '" style="display:none">'
+                      + '<td colspan="5" style="padding:0">'
+                      + '<div id="subcat-panel-' + cat.id + '"'
+                      + ' style="padding:12px 20px 16px 52px;background:rgba(0,0,0,.15);border-top:1px solid var(--border)">'
+                      + '</div></td></tr>';
+    }
+
     return `<tr id="cat-row-${cat.id}">
       <td style="font-size:20px">${cat.icon}</td>
       <td>${cat.name}${protectedBadge}</td>
@@ -301,8 +328,8 @@ button[disabled] {
         <span class="mono" style="font-size:12px; color:var(--muted)">${cat.color}</span>
       </td>
       <td style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">${expenseCount}</td>
-      <td><div style="display:flex; gap:6px; justify-content:flex-end">${editBtn} ${deleteBtn}</div></td>
-    </tr>`;
+      <td><div style="display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap">${subcatToggleBtn} ${editBtn} ${deleteBtn}</div></td>
+    </tr>${subcatDetailRow}`;
   }
 
   function renderCategories() {
@@ -519,7 +546,228 @@ button[disabled] {
     });
   });
 
+  // ── Subcategorías ────────────────────────────────────────────────────────────
+  let subcatData = {};       // { category_id: [{id, name}, ...] }
+  let subcatNameCache = {};  // { subcat_id: name }
+
+  async function initSubcats() {
+    const res  = await fetch("/api/subcategories");
+    const list = await res.json();
+    subcatData = {};
+    subcatNameCache = {};
+    list.forEach(function(s) {
+      if (!subcatData[s.category_id]) subcatData[s.category_id] = [];
+      subcatData[s.category_id].push({id: s.id, name: s.name});
+      subcatNameCache[s.id] = s.name;
+    });
+    renderCategories();
+  }
+
+  function subcatCount(catId) {
+    return (subcatData[catId] || []).length;
+  }
+
+  function subcatNameById(id) {
+    return id ? (subcatNameCache[id] || "") : "";
+  }
+
+  function toggleSubcats(catId) {
+    const row   = document.getElementById("subcat-row-" + catId);
+    const panel = document.getElementById("subcat-panel-" + catId);
+    const btn   = document.getElementById("subcat-toggle-" + catId);
+    if (!row) return;
+    const open = row.style.display !== "none";
+    if (open) {
+      row.style.display = "none";
+      btn.textContent   = "Ver subcategorías (" + subcatCount(catId) + ")";
+    } else {
+      renderSubcatPanel(catId);
+      row.style.display = "";
+      btn.textContent   = "Ocultar subcategorías";
+    }
+  }
+
+  function renderSubcatPanel(catId) {
+    const panel = document.getElementById("subcat-panel-" + catId);
+    if (!panel) return;
+    const list  = subcatData[catId] || [];
+    let html    = '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px">';
+    list.forEach(function(s) {
+      html += '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.08);'
+            + ' border:1px solid var(--border); border-radius:6px; padding:3px 8px; font-size:12px">'
+            + s.name
+            + ' <button onclick="deleteSubcat(' + s.id + ', \'' + s.name.replace(/'/g, "\\'") + '\', ' + catId + ')"'
+            + ' style="background:none;border:none;cursor:pointer;color:var(--muted);padding:0;line-height:1;font-size:14px"'
+            + ' title="Eliminar">×</button></span>';
+    });
+    html += '</div>';
+    html += '<div style="display:flex; gap:6px; align-items:center">'
+          + '<input id="new-subcat-' + catId + '" type="text" placeholder="Nueva subcategoría…"'
+          + ' style="flex:1;max-width:220px;padding:5px 8px;font-size:13px;background:var(--input-bg);'
+          + 'border:1px solid var(--border);border-radius:6px;color:var(--text)"'
+          + ' onkeydown="if(event.key===\'Enter\') addSubcat(' + catId + ')">'
+          + '<button class="btn" style="padding:5px 12px;font-size:13px" onclick="addSubcat(' + catId + ')">+ Agregar</button>'
+          + '</div>';
+    panel.innerHTML = html;
+  }
+
+  async function deleteSubcat(subcatId, name, catId) {
+    if (!confirm('¿Eliminar la subcategoría "' + name + '"?')) return;
+    const res  = await fetch("/api/subcategories/delete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({id: subcatId}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      subcatData[catId]   = (subcatData[catId] || []).filter(function(s) { return s.id !== subcatId; });
+      delete subcatNameCache[subcatId];
+      const btn = document.getElementById("subcat-toggle-" + catId);
+      if (btn) btn.textContent = "Ocultar subcategorías";
+      renderSubcatPanel(catId);
+      showToast('Subcategoría "' + name + '" eliminada.');
+    } else {
+      showToast(data.error || "Error al eliminar.", true);
+    }
+  }
+
+  async function addSubcat(catId) {
+    const input = document.getElementById("new-subcat-" + catId);
+    const name  = input ? input.value.trim() : "";
+    if (!name) { showToast("Escribí el nombre de la subcategoría.", true); return; }
+    const res  = await fetch("/api/subcategories/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({category_id: catId, name}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (!subcatData[catId]) subcatData[catId] = [];
+      subcatData[catId].push({id: data.id, name});
+      subcatNameCache[data.id] = name;
+      const btn = document.getElementById("subcat-toggle-" + catId);
+      if (btn) btn.textContent = "Ocultar subcategorías";
+      renderSubcatPanel(catId);
+      showToast('Subcategoría "' + name + '" agregada.');
+    } else {
+      showToast(data.error || "Error al agregar.", true);
+    }
+  }
+
+  // ── Keyword inline edit ───────────────────────────────────────────────────────
+  let kwData = {};  // { id: {id, keyword, categoryId, subcategoryId} }
+
+  function kwDataFromRow(tr) {
+    return {
+      id:            parseInt(tr.dataset.kwId),
+      keyword:       tr.dataset.keyword       || "",
+      categoryId:    parseInt(tr.dataset.categoryId) || 0,
+      subcategoryId: parseInt(tr.dataset.subcategoryId) || 0,
+    };
+  }
+
+  function buildKwReadRow(d) {
+    const catName    = (categories.find(function(c) { return c.id === d.categoryId; }) || {}).name || "";
+    const subcatName = subcatNameById(d.subcategoryId);
+    return '<tr id="kw-row-' + d.id + '"'
+         + ' data-keyword="' + d.keyword.replace(/"/g, "&quot;") + '"'
+         + ' data-category="' + catName.replace(/"/g, "&quot;") + '"'
+         + ' data-kw-id="' + d.id + '"'
+         + ' data-category-id="' + (d.categoryId || "") + '"'
+         + ' data-subcategory-id="' + (d.subcategoryId || "") + '"'
+         + ' data-subcategory="' + subcatName.replace(/"/g, "&quot;") + '">'
+         + '<td class="mono">' + d.keyword + '</td>'
+         + '<td><span class="badge">' + catName + '</span></td>'
+         + '<td>' + (subcatName ? '<span style="font-size:12px;color:var(--muted)">' + subcatName + '</span>' : '') + '</td>'
+         + '<td><button class="btn" style="padding:4px 10px;font-size:12px"'
+         + ' onclick="enterKwEditMode(' + d.id + ')">Editar</button></td>'
+         + '<td><button class="btn btn-danger" style="padding:4px 10px;font-size:12px"'
+         + ' onclick="deleteKeyword(' + d.id + ', \'' + d.keyword.replace(/'/g, "\\'") + '\')">Borrar</button></td>'
+         + '</tr>';
+  }
+
+  function buildKwEditRow(d) {
+    let catOptions = categories.map(function(c) {
+      return '<option value="' + c.id + '"' + (c.id === d.categoryId ? ' selected' : '') + '>' + c.name + '</option>';
+    }).join("");
+    return '<tr id="kw-row-' + d.id + '">'
+         + '<td><input id="kw-edit-word-' + d.id + '" class="mono" type="text" value="' + d.keyword.replace(/"/g, "&quot;") + '"'
+         + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></td>'
+         + '<td><select id="kw-edit-cat-' + d.id + '" onchange="loadKwSubcats(' + d.id + ')"'
+         + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">'
+         + catOptions + '</select></td>'
+         + '<td><select id="kw-edit-subcat-' + d.id + '"'
+         + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">'
+         + '<option value="">— ninguna —</option>'
+         + '</select></td>'
+         + '<td><button class="btn" style="padding:4px 10px;font-size:12px" onclick="saveKwEdit(' + d.id + ')">Guardar</button></td>'
+         + '<td><button class="btn" style="padding:4px 10px;font-size:12px" onclick="cancelKwEdit(' + d.id + ')">Cancelar</button></td>'
+         + '</tr>';
+  }
+
+  async function loadKwSubcats(kwId) {
+    const sel    = document.getElementById("kw-edit-cat-" + kwId);
+    const catId  = parseInt(sel.value);
+    const sSel   = document.getElementById("kw-edit-subcat-" + kwId);
+    const cur    = kwData[kwId] ? kwData[kwId].subcategoryId : 0;
+    const list   = subcatData[catId] || [];
+    sSel.innerHTML = '<option value="">— ninguna —</option>'
+                   + list.map(function(s) {
+                       return '<option value="' + s.id + '"' + (s.id === cur ? ' selected' : '') + '>' + s.name + '</option>';
+                     }).join("");
+  }
+
+  async function enterKwEditMode(kwId) {
+    const tr = document.getElementById("kw-row-" + kwId);
+    if (!tr) return;
+    const d  = kwDataFromRow(tr);
+    kwData[kwId] = d;
+    tr.outerHTML = buildKwEditRow(d);
+    await loadKwSubcats(kwId);
+    // restore selected subcategory after re-populating
+    const sSel = document.getElementById("kw-edit-subcat-" + kwId);
+    if (sSel && d.subcategoryId) sSel.value = d.subcategoryId;
+  }
+
+  function cancelKwEdit(kwId) {
+    const tr = document.getElementById("kw-row-" + kwId);
+    if (!tr) return;
+    const d  = kwData[kwId];
+    if (d) {
+      tr.outerHTML = buildKwReadRow(d);
+    } else {
+      location.reload();
+    }
+  }
+
+  async function saveKwEdit(kwId) {
+    const wordEl   = document.getElementById("kw-edit-word-"   + kwId);
+    const catEl    = document.getElementById("kw-edit-cat-"    + kwId);
+    const subcatEl = document.getElementById("kw-edit-subcat-" + kwId);
+    const keyword      = wordEl   ? wordEl.value.trim()   : "";
+    const categoryId   = catEl    ? parseInt(catEl.value) : 0;
+    const subcategoryId = subcatEl && subcatEl.value ? parseInt(subcatEl.value) : null;
+    if (!keyword)    { showToast("La keyword no puede estar vacía.", true); return; }
+    if (!categoryId) { showToast("Seleccioná una categoría.", true); return; }
+    const res  = await fetch("/api/keywords/" + kwId, {
+      method: "PUT",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({keyword, category_id: categoryId, subcategory_id: subcategoryId}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const d = {id: kwId, keyword, categoryId, subcategoryId: subcategoryId || 0};
+      kwData[kwId] = d;
+      const tr = document.getElementById("kw-row-" + kwId);
+      if (tr) tr.outerHTML = buildKwReadRow(d);
+      showToast('Keyword "' + keyword + '" actualizada.');
+    } else {
+      showToast(data.error || "Error al guardar.", true);
+    }
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────────
+  initSubcats();
   renderCategories();
 </script>
 {% endblock %}
