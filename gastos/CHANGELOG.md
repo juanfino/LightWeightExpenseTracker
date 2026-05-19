@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.3
+- Fix: comando `CambioDolar` ahora tiene su propio MessageHandler con filtro `Regex` registrado antes del handler genérico de gastos, evitando que mensajes como `CambioDolar 1000 1400` sean interceptados y den error de monto inválido
+
 ## 1.6.2
 - **Dólares**: nueva sección para registrar operaciones de cambio de divisas
 - Nueva tabla `cambios_dolar` en la DB con campos `fecha`, `monto_usd`, `cotizacion`, `monto_ars`, `usuario`
