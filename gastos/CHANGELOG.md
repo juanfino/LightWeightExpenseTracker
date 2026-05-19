@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.4
+- Dólares: nuevo gráfico de barras "USD cambiado por mes" (últimos 6 meses) a ancho completo, entre las tarjetas de resumen y los gráficos existentes; barras en azul (`#38bdf8`) para diferenciarlo visualmente del gráfico de ARS (verde)
+
 ## 1.6.3
 - Fix: comando `CambioDolar` ahora tiene su propio MessageHandler con filtro `Regex` registrado antes del handler genérico de gastos, evitando que mensajes como `CambioDolar 1000 1400` sean interceptados y den error de monto inválido
 
