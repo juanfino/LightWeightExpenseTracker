@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.2
+- **Dólares**: nueva sección para registrar operaciones de cambio de divisas
+- Nueva tabla `cambios_dolar` en la DB con campos `fecha`, `monto_usd`, `cotizacion`, `monto_ars`, `usuario`
+- Bot: nuevo comando `CambioDolar <monto_usd> <cotizacion>` (case-insensitive); soporta formato argentino (`1.000`, `1.400,50`); responde con confirmación formateada
+- Dashboard: nueva página `/dolares` con 3 tarjetas de resumen del mes, gráfico de línea (evolución de la cotización), gráfico de barras (ARS por mes) y tabla de historial de las últimas 50 operaciones
+- Dashboard: 4 nuevos endpoints — `GET /api/cambios/resumen`, `GET /api/cambios/historial`, `GET /api/cambios/por_mes`, `GET /api/cambios/cotizacion_historica`
+- Navegación: "Dólares" agregado entre "Fijos" y "Categorías" en el topbar
+
 ## 1.6.1
 - Gastos Fijos: botón "Registrar pago" reemplazado por dos acciones distintas — "**+ Registrar pago**" (abre modal, crea gasto y marca como pagado) y "**✓ Ya lo pagué**" (marca como pagado sin crear gasto ni abrir modal)
 - Nuevo endpoint `POST /api/fixed-expenses/mark-paid` y función `db.create_fixed_payment_without_expense()`

@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS fixed_expense_payments (
     created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
     UNIQUE(fixed_expense_id, year, month)
 );
+
+CREATE TABLE IF NOT EXISTS cambios_dolar (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha      TEXT    NOT NULL,
+    monto_usd  REAL    NOT NULL,
+    cotizacion REAL    NOT NULL,
+    monto_ars  REAL    NOT NULL,
+    usuario    TEXT    NOT NULL
+);
 """
 
 
@@ -831,3 +840,77 @@ def get_fixed_expense_monthly_summary(year: int, month: int) -> dict:
         "total_estimated": total_estimated,
         "total_paid":      total_paid,
     }
+
+
+# ── Cambios de Dólar ──────────────────────────────────────────────────────────
+
+def registrar_cambio(fecha: str, monto_usd: float, cotizacion: float, usuario: str) -> int:
+    monto_ars = monto_usd * cotizacion
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO cambios_dolar (fecha, monto_usd, cotizacion, monto_ars, usuario)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (fecha, monto_usd, cotizacion, monto_ars, usuario),
+        )
+        return cur.lastrowid
+
+
+def get_cambios_resumen_mes(year: int, month: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(monto_usd), 0)  AS total_usd,
+                   COALESCE(AVG(cotizacion), 0)  AS cotizacion_promedio,
+                   COALESCE(SUM(monto_ars), 0)  AS total_ars
+            FROM cambios_dolar
+            WHERE strftime('%Y', fecha) = ?
+              AND strftime('%m', fecha) = ?
+            """,
+            (str(year), f"{month:02d}"),
+        ).fetchone()
+    return {
+        "total_usd_mes":          row["total_usd"],
+        "cotizacion_promedio_mes": row["cotizacion_promedio"],
+        "total_ars_mes":          row["total_ars"],
+    }
+
+
+def get_cambios_historial(limit: int = 50) -> list:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT id, fecha, monto_usd, cotizacion, monto_ars, usuario"
+            " FROM cambios_dolar ORDER BY fecha DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+
+def get_cambios_por_mes(months: int = 12) -> list:
+    from datetime import date
+    today = date.today()
+    start_m = today.month - months + 1
+    start_y = today.year
+    while start_m <= 0:
+        start_m += 12
+        start_y -= 1
+    start_date = f"{start_y}-{start_m:02d}-01"
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT strftime('%Y-%m', fecha)    AS mes,
+                   COALESCE(SUM(monto_usd), 0) AS total_usd,
+                   COALESCE(SUM(monto_ars), 0) AS total_ars,
+                   COALESCE(AVG(cotizacion), 0) AS cotizacion_promedio
+            FROM cambios_dolar
+            WHERE fecha >= ?
+            GROUP BY mes
+            ORDER BY mes ASC
+            """,
+            (start_date,),
+        ).fetchall()
+
+
+def get_cambios_cotizacion_historica() -> list:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT fecha, cotizacion FROM cambios_dolar ORDER BY fecha ASC"
+        ).fetchall()

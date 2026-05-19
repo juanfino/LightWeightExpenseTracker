@@ -43,6 +43,16 @@ def fmt_amount(amount: float) -> str:
     return f"${int_part},{dec_part}"       # "$2.500,50"
 
 
+def fmt_usd(amount: float) -> str:
+    """1000.0 → 'U$S 1.000'  |  500.5 → 'U$S 500,50'"""
+    if amount == int(amount):
+        return "U$S " + f"{int(amount):,}".replace(",", ".")
+    formatted = f"{amount:,.2f}"
+    int_part, dec_part = formatted.split(".")
+    int_part = int_part.replace(",", ".")
+    return f"U$S {int_part},{dec_part}"
+
+
 def fmt_date(dt_str: str) -> str:
     """'2026-05-03 14:32:00' → '03/05 14:32'"""
     try:
@@ -294,6 +304,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Abandon any stale pending_fixed_match if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
+
+    # ── CambioDolar handler ───────────────────────────────────────────────────
+    cambio_match = re.match(r'^cambiodolar\s+(\S+)\s+(\S+)$', text, re.IGNORECASE)
+    if cambio_match:
+        raw_usd = cambio_match.group(1).replace(".", "").replace(",", ".")
+        raw_cot = cambio_match.group(2).replace(".", "").replace(",", ".")
+        try:
+            monto_usd  = float(raw_usd)
+            cotizacion = float(raw_cot)
+            if monto_usd <= 0 or cotizacion <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Formato incorrecto. Usá: <code>CambioDolar &lt;monto_usd&gt; &lt;cotizacion&gt;</code>\n"
+                "Ejemplo: <code>CambioDolar 1000 1400</code>",
+                parse_mode="HTML",
+            )
+            return
+        monto_ars = monto_usd * cotizacion
+        fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
+        fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
+        db.registrar_cambio(fecha_str, monto_usd, cotizacion, user["name"])
+
+        await update.message.reply_text(
+            f"✅ Cambio registrado\n"
+            f"💵 USD: {fmt_usd(monto_usd)}\n"
+            f"💱 Cotización: {fmt_amount(cotizacion)}\n"
+            f"💰 ARS obtenidos: {fmt_amount(monto_ars)}\n"
+            f"📅 Fecha: {fecha_display}",
+            parse_mode="HTML",
+        )
+        return
 
     parsed = msg_parser.parse_message(text)
 
