@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.5
+- Seed: nueva función `seed_keyword_subcategories(conn)` — migración idempotente que asigna `subcategory_id` a keywords existentes donde la subcategoría puede inferirse del keyword; solo actualiza filas con `subcategory_id IS NULL`; llamada desde `seed()` en cada arranque
+- Bot: confirmación de gasto ahora muestra `{icono} {categoría} › {subcategoría}` cuando el gasto tiene subcategoría asignada; aplica a todos los flujos (texto, OCR texto, OCR botón inline, gasto fijo confirmado, gasto fijo normal)
+
 ## 1.7.4
 - Fix: `POST /api/fixed-expenses/pay` usaba día 15 hardcodeado al crear el gasto; ahora usa la fecha real en zona horaria Argentina
 
