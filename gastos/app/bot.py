@@ -119,6 +119,14 @@ def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     ]])
 
 
+def _cat_line(cat_icon: str, cat_name: str, subcategory_id) -> str:
+    if subcategory_id:
+        subcat = db.get_subcategory_by_id(subcategory_id)
+        if subcat:
+            return f"{cat_icon} {cat_name} › {subcat['name']}"
+    return f"{cat_icon} {cat_name}"
+
+
 # ── Gastos fijos — helpers ────────────────────────────────────────────────────
 
 def _concept_words(concept: str) -> set[str]:
@@ -299,7 +307,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ <b>Gasto registrado</b>\n"
                 f"📋 {concept}\n"
                 f"💰 {fmt_amount(data['monto'])}\n"
-                f"{cat_icon} {cat_name}\n"
+                f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
                 f"👤 {user['name']}\n"
                 f"<code>#ID{expense_id}</code>",
                 parse_mode="HTML",
@@ -400,7 +408,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ <b>Gasto registrado</b>\n"
         f"📋 {parsed['concept']}\n"
         f"💰 {fmt_amount(parsed['amount'])}\n"
-        f"{cat_icon} {cat_name}\n"
+        f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
         f"👤 {user['name']}\n"
         f"<code>#ID{expense_id}</code>",
         parse_mode="HTML",
@@ -897,7 +905,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {concept}\n"
             f"💰 {fmt_amount(ocr_data['monto'])}\n"
-            f"{cat_icon} {cat_name}\n"
+            f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
@@ -973,7 +981,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>Gasto fijo registrado</b>\n"
             f"📋 {data['concept']}\n"
             f"💰 {fmt_amount(data['amount'])}\n"
-            f"{cat_icon} {cat_name}\n"
+            f"{_cat_line(cat_icon, cat_name, data.get('subcategory_id'))}\n"
             f"👤 {user['name']}\n"
             f"📌 {fe['concept'] if fe else 'Gasto fijo'}\n"
             f"<code>#ID{expense_id}</code>",
@@ -1007,7 +1015,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {data['concept']}\n"
             f"💰 {fmt_amount(data['amount'])}\n"
-            f"{cat_icon} {cat_name}\n"
+            f"{_cat_line(cat_icon, cat_name, data.get('subcategory_id'))}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",

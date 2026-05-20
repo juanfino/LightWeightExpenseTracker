@@ -43,6 +43,33 @@ DEFAULT_KEYWORDS = {
     "Gastos Generales": ["ropa", "zapatillas", "zapatos", "indumentaria", "calzado"],
 }
 
+# (category_name, subcategory_name, [keywords])
+KEYWORD_SUBCATEGORY_MAP = [
+    ("Vehículos",        "Nafta",              ["nafta", "combustible", "ypf", "shell", "axion", "puma"]),
+    ("Vehículos",        "Service",            ["taller", "mecanico", "gomeria", "repuesto", "aceite"]),
+    ("Vehículos",        "Patente",            ["patente"]),
+    ("Salud",            "Farmacia",           ["farmacia", "remedios", "medicamento"]),
+    ("Salud",            "Médico",             ["medico", "doctor", "clinica", "hospital", "turno", "dentista", "oculista"]),
+    ("Servicios",        "Electricidad",       ["luz", "electricidad"]),
+    ("Servicios",        "Gas",                ["gas"]),
+    ("Servicios",        "Agua",               ["agua"]),
+    ("Servicios",        "Internet",           ["internet", "directv"]),
+    ("Servicios",        "Teléfono",           ["telefono", "celular", "claro", "personal", "movistar"]),
+    ("Servicios",        "Streaming",          ["netflix", "spotify"]),
+    ("Hijos",            "Educación",          ["colegio", "universidad", "curso", "libro", "cuota", "matricula", "ondina"]),
+    ("Hogar",            "Alimentación",       ["verduleria", "carniceria", "panaderia", "feria", "almacen", "kiosco",
+                                                "fiambreria", "despensa", "pastas", "dietetica", "verdu", "mercado",
+                                                "alimentos", "carnes", "santa elena"]),
+    ("Hogar",            "Supermercado",       ["supermercado", "super", "jumbo", "dia", "coto", "walmart", "carrefour"]),
+    ("Hogar",            "Empleada Doméstica", ["empleada", "limpieza doméstica"]),
+    ("Hogar",            "Limpieza",           ["limpieza"]),
+    ("Entretenimiento",  "Gustos",             ["gustito", "gusto", "regalo", "regalos"]),
+    ("Entretenimiento",  "Salidas",            ["cine", "teatro", "bar", "restaurant", "restaurante", "pizza", "sushi"]),
+    ("Entretenimiento",  "Streaming",          ["delivery", "pedidosya", "rappi"]),
+    ("Gastos Generales", "Ropa",               ["ropa", "zapatillas", "zapatos", "indumentaria", "calzado"]),
+    ("Trabajo",          "Impuestos",          ["impuesto", "afip", "arba", "monotributo", "ingresos brutos"]),
+]
+
 # (old_name, new_category, new_subcategory)
 CATEGORY_MIGRATIONS = [
     ("Alimentación",       "Hogar",            "Alimentación"),
@@ -90,6 +117,8 @@ def seed(conn):
                 (kw, cat_id),
             )
 
+    seed_keyword_subcategories(conn)
+
     try:
         for old_name, new_cat_name, subcat_name in CATEGORY_MIGRATIONS:
             old_row = conn.execute(
@@ -135,3 +164,35 @@ def seed(conn):
                 conn.execute("DELETE FROM categories WHERE id = ?", (old_cat_id,))
     except Exception as e:
         logger.error("seed migration error: %s", e)
+
+
+def seed_keyword_subcategories(conn):
+    try:
+        for cat_name, subcat_name, keywords in KEYWORD_SUBCATEGORY_MAP:
+            cat_row = conn.execute(
+                "SELECT id FROM categories WHERE name = ?", (cat_name,)
+            ).fetchone()
+            if cat_row is None:
+                logger.warning("seed_keyword_subcategories: category '%s' not found, skipping", cat_name)
+                continue
+            cat_id = cat_row[0]
+
+            subcat_row = conn.execute(
+                "SELECT id FROM subcategories WHERE category_id = ? AND name = ?",
+                (cat_id, subcat_name),
+            ).fetchone()
+            if subcat_row is None:
+                logger.warning(
+                    "seed_keyword_subcategories: subcategory '%s' under '%s' not found, skipping",
+                    subcat_name, cat_name,
+                )
+                continue
+            subcat_id = subcat_row[0]
+
+            for kw in keywords:
+                conn.execute(
+                    "UPDATE keywords SET subcategory_id = ? WHERE keyword = ? AND subcategory_id IS NULL",
+                    (subcat_id, kw),
+                )
+    except Exception as e:
+        logger.error("seed_keyword_subcategories error: %s", e)
