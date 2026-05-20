@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.4
+- Fix: `POST /api/fixed-expenses/pay` usaba día 15 hardcodeado al crear el gasto; ahora usa la fecha real en zona horaria Argentina
+
 ## 1.7.3
 - Dashboard: nuevo endpoint `POST /api/subcategories/add` — crea una subcategoría para la categoría dada
 - Dashboard: nuevo endpoint `POST /api/subcategories/delete` — elimina subcategoría con guard (bloquea si hay gastos asociados)

@@ -488,8 +488,8 @@ def api_fixed_expenses_pay():
             return jsonify({"ok": False, "error": "No hay usuarios configurados"}), 400
         user_id = users[0]["id"]
 
-    y, m   = int(year), int(month)
-    date_str = f"{y}-{m:02d}-15"
+    y, m     = int(year), int(month)
+    date_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
     expense_id = db.create_expense_full(int(user_id), fe["category_id"], fe["concept"], amount, date_str)
     db.create_fixed_payment(int(fixed_expense_id), expense_id, y, m)
     return jsonify({"ok": True, "expense_id": expense_id})
