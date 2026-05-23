@@ -415,8 +415,9 @@ def api_fixed_expenses_add():
         estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
-    cat_id = int(category_id) if category_id else None
-    fe_id  = db.create_fixed_expense(concept, estimated_amount, cat_id)
+    cat_id    = int(category_id) if category_id else None
+    subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
+    fe_id     = db.create_fixed_expense(concept, estimated_amount, cat_id, subcat_id)
     return jsonify({"ok": True, "id": fe_id})
 
 
@@ -433,8 +434,9 @@ def api_fixed_expenses_update():
         estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
-    cat_id = int(category_id) if category_id else None
-    db.update_fixed_expense(int(fe_id), concept, estimated_amount, cat_id)
+    cat_id    = int(category_id) if category_id else None
+    subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
+    db.update_fixed_expense(int(fe_id), concept, estimated_amount, cat_id, subcat_id)
     return jsonify({"ok": True})
 
 
@@ -490,7 +492,7 @@ def api_fixed_expenses_pay():
 
     y, m     = int(year), int(month)
     date_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
-    expense_id = db.create_expense_full(int(user_id), fe["category_id"], fe["concept"], amount, date_str)
+    expense_id = db.create_expense_full(int(user_id), fe["category_id"], fe["concept"], amount, date_str, fe["subcategory_id"])
     db.create_fixed_payment(int(fixed_expense_id), expense_id, y, m)
     return jsonify({"ok": True, "expense_id": expense_id})
 

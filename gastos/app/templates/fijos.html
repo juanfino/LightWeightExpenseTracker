@@ -181,6 +181,7 @@
           <th>Concepto</th>
           <th>Estimado</th>
           <th>Categoría</th>
+          <th>Subcategoría</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -225,6 +226,10 @@
     <div class="form-row">
       <label class="form-label">Categoría</label>
       <select id="edit-category"></select>
+    </div>
+    <div class="form-row" id="edit-subcategory-row" style="display:none">
+      <label class="form-label">Subcategoría</label>
+      <select id="edit-subcategory"><option value="">Sin subcategoría</option></select>
     </div>
     <div class="modal-footer">
       <button class="btn" id="btn-edit-cancel">Cancelar</button>
@@ -318,6 +323,7 @@
             <div class="fixed-concept">${r.concept}</div>
             <div class="fixed-meta">
               <span class="badge" style="background:${hexToRgba(r.category_color,0.13)};color:${r.category_color};border-color:${hexToRgba(r.category_color,0.25)}">${r.category_name}</span>
+              ${r.subcategory_name ? `<span class="badge">${r.subcategory_name}</span>` : ''}
             </div>
           </div>
           ${amountHtml}
@@ -404,9 +410,8 @@
       <tr>
         <td>${fe.category_icon} ${fe.concept}</td>
         <td class="mono">${fe.estimated_amount ? fmtAmount(fe.estimated_amount) : '—'}</td>
-        <td>
-          <span class="badge">${fe.category_name}</span>
-        </td>
+        <td><span class="badge">${fe.category_name}</span></td>
+        <td>${fe.subcategory_name ? `<span class="badge">${fe.subcategory_name}</span>` : '<span style="color:var(--text2)">—</span>'}</td>
         <td>
           <div class="admin-actions">
             <button class="btn" style="font-size:12px;padding:5px 10px"
@@ -442,7 +447,28 @@
   // ── Edit modal ─────────────────────────────────────────────────────────────
   let editFixedId = null;
 
-  function openEditModal(feId) {
+  async function loadSubcategoriesForEdit(categoryId, selectedSubcatId = null) {
+    const sel = document.getElementById('edit-subcategory');
+    const row = document.getElementById('edit-subcategory-row');
+    sel.innerHTML = '<option value="">Sin subcategoría</option>';
+    if (!categoryId) { row.style.display = 'none'; return; }
+    const res  = await fetch(`/api/subcategories?category_id=${categoryId}`);
+    const subs = await res.json();
+    if (!subs.length) { row.style.display = 'none'; return; }
+    subs.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+    if (selectedSubcatId) sel.value = selectedSubcatId;
+    row.style.display = '';
+  }
+
+  document.getElementById('edit-category').addEventListener('change', function() {
+    loadSubcategoriesForEdit(this.value);
+  });
+
+  async function openEditModal(feId) {
     editFixedId = feId || null;
     const fe = feId ? allFixed.find(f => f.id === feId) : null;
     document.getElementById('edit-title').textContent   = fe ? 'Editar gasto fijo' : 'Agregar gasto fijo';
@@ -450,6 +476,7 @@
     document.getElementById('edit-amount').value        = (fe && fe.estimated_amount) ? fe.estimated_amount : '';
     const catSel = document.getElementById('edit-category');
     catSel.value = (fe && fe.category_id) ? fe.category_id : '';
+    await loadSubcategoriesForEdit(catSel.value, fe ? fe.subcategory_id : null);
     document.getElementById('modal-edit').classList.add('open');
     document.getElementById('edit-concept').focus();
   }
@@ -461,16 +488,18 @@
   });
 
   document.getElementById('btn-edit-save').addEventListener('click', async () => {
-    const concept  = document.getElementById('edit-concept').value.trim();
-    const amount   = document.getElementById('edit-amount').value;
-    const catId    = document.getElementById('edit-category').value;
+    const concept   = document.getElementById('edit-concept').value.trim();
+    const amount    = document.getElementById('edit-amount').value;
+    const catId     = document.getElementById('edit-category').value;
+    const subcatId  = document.getElementById('edit-subcategory').value;
     if (!concept) { alert('El concepto es obligatorio.'); return; }
 
     const url  = editFixedId ? '/api/fixed-expenses/update' : '/api/fixed-expenses/add';
     const body = {
       concept,
       estimated_amount: amount ? parseFloat(amount) : null,
-      category_id: catId ? parseInt(catId) : null,
+      category_id:    catId    ? parseInt(catId)    : null,
+      subcategory_id: subcatId ? parseInt(subcatId) : null,
     };
     if (editFixedId) body.id = editFixedId;
 
