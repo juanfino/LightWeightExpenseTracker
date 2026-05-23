@@ -11,28 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 def load_config() -> dict:
-    """
-    Lee la configuración desde /data/options.json (escrito por HA Supervisor).
-    Fallback a variables de entorno para desarrollo local.
-    """
-    options_path = os.getenv("OPTIONS_PATH", "/data/options.json")
+    """Lee la configuración desde variables de entorno."""
+    missing = [v for v in ("TELEGRAM_TOKEN", "USERS_JSON") if not os.environ.get(v)]
+    if missing:
+        raise RuntimeError(
+            f"Variables de entorno requeridas no definidas: {', '.join(missing)}"
+        )
 
-    if os.path.exists(options_path):
-        with open(options_path) as f:
-            config = json.load(f)
-        logger.info("Configuración cargada desde %s", options_path)
-        return config
-
-    # Fallback para desarrollo local
-    logger.warning("options.json no encontrado, usando variables de entorno")
-    users_raw = os.environ.get("USERS_JSON", "[]")
+    users_raw = os.environ["USERS_JSON"]
     try:
-        users = json.loads(users_raw) if isinstance(users_raw, str) else users_raw
-    except Exception:
-        users = []
+        users = json.loads(users_raw)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"USERS_JSON no es JSON válido: {e}") from e
 
     return {
-        "telegram_token": os.environ.get("TELEGRAM_TOKEN", ""),
+        "telegram_token": os.environ["TELEGRAM_TOKEN"],
+        "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
         "users": users,
     }
 
@@ -54,7 +48,7 @@ def main():
     db_path = os.getenv("DB_PATH", "/data/gastos.db")
 
     if not token:
-        raise RuntimeError("telegram_token no está definido en la configuración.")
+        raise RuntimeError("TELEGRAM_TOKEN no está definido.")
 
     # 2. Parsear usuarios
     users = parse_users(config.get("users", []))

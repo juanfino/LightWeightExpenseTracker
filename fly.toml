@@ -1,0 +1,50 @@
+# Gastos Familiares — Fly.io deployment
+#
+# The Dockerfile lives in gastos/ and expects gastos/ as the build context,
+# so all fly commands must be run from that subdirectory:
+#
+#   cd gastos
+#   fly launch --config ../fly.toml   # first time — creates app & provisions volume
+#   fly deploy --config ../fly.toml   # every subsequent deploy
+#
+# ─── Secrets (set once, never commit real values) ───────────────────────────
+#   fly secrets set TELEGRAM_TOKEN="your-bot-token"
+#   fly secrets set USERS_JSON='[{"telegram_id":"123456789","name":"Juampi"}]'
+#   fly secrets set ANTHROPIC_API_KEY="your-key"   # optional — enables OCR
+#
+# ─── Persistent volume (create once per region) ─────────────────────────────
+#   fly volumes create gastos_data --size 1 --region gru
+
+app            = "gastos-familiares"
+primary_region = "gru"   # São Paulo — closest Fly region to Argentina
+
+[build]
+  dockerfile = "Dockerfile"   # resolved relative to the build context (gastos/)
+
+# SQLite lives on a persistent volume mounted at /data.
+[[mounts]]
+  source      = "gastos_data"
+  destination = "/data"
+
+[env]
+  # Non-secret config — safe to commit.
+  DB_PATH = "/data/gastos.db"
+
+  # Sensitive vars below: the placeholder values here are overridden at runtime
+  # by `fly secrets set`. Replace placeholders only if you are sure the repo
+  # is private; otherwise always use `fly secrets set`.
+  TELEGRAM_TOKEN    = "set-via-fly-secrets"
+  USERS_JSON        = '[{"telegram_id":"YOUR_TELEGRAM_ID","name":"Your Name"}]'
+  ANTHROPIC_API_KEY = ""   # leave empty to disable OCR
+
+[http_service]
+  internal_port        = 5000
+  force_https          = true
+  auto_stop_machines   = true
+  auto_start_machines  = true
+  min_machines_running = 0
+
+[[vm]]
+  cpu_kind  = "shared"
+  cpus      = 1
+  memory_mb = 256
