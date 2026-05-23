@@ -1,11 +1,8 @@
 # Gastos Familiares — Fly.io deployment
 #
-# The Dockerfile lives in gastos/ and expects gastos/ as the build context,
-# so all fly commands must be run from that subdirectory:
-#
-#   cd gastos
-#   fly launch --config ../fly.toml   # first time — creates app & provisions volume
-#   fly deploy --config ../fly.toml   # every subsequent deploy
+# Deploy from the repo root:
+#   fly launch   # first time — creates app & provisions volume
+#   fly deploy   # every subsequent deploy
 #
 # ─── Secrets (set once, never commit real values) ───────────────────────────
 #   fly secrets set TELEGRAM_TOKEN="your-bot-token"
@@ -19,7 +16,8 @@ app            = "gastos-familiares"
 primary_region = "gru"   # São Paulo — closest Fly region to Argentina
 
 [build]
-  dockerfile = "Dockerfile"   # resolved relative to the build context (gastos/)
+  dockerfile = "gastos/Dockerfile"
+  context    = "gastos"
 
 # SQLite lives on a persistent volume mounted at /data.
 [[mounts]]
