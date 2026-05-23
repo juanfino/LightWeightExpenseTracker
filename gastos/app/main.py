@@ -68,10 +68,10 @@ def main():
 
     from apscheduler.schedulers.background import BackgroundScheduler
     scheduler = BackgroundScheduler()
-    # 21:00 ART = 00:00 UTC
-    scheduler.add_job(backup_module.send_db_backup, "cron", hour=0, minute=0)
+    # 00:00 ART = 03:00 UTC
+    scheduler.add_job(backup_module.send_db_backup, "cron", hour=3, minute=0)
     scheduler.start()
-    logger.info("Scheduler de backup iniciado (21:00 ART diario)")
+    logger.info("Scheduler de backup iniciado (00:00 ART diario)")
 
     # 5. Iniciar Flask en thread daemon
     import dashboard
