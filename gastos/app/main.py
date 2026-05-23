@@ -67,9 +67,9 @@ def main():
     backup_module.DB_PATH = db_path
 
     from apscheduler.schedulers.background import BackgroundScheduler
-    scheduler = BackgroundScheduler()
-    # 21:00 ART = 00:00 UTC
-    scheduler.add_job(backup_module.send_db_backup, "cron", hour=0, minute=0)
+    from zoneinfo import ZoneInfo
+    scheduler = BackgroundScheduler(timezone=ZoneInfo("America/Argentina/Buenos_Aires"))
+    scheduler.add_job(backup_module.send_db_backup, "cron", hour=21, minute=0)
     scheduler.start()
     logger.info("Scheduler de backup iniciado (21:00 ART diario)")
 
