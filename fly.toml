@@ -17,7 +17,7 @@ primary_region = "gru"   # São Paulo — closest Fly region to Argentina
 
 [build]
   dockerfile = "gastos/Dockerfile"
-  context    = "gastos"
+  source     = "gastos"
 
 # SQLite lives on a persistent volume mounted at /data.
 [[mounts]]
