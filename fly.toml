@@ -12,7 +12,7 @@
 # ─── Persistent volume (create once per region) ─────────────────────────────
 #   fly volumes create gastos_data --size 1 --region gru
 
-app            = "gastos-familiares"
+app            = "lightweightexpensetracker"
 primary_region = "gru"   # São Paulo — closest Fly region to Argentina
 
 [build]
