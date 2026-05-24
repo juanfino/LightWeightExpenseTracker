@@ -106,9 +106,12 @@ def api_monthly():
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    by_category      = db.get_expenses_summary_by_category(year, month)
+    usuario   = request.args.get("usuario", "").strip()
+    user_name = usuario if usuario and usuario != "Todos" else None
+
+    by_category      = db.get_expenses_summary_by_category(year, month, user_name)
     by_week          = db.get_expenses_by_week_of_month(year, month)
-    by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month)
+    by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month, user_name)
     by_user_rows     = db.get_expenses_by_user(year, month)
     total = sum(r["total"] for r in by_category)
 
@@ -160,6 +163,7 @@ def api_expenses():
         month       = request.args.get("month")
         category_id = request.args.get("category_id")
         user_id     = request.args.get("user_id")
+        usuario     = request.args.get("usuario", "").strip()
     except Exception:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
@@ -177,8 +181,23 @@ def api_expenses():
             result = [r for r in result if str(r.get("category_id")) == str(category_id)]
     if user_id:
         result = [r for r in result if str(r.get("user_id")) == str(user_id)]
+    if usuario and usuario != "Todos":
+        result = [r for r in result if r.get("user_name") == usuario]
 
     return jsonify(result)
+
+
+@app.route("/api/gastos-por-categoria")
+def api_gastos_por_categoria():
+    mes     = request.args.get("mes", "")
+    usuario = request.args.get("usuario", "").strip()
+    try:
+        year, month = int(mes[:4]), int(mes[5:7])
+    except (ValueError, IndexError, TypeError):
+        now = datetime.now()
+        year, month = now.year, now.month
+    user_name = usuario if usuario and usuario != "Todos" else None
+    return jsonify(db.get_gastos_por_categoria(year, month, user_name))
 
 
 @app.route("/api/categories")

@@ -83,6 +83,7 @@
       align-items: center;
       padding: 0 20px;
       gap: 12px;
+      overflow-x: hidden;
     }
 
     .topbar-brand {
@@ -118,69 +119,6 @@
       background: var(--surface);
       color: var(--text);
       box-shadow: 0 1px 4px rgba(0,0,0,0.18);
-    }
-
-    .topbar-right {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-
-    .user-chips {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: nowrap;
-    }
-
-    .user-chip {
-      padding: 4px 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 500;
-      background: var(--surface);
-      color: var(--text2);
-      border: 1px solid var(--border2);
-      cursor: pointer;
-      transition: background 0.15s, color 0.15s, border-color 0.15s;
-      white-space: nowrap;
-      font-family: var(--font-sans);
-    }
-
-    .user-chip:hover { color: var(--text); border-color: var(--text3); }
-
-    .user-chip.active-all {
-      background: var(--surface2);
-      color: var(--text);
-      border-color: var(--border2);
-    }
-
-    .user-chip.active-main {
-      background: var(--accent);
-      color: #fff;
-      border-color: transparent;
-    }
-
-    .user-chip.active-alt {
-      background: var(--green);
-      color: #fff;
-      border-color: transparent;
-    }
-
-    .user-avatar {
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      background: var(--accent);
-      color: #fff;
-      font-size: 12px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
     }
 
     /* ── Layout ── */
@@ -434,10 +372,6 @@
       <i class="ti ti-menu-2"></i>
     </button>
 
-    <div class="topbar-right">
-      <div class="user-chips" id="user-chips"></div>
-      <div class="user-avatar" id="user-avatar">T</div>
-    </div>
   </div>
 
   <nav class="mobile-menu" id="mobile-menu">
@@ -476,52 +410,6 @@
       menu.addEventListener('click', function(e) { e.stopPropagation(); });
     });
 
-    window.activeUserName = null;
-    window.userColors = {};
-
-    (async function initUserChips() {
-      let users = [];
-      try {
-        const res = await fetch('/api/users');
-        users = await res.json();
-      } catch(e) { return; }
-
-      const container = document.getElementById('user-chips');
-      const avatarEl  = document.getElementById('user-avatar');
-
-      // Populate global color lookup for page-specific scripts (e.g. chart colors)
-      users.forEach(function(u) { window.userColors[u.name] = u.color || 'var(--accent)'; });
-
-      function renderChips() {
-        let html = '<button class="user-chip ' + (window.activeUserName === null ? 'active-all' : '') + '" data-user="">Todos</button>';
-        users.forEach(function(u) {
-          const active = window.activeUserName === u.name;
-          const color  = u.color || 'var(--accent)';
-          const style  = active ? ' style="background:' + color + ';color:#fff;border-color:transparent"' : '';
-          html += '<button class="user-chip" data-user="' + u.name + '"' + style + '>' + u.name + '</button>';
-        });
-        container.innerHTML = html;
-
-        if (window.activeUserName === null) {
-          avatarEl.textContent = 'T';
-          avatarEl.style.background = 'var(--accent)';
-        } else {
-          const activeUser = users.find(function(u) { return u.name === window.activeUserName; });
-          avatarEl.textContent = window.activeUserName.charAt(0).toUpperCase();
-          avatarEl.style.background = (activeUser && activeUser.color) ? activeUser.color : 'var(--accent)';
-        }
-
-        container.querySelectorAll('.user-chip').forEach(function(btn) {
-          btn.addEventListener('click', function() {
-            window.activeUserName = this.dataset.user || null;
-            renderChips();
-            window.dispatchEvent(new CustomEvent('userFilterChange', { detail: window.activeUserName }));
-          });
-        });
-      }
-
-      renderChips();
-    })();
   </script>
 </body>
 </html>

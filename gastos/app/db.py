@@ -310,23 +310,30 @@ def get_expenses_today():
         ).fetchall()
 
 
-def get_expenses_summary_by_category(year: int, month: int):
-    """Retorna [{category, total, color, icon, pct}] para el mes dado."""
+def get_expenses_summary_by_category(year: int, month: int, user_name: str | None = None):
+    """Retorna [{category, total, color, icon, pct}] para el mes dado, opcionalmente filtrado por usuario."""
+    params = [str(year), f"{month:02d}"]
+    user_join   = "JOIN users u ON u.id = e.user_id" if user_name else ""
+    user_filter = "AND u.name = ?"                   if user_name else ""
+    if user_name:
+        params.append(user_name)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT COALESCE(c.name, 'Sin categoría') AS name,
                    COALESCE(c.color, '#6b7280')       AS color,
                    COALESCE(c.icon,  '❓')             AS icon,
                    SUM(e.amount)                      AS total
             FROM expenses e
+            {user_join}
             LEFT JOIN categories c ON c.id = e.category_id
             WHERE strftime('%Y', e.created_at) = ?
               AND strftime('%m', e.created_at) = ?
+              {user_filter}
             GROUP BY e.category_id
             ORDER BY total DESC
             """,
-            (str(year), f"{month:02d}"),
+            params,
         ).fetchall()
 
     grand_total = sum(r["total"] for r in rows)
@@ -546,11 +553,16 @@ def get_all_users():
         return conn.execute("SELECT id, name, color FROM users ORDER BY name").fetchall()
 
 
-def get_expenses_by_week_of_month_by_user(year: int, month: int):
+def get_expenses_by_week_of_month_by_user(year: int, month: int, user_name: str | None = None):
     """Groups expenses by week-of-month and user for the stacked weekly bar chart."""
+    params = [str(year), f"{month:02d}"]
+    user_filter = ""
+    if user_name:
+        user_filter = "AND u.name = ?"
+        params.append(user_name)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT CAST(strftime('%d', e.created_at) AS INTEGER) AS day,
                    u.id   AS user_id,
                    u.name AS user_name,
@@ -559,9 +571,10 @@ def get_expenses_by_week_of_month_by_user(year: int, month: int):
             JOIN users u ON u.id = e.user_id
             WHERE strftime('%Y', e.created_at) = ?
               AND strftime('%m', e.created_at) = ?
+              {user_filter}
             GROUP BY day, e.user_id
             """,
-            (str(year), f"{month:02d}"),
+            params,
         ).fetchall()
 
     users_seen: dict[int, str] = {}
@@ -586,6 +599,57 @@ def get_expenses_by_week_of_month_by_user(year: int, month: int):
         for w in range(1, 6)
         if w in weekly
     ]
+
+
+def get_gastos_por_categoria(year: int, month: int, user_name: str | None = None) -> list[dict]:
+    """Retorna gastos del mes agrupados por categoría y subcategoría, ordenados por total DESC."""
+    params = [str(year), f"{month:02d}"]
+    user_filter = ""
+    if user_name:
+        user_filter = "AND u.name = ?"
+        params.append(user_name)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT COALESCE(c.name, 'Sin categoría') AS categoria,
+                   COALESCE(c.color, '#6b7280')       AS color,
+                   COALESCE(c.icon,  '❓')             AS icon,
+                   s.name                             AS subcategoria,
+                   SUM(e.amount)                      AS total
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            LEFT JOIN categories c ON c.id = e.category_id
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
+            WHERE strftime('%Y', e.created_at) = ?
+              AND strftime('%m', e.created_at) = ?
+              {user_filter}
+            GROUP BY e.category_id, e.subcategory_id
+            ORDER BY categoria
+            """,
+            params,
+        ).fetchall()
+
+    cats: dict[str, dict] = {}
+    cat_meta: dict[str, dict] = {}
+    for r in rows:
+        cat = r["categoria"]
+        if cat not in cats:
+            cats[cat] = {"total": 0.0, "subcategorias": []}
+            cat_meta[cat] = {"color": r["color"], "icon": r["icon"]}
+        cats[cat]["total"] += r["total"]
+        if r["subcategoria"]:
+            cats[cat]["subcategorias"].append({"nombre": r["subcategoria"], "total": r["total"]})
+
+    result = []
+    for cat, data in sorted(cats.items(), key=lambda x: x[1]["total"], reverse=True):
+        result.append({
+            "categoria":    cat,
+            "color":        cat_meta[cat]["color"],
+            "icon":         cat_meta[cat]["icon"],
+            "total":        data["total"],
+            "subcategorias": sorted(data["subcategorias"], key=lambda x: x["total"], reverse=True),
+        })
+    return result
 
 
 def get_annual_data(year: int) -> dict:
