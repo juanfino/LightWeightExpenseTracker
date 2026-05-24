@@ -364,6 +364,56 @@
     /* ── Disabled ── */
     button[disabled] { opacity: 0.38; cursor: not-allowed; }
 
+    /* ── Mobile nav ── */
+    .nav-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      flex-shrink: 0;
+      font-size: 18px;
+    }
+
+    .nav-toggle:hover { background: var(--surface2); }
+
+    .mobile-menu {
+      display: none;
+      position: fixed;
+      top: 52px;
+      left: 0;
+      right: 0;
+      z-index: 49;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 8px;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .mobile-menu.open { display: flex; }
+
+    .mobile-menu .tab-link {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .mobile-menu .tab-link.active {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    @media (max-width: 640px) {
+      .topbar-tabs { display: none; }
+      .nav-toggle  { display: flex; }
+    }
+
     {% block extra_styles %}{% endblock %}
   </style>
 </head>
@@ -380,11 +430,24 @@
       <a href="/config"   class="tab-link {% block nav_config %}{% endblock %}">Sistema</a>
     </nav>
 
+    <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
+      <i class="ti ti-menu-2"></i>
+    </button>
+
     <div class="topbar-right">
       <div class="user-chips" id="user-chips"></div>
       <div class="user-avatar" id="user-avatar">T</div>
     </div>
   </div>
+
+  <nav class="mobile-menu" id="mobile-menu">
+    <a href="/"         class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
+    <a href="/history"  class="tab-link {{ self.nav_history() }}">Historial</a>
+    <a href="/fijos"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
+    <a href="/dolares"  class="tab-link {{ self.nav_dolares() }}">Dólares</a>
+    <a href="/settings" class="tab-link {{ self.nav_settings() }}">Categorías</a>
+    <a href="/config"   class="tab-link {{ self.nav_config() }}">Sistema</a>
+  </nav>
 
   {% block content %}{% endblock %}
 
@@ -393,6 +456,24 @@
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       document.body.classList.add('loaded');
+
+      const toggle = document.getElementById('nav-toggle');
+      const menu   = document.getElementById('mobile-menu');
+
+      toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const open = menu.classList.toggle('open');
+        toggle.querySelector('i').className = open ? 'ti ti-x' : 'ti ti-menu-2';
+      });
+
+      document.addEventListener('click', function() {
+        if (menu.classList.contains('open')) {
+          menu.classList.remove('open');
+          toggle.querySelector('i').className = 'ti ti-menu-2';
+        }
+      });
+
+      menu.addEventListener('click', function(e) { e.stopPropagation(); });
     });
 
     window.activeUserName = null;
