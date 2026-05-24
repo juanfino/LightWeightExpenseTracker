@@ -357,6 +357,103 @@
 .form-row select { width: 100%; }
 .modal-footer  { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+/* ── Category bar chart ── */
+.cat-bar-row {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cat-bar-row:last-child { border-bottom: none; }
+
+.cat-bar-label-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cat-bar-name {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-bar-chevron {
+  font-size: 9px;
+  color: var(--text3);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.cat-bar-amount {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cat-bar-track {
+  height: 8px;
+  background: var(--border2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cat-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.35s ease;
+}
+
+.cat-sub-list {
+  display: none;
+  padding-left: 20px;
+  margin-top: 6px;
+}
+
+.cat-sub-list.open { display: block; }
+
+.cat-sub-row { padding: 5px 0; }
+
+.cat-sub-label-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cat-sub-name {
+  font-size: 12px;
+  color: var(--text2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-sub-amount {
+  font-size: 12px;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cat-sub-bar-track {
+  height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
 /* ── Annual legend ── */
 .annual-legend {
   display: flex;
@@ -386,7 +483,7 @@
 {% block content %}
 <div class="container">
 
-  <!-- Header: period navigator + view toggle -->
+  <!-- Header: period navigator + user filter + view toggle -->
   <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; margin-bottom:24px;">
     <div class="month-nav">
       <button id="prev-month" title="Anterior">&#8592;</button>
@@ -396,9 +493,17 @@
       </div>
       <button id="next-month" title="Siguiente">&#8594;</button>
     </div>
-    <div class="view-toggle">
-      <button class="view-btn active" id="btn-view-monthly">Mensual</button>
-      <button class="view-btn" id="btn-view-annual">Anual</button>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:12px; color:var(--text2); white-space:nowrap;">Ver gastos de:</span>
+        <select id="user-select" style="min-width:110px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="view-toggle">
+        <button class="view-btn active" id="btn-view-monthly">Mensual</button>
+        <button class="view-btn" id="btn-view-annual">Anual</button>
+      </div>
     </div>
   </div>
 
@@ -433,19 +538,6 @@
       </div>
     </div>
 
-    <!-- Fijos del mes widget -->
-    <div class="card mt-24" id="fijos-widget" style="display:none">
-      <div class="fijos-widget-header">
-        <div class="section-title">📌 Fijos del mes</div>
-        <a href="/fijos" style="font-size:12px; color:var(--text2)">Ver todo →</a>
-      </div>
-      <div id="fijos-progress-summary" style="font-size:12px; color:var(--text2); margin-bottom:8px"></div>
-      <div class="fijos-progress-bar-wrap">
-        <div class="fijos-progress-bar" id="fijos-progress-bar" style="width:0%"></div>
-      </div>
-      <div id="fijos-list"></div>
-    </div>
-
     <!-- Charts -->
     <div class="charts-grid mt-24">
       <div class="card">
@@ -464,6 +556,26 @@
           <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
         </div>
       </div>
+    </div>
+
+    <!-- Gastos por categoría (horizontal bar drill-down) -->
+    <div class="card mt-24">
+      <div class="section-title" style="margin-bottom:14px">Gastos por categoría</div>
+      <div id="cat-bars-wrap"></div>
+      <div id="cat-bars-empty" class="empty" style="display:none">Sin datos este mes</div>
+    </div>
+
+    <!-- Fijos del mes widget -->
+    <div class="card mt-24" id="fijos-widget" style="display:none">
+      <div class="fijos-widget-header">
+        <div class="section-title">📌 Fijos del mes</div>
+        <a href="/fijos" style="font-size:12px; color:var(--text2)">Ver todo →</a>
+      </div>
+      <div id="fijos-progress-summary" style="font-size:12px; color:var(--text2); margin-bottom:8px"></div>
+      <div class="fijos-progress-bar-wrap">
+        <div class="fijos-progress-bar" id="fijos-progress-bar" style="width:0%"></div>
+      </div>
+      <div id="fijos-list"></div>
     </div>
 
     <!-- Recent expenses -->
@@ -556,6 +668,10 @@
   let currentYear   = {{ year }};
   let currentMonth  = {{ month }};
   let currentView   = 'monthly';
+  let activeUser    = '';
+  let expandedCat   = null;
+
+  window.userColors = {};
 
   let doughnutChart    = null;
   let barChart         = null;
@@ -675,16 +791,10 @@
   });
 
   // ── User filter ────────────────────────────────────────────────────────────
-  window.addEventListener('userFilterChange', function() {
-    if (currentView === 'monthly') {
-      renderRecent(filterExpenses(currentExpenses).slice(0, 10));
-    }
+  document.getElementById('user-select').addEventListener('change', function() {
+    activeUser = this.value;
+    loadAll();
   });
-
-  function filterExpenses(list) {
-    if (!window.activeUserName) return list;
-    return list.filter(e => e.user_name === window.activeUserName);
-  }
 
   // ── Main dispatcher ────────────────────────────────────────────────────────
   async function loadAll() {
@@ -697,19 +807,23 @@
     document.getElementById("month-label").textContent =
       MONTHS_ES[currentMonth] + " " + currentYear;
 
+    const usuario = activeUser || 'Todos';
+    const mes     = `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
+
     const [summary, expenses] = await Promise.all([
-      fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
-      fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}`).then(r => r.json()),
+      fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}`).then(r => r.json()),
+      fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}`).then(r => r.json()),
     ]);
 
     loadFijosWidget(currentYear, currentMonth);
+    loadGastosPorCategoria(mes, usuario);
 
     currentExpenses = Array.isArray(expenses) ? expenses : [];
 
     renderCards(summary, currentExpenses);
     renderDoughnut(summary.by_category);
     renderBar(summary.by_week_by_user || []);
-    renderRecent(filterExpenses(currentExpenses).slice(0, 10));
+    renderRecent(currentExpenses.slice(0, 10));
   }
 
   function renderCards(summary, expenses) {
@@ -1081,6 +1195,97 @@
     });
   }
 
+  // ── Users (populate select + color map) ───────────────────────────────────
+  async function loadUsers() {
+    try {
+      const users = await fetch('/api/users').then(r => r.json());
+      users.forEach(u => { window.userColors[u.name] = u.color || 'var(--accent)'; });
+      const sel = document.getElementById('user-select');
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.name;
+        opt.textContent = u.name;
+        sel.appendChild(opt);
+      });
+    } catch(e) {}
+  }
+
+  // ── Gastos por categoría ───────────────────────────────────────────────────
+  async function loadGastosPorCategoria(mes, usuario) {
+    try {
+      const data = await fetch(
+        `/api/gastos-por-categoria?mes=${mes}&usuario=${encodeURIComponent(usuario)}`
+      ).then(r => r.json());
+      renderGastosPorCategoria(data);
+    } catch(e) {
+      document.getElementById('cat-bars-wrap').innerHTML = '';
+    }
+  }
+
+  function renderGastosPorCategoria(data) {
+    const wrap    = document.getElementById('cat-bars-wrap');
+    const emptyEl = document.getElementById('cat-bars-empty');
+    expandedCat   = null;
+
+    if (!data || data.length === 0) {
+      wrap.innerHTML        = '';
+      emptyEl.style.display = '';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    const maxTotal = data[0].total;
+
+    wrap.innerHTML = data.map((cat, i) => {
+      const pct     = maxTotal > 0 ? (cat.total / maxTotal * 100).toFixed(1) : 0;
+      const color   = cat.color || ACCENT_CLR;
+      const hasSubs = cat.subcategorias && cat.subcategorias.length > 0;
+
+      const subRows = hasSubs ? cat.subcategorias.map(sub => {
+        const subPct = maxTotal > 0 ? (sub.total / maxTotal * 100).toFixed(1) : 0;
+        return `
+          <div class="cat-sub-row">
+            <div class="cat-sub-label-line">
+              <span class="cat-sub-name">${sub.nombre}</span>
+              <span class="cat-sub-amount">${fmtAmount(sub.total)}</span>
+            </div>
+            <div class="cat-sub-bar-track">
+              <div class="cat-bar-fill" style="width:${subPct}%;background:${color};opacity:0.55"></div>
+            </div>
+          </div>`;
+      }).join('') : '';
+
+      return `
+        <div class="cat-bar-row" onclick="toggleCatBar(this,${hasSubs})">
+          <div class="cat-bar-label-line">
+            <span class="cat-bar-name">${cat.icon} ${cat.categoria}</span>
+            ${hasSubs ? '<span class="cat-bar-chevron">▶</span>' : ''}
+            <span class="cat-bar-amount">${fmtAmount(cat.total)}</span>
+          </div>
+          <div class="cat-bar-track">
+            <div class="cat-bar-fill" style="width:${pct}%;background:${color}"></div>
+          </div>
+          ${hasSubs ? `<div class="cat-sub-list">${subRows}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function toggleCatBar(row, hasSubs) {
+    if (!hasSubs) return;
+    const subList = row.querySelector('.cat-sub-list');
+    const chevron = row.querySelector('.cat-bar-chevron');
+
+    if (expandedCat && expandedCat !== row) {
+      expandedCat.querySelector('.cat-sub-list').classList.remove('open');
+      const prev = expandedCat.querySelector('.cat-bar-chevron');
+      if (prev) prev.textContent = '▶';
+    }
+
+    const open = subList.classList.toggle('open');
+    if (chevron) chevron.textContent = open ? '▼' : '▶';
+    expandedCat = open ? row : null;
+  }
+
   // ── Fijos del mes widget ───────────────────────────────────────────────────
   let dashPayFixedId  = null;
   let dashPayUsers    = [];
@@ -1189,8 +1394,11 @@
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────
-  loadAll();
-  loadSparklines();
+  (async function init() {
+    await loadUsers();
+    loadAll();
+    loadSparklines();
+  })();
 
 </script>
 {% endblock %}
