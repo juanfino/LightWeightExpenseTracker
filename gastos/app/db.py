@@ -746,7 +746,7 @@ def get_all_keywords():
         ).fetchall()
 
 
-def add_keyword(keyword: str, category_id: int) -> str:
+def add_keyword(keyword: str, category_id: int, subcategory_id: int | None = None) -> str:
     """
     Inserta o actualiza el keyword.
     Retorna: 'new' si se insertó, 'remapped' si existía con otra categoría,
@@ -758,9 +758,10 @@ def add_keyword(keyword: str, category_id: int) -> str:
             "SELECT category_id FROM keywords WHERE keyword = ?", (kw,)
         ).fetchone()
         conn.execute(
-            "INSERT INTO keywords (keyword, category_id) VALUES (?, ?)"
-            " ON CONFLICT(keyword) DO UPDATE SET category_id = excluded.category_id",
-            (kw, category_id),
+            "INSERT INTO keywords (keyword, category_id, subcategory_id) VALUES (?, ?, ?)"
+            " ON CONFLICT(keyword) DO UPDATE SET category_id = excluded.category_id,"
+            " subcategory_id = excluded.subcategory_id",
+            (kw, category_id, subcategory_id),
         )
     if existing is None:
         return "new"
