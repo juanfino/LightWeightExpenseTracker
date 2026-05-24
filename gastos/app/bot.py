@@ -27,6 +27,8 @@ pending_amount_edit: dict[int, int] = {}
 pending_fixed_match: dict[int, dict] = {}
 # Monto pendiente para registrar un gasto fijo directamente desde /fijos
 pending_fixed_direct: dict[int, dict] = {}
+# Gasto esperando selección de subcategoría, keyed por chat_id → expense_id
+pending_subcategory: dict[int, int] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -117,6 +119,18 @@ def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")
     ]])
+
+
+def _build_subcategory_keyboard(expense_id: int, subcats: list) -> InlineKeyboardMarkup:
+    rows = []
+    for i in range(0, len(subcats), 2):
+        row = [
+            InlineKeyboardButton(s["name"], callback_data=f"sc:{expense_id}:{s['id']}")
+            for s in subcats[i:i + 2]
+        ]
+        rows.append(row)
+    rows.append([InlineKeyboardButton("— Sin subcategoría", callback_data=f"sc:{expense_id}:0")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _cat_line(cat_icon: str, cat_name: str, subcategory_id) -> str:
@@ -321,8 +335,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # Abandon any stale pending_fixed_match if the user sends a new message
+    # Abandon any stale pending state if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
+    pending_subcategory.pop(chat_id, None)
 
     parsed = msg_parser.parse_message(text)
 
@@ -928,11 +943,56 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat = db.get_category_by_id(cat_id)
         cat_name = cat["name"] if cat else "?"
         cat_icon = cat["icon"] if cat else "❓"
+
+        subcats = db.get_subcategories(cat_id)
+        if subcats:
+            pending_subcategory[chat_id] = expense_id
+            await query.edit_message_text(
+                f"✅ <b>{cat_icon} {cat_name}</b> asignada\n"
+                f"📋 {expense['concept']}\n"
+                f"💰 {fmt_amount(expense['amount'])}\n\n"
+                f"¿Querés agregar una subcategoría?",
+                parse_mode="HTML",
+                reply_markup=_build_subcategory_keyboard(expense_id, subcats),
+            )
+        else:
+            await query.edit_message_text(
+                f"✅ <b>Gasto registrado</b>\n"
+                f"📋 {expense['concept']}\n"
+                f"💰 {fmt_amount(expense['amount'])}\n"
+                f"{cat_icon} {cat_name}\n"
+                f"👤 {user['name']}\n"
+                f"<code>#ID{expense_id}</code>",
+                parse_mode="HTML",
+                reply_markup=_build_edit_only_keyboard(expense_id),
+            )
+
+    elif cb.startswith("sc:"):
+        parts = cb.split(":")
+        expense_id = int(parts[1])
+        subcat_id = int(parts[2]) or None
+
+        pending_subcategory.pop(chat_id, None)
+
+        expense = db.get_expense_by_id(expense_id)
+        cat = db.get_category_by_id(expense["category_id"]) if expense and expense["category_id"] else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+
+        if subcat_id is not None:
+            db.update_expense_subcategory(expense_id, subcat_id)
+            if expense:
+                db.add_keyword(
+                    categorizer.normalize(expense["concept"]),
+                    expense["category_id"],
+                    subcat_id,
+                )
+
         await query.edit_message_text(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {expense['concept']}\n"
             f"💰 {fmt_amount(expense['amount'])}\n"
-            f"{cat_icon} {cat_name}\n"
+            f"{_cat_line(cat_icon, cat_name, subcat_id)}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",

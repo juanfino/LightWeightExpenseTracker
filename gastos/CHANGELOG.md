@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0
+- Bot: selección de subcategoría después de asignar categoría manualmente — si la categoría elegida tiene subcategorías, se muestra un teclado inline con las opciones + botón "Sin subcategoría"
+- Bot: al elegir una subcategoría, se actualizan tanto el gasto como el binding de la keyword con `subcategory_id`
+- Bot: si el usuario envía un nuevo gasto mientras hay una selección de subcategoría pendiente, el flujo pendiente se cancela silenciosamente y el nuevo mensaje se procesa normalmente
+- DB: `add_keyword()` acepta parámetro opcional `subcategory_id` y lo incluye en el upsert
+
 ## 1.7.5
 - Seed: nueva función `seed_keyword_subcategories(conn)` — migración idempotente que asigna `subcategory_id` a keywords existentes donde la subcategoría puede inferirse del keyword; solo actualiza filas con `subcategory_id IS NULL`; llamada desde `seed()` en cada arranque
 - Bot: confirmación de gasto ahora muestra `{icono} {categoría} › {subcategoría}` cuando el gasto tiene subcategoría asignada; aplica a todos los flujos (texto, OCR texto, OCR botón inline, gasto fijo confirmado, gasto fijo normal)
