@@ -1,0 +1,9 @@
+services:
+  gastos:
+    image: ghcr.io/juanfino/lightweightexpensetracker:latest
+    container_name: gastos
+    restart: unless-stopped
+    env_file: ~/.env
+    volumes:
+      - ~/gastos-data:/data
+    network_mode: host

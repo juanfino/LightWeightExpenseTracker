@@ -146,6 +146,13 @@ def _migrate_keywords_subcategory():
             conn.execute("ALTER TABLE keywords ADD COLUMN subcategory_id INTEGER REFERENCES subcategories(id)")
 
 
+def _migrate_fixed_expenses_subcategory():
+    with get_conn() as conn:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(fixed_expenses)").fetchall()]
+        if "subcategory_id" not in cols:
+            conn.execute("ALTER TABLE fixed_expenses ADD COLUMN subcategory_id INTEGER REFERENCES subcategories(id)")
+
+
 def init_db(users: dict | None = None):
     """Crea tablas, ejecuta migraciones y seed (idempotente). Sincroniza usuarios si se pasan."""
     try:
@@ -162,6 +169,7 @@ def init_db(users: dict | None = None):
     _migrate_fixed_payment_nullable_expense()
     _migrate_expenses_subcategory()
     _migrate_keywords_subcategory()
+    _migrate_fixed_expenses_subcategory()
     import seed
     with get_conn() as conn:
         seed.seed(conn)
@@ -852,12 +860,14 @@ def get_all_fixed_expenses():
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.subcategory_id, fe.active, fe.created_at,
                    COALESCE(c.name,  'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')        AS category_color,
-                   COALESCE(c.icon,  '❓')              AS category_icon
+                   COALESCE(c.icon,  '❓')              AS category_icon,
+                   s.name AS subcategory_name
             FROM fixed_expenses fe
             LEFT JOIN categories c ON c.id = fe.category_id
+            LEFT JOIN subcategories s ON s.id = fe.subcategory_id
             WHERE fe.active = 1
             ORDER BY fe.concept
             """
@@ -868,32 +878,34 @@ def get_fixed_expense_by_id(fe_id: int):
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.subcategory_id, fe.active, fe.created_at,
                    COALESCE(c.name,  'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')        AS category_color,
-                   COALESCE(c.icon,  '❓')              AS category_icon
+                   COALESCE(c.icon,  '❓')              AS category_icon,
+                   s.name AS subcategory_name
             FROM fixed_expenses fe
             LEFT JOIN categories c ON c.id = fe.category_id
+            LEFT JOIN subcategories s ON s.id = fe.subcategory_id
             WHERE fe.id = ?
             """,
             (fe_id,),
         ).fetchone()
 
 
-def create_fixed_expense(concept: str, estimated_amount: float | None, category_id: int | None) -> int:
+def create_fixed_expense(concept: str, estimated_amount: float | None, category_id: int | None, subcategory_id: int | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO fixed_expenses (concept, estimated_amount, category_id) VALUES (?, ?, ?)",
-            (concept.strip(), estimated_amount, category_id),
+            "INSERT INTO fixed_expenses (concept, estimated_amount, category_id, subcategory_id) VALUES (?, ?, ?, ?)",
+            (concept.strip(), estimated_amount, category_id, subcategory_id),
         )
         return cur.lastrowid
 
 
-def update_fixed_expense(fe_id: int, concept: str, estimated_amount: float | None, category_id: int | None):
+def update_fixed_expense(fe_id: int, concept: str, estimated_amount: float | None, category_id: int | None, subcategory_id: int | None = None):
     with get_conn() as conn:
         conn.execute(
-            "UPDATE fixed_expenses SET concept=?, estimated_amount=?, category_id=? WHERE id=?",
-            (concept.strip(), estimated_amount, category_id, fe_id),
+            "UPDATE fixed_expenses SET concept=?, estimated_amount=?, category_id=?, subcategory_id=? WHERE id=?",
+            (concept.strip(), estimated_amount, category_id, subcategory_id, fe_id),
         )
 
 
@@ -906,15 +918,17 @@ def get_fixed_payments_for_month(year: int, month: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.active, fe.created_at,
+            SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.subcategory_id, fe.active, fe.created_at,
                    COALESCE(c.name,  'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')        AS category_color,
                    COALESCE(c.icon,  '❓')              AS category_icon,
+                   s.name AS subcategory_name,
                    fep.id         AS payment_id,
                    fep.expense_id AS payment_expense_id,
                    e.amount       AS actual_amount
             FROM fixed_expenses fe
             LEFT JOIN categories c ON c.id = fe.category_id
+            LEFT JOIN subcategories s ON s.id = fe.subcategory_id
             LEFT JOIN fixed_expense_payments fep
                 ON fep.fixed_expense_id = fe.id AND fep.year = ? AND fep.month = ?
             LEFT JOIN expenses e ON e.id = fep.expense_id

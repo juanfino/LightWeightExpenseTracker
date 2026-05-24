@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Home Assistant custom add-on that records family expenses via Telegram and shows them in a web dashboard. It runs as a Docker container on a Raspberry Pi 4 (aarch64). Users send messages like `Supermercado 150000` to a Telegram bot; the app parses, categorizes, and stores the expense in SQLite.
+A family expense tracker that records spending via Telegram and shows it in a web dashboard. Users send messages like `Supermercado 150000` to a Telegram bot; the app parses, categorizes, and stores the expense in SQLite. Runs as a Docker container on a Raspberry Pi 4 (aarch64), deployed via Docker Compose alongside Home Assistant and Cloudflare Tunnel.
 
 ## Development setup
 
-**Local run (without HA Supervisor):**
+**Local run:**
 ```bash
 cd gastos
 pip install -r requirements.txt
@@ -19,9 +19,9 @@ export DB_PATH=/tmp/gastos.db
 python3 app/main.py
 ```
 
-**Build Docker image:**
+**Build Docker image** (from repo root — Dockerfile path-copies `gastos/` subdirectory):
 ```bash
-docker build -t gastos gastos/
+docker build -f gastos/Dockerfile -t gastos .
 ```
 
 **Run inline module tests** (parser and categorizer have inline test suites):
@@ -33,29 +33,50 @@ python3 gastos/app/categorizer.py
 ## Architecture
 
 `main.py` is the entrypoint. It:
-1. Loads config from `/data/options.json` (written by HA Supervisor) or falls back to env vars
+1. Loads config from env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `DB_PATH`)
 2. Initializes SQLite via `db.py`
-3. Starts Flask dashboard in a daemon thread
-4. Starts the Telegram bot (blocks main thread via polling)
+3. Schedules a daily backup job (APScheduler, 21:00 ART)
+4. Starts Flask dashboard in a daemon thread
+5. Starts the Telegram bot (blocks main thread via polling)
 
 **Module responsibilities:**
 - `bot.py` — Telegram command handlers and message routing. Holds `pending_ocr` (OCR confirmation flow) and `pending_amount_edit` (waiting for user to type new amount after tapping inline button) module-level dicts keyed by `chat_id`. Uses `TELEGRAM_TOKEN` and `USERS` module-level globals set by `main.py`.
 - `parser.py` — Parses free-text messages into `{concept, amount}`. Handles Argentine number formats (dot=thousands, comma=decimal). Returns `None` if no valid amount found.
-- `categorizer.py` — Matches concept against keyword list from DB (accent/case-insensitive). Returns first matching `category_id` or `None`.
+- `categorizer.py` — Matches concept against keyword list from DB (accent/case-insensitive). Returns `(category_id, subcategory_id)` tuple; both may be `None`.
 - `db.py` — All SQLite operations. Uses a `get_conn()` context manager that auto-commits/rollbacks. `DB_PATH` is a module-level global set by `main.py`.
 - `dashboard.py` — Flask app. Timestamps stored as UTC in DB; `dashboard.py` converts to Buenos Aires time (UTC-3) for display.
 - `ocr.py` — Uses `claude-haiku-4-5-20251001` via the Anthropic SDK to extract `{comercio, monto, fecha}` from ticket images.
-- `seed.py` — Populates default categories and keywords on first DB creation.
+- `backup.py` — Sends `gastos.db` as a Telegram document to all configured users. Called by APScheduler at 21:00 ART and via `POST /admin/backup-now`.
+- `seed.py` — Populates default categories, subcategories, and keywords on first DB creation. Also runs idempotent migrations on every startup.
 
-**DB schema** (4 tables): `users`, `categories`, `keywords`, `expenses`. Categories have a protected "Sin categoría" that cannot be edited or deleted.
+**DB schema** (6 tables): `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. Categories have a protected "Sin categoría" that cannot be edited or deleted. `expenses` and `keywords` have an optional `subcategory_id` FK.
 
 ## Config
 
-The add-on is configured via `gastos/config.yaml`. Options are written to `/data/options.json` by HA Supervisor at runtime. Required fields: `telegram_token`, `users` (list of `{telegram_id, name}`). Optional: `anthropic_api_key` (enables OCR).
+Config is loaded exclusively from environment variables at startup — there is no HA Supervisor dependency:
+
+| Variable | Required | Description |
+|---|---|---|
+| `TELEGRAM_TOKEN` | Yes | Bot token |
+| `USERS_JSON` | Yes | JSON array `[{"telegram_id": "...", "name": "..."}]` |
+| `ANTHROPIC_API_KEY` | No | Enables OCR |
+| `DB_PATH` | No | Default: `/data/gastos.db` |
+
+On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env`.
+
+## Deployment
+
+The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU.
+
+On the Pi, the app is deployed as a Docker Compose service alongside `homeassistant` and `cloudflared` (both using `network_mode: host`). The compose file lives at `~/docker-compose.yml` on the Pi; the canonical service definition is `docker-compose.yml` in this repo.
+
+Persistent data is mounted from `~/gastos-data/` on the Pi into `/data/` inside the container.
+
+To update: `docker compose pull gastos && docker compose up -d gastos`
 
 ## Versioning
 
-The app version lives in `gastos/config.yaml` (`version` field). HA uses this to detect updates and prompt the user to upgrade. Bump it at the end of every session that produces a deployable change:
+The app version lives in `gastos/config.yaml` (`version` field). Bump it at the end of every session that produces a deployable change:
 - patch (`1.1.x`) — bugfixes
 - minor (`1.x.0`) — new features
 - major (`x.0.0`) — breaking changes to config schema or DB
@@ -72,3 +93,5 @@ Make sure to fully understand what is being asked before writing any code. If an
 - Amount parsing handles Argentine notation: `100.000` → 100000, `2.500,50` → 2500.5. When only a dot or comma is present with 3 digits after it, it's treated as a thousands separator.
 - OCR flow is two-step: bot sends extracted data back to the user for confirmation before saving.
 - User authorization is enforced per-request via `_get_authorized_user()` in `bot.py` — only `telegram_id`s in config are allowed.
+- `categorizer.categorize()` returns `(category_id, subcategory_id)` — both can be `None`. All expense creation flows must pass both values.
+- Dockerfile build context is the **repo root** (not the `gastos/` subdirectory): `docker build -f gastos/Dockerfile .`

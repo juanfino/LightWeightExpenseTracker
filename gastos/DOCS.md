@@ -4,12 +4,16 @@ Registro de gastos familiares via Telegram con dashboard web.
 
 ## Configuración
 
-| Campo | Descripción |
-|-------|-------------|
-| `telegram_token` | Token del bot obtenido con @BotFather en Telegram |
-| `users` | Lista de usuarios autorizados |
+La app se configura mediante variables de entorno:
 
-### Obtener chat_id de cada usuario
+| Variable | Requerida | Descripción |
+|----------|-----------|-------------|
+| `TELEGRAM_TOKEN` | Sí | Token del bot obtenido con @BotFather en Telegram |
+| `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi"}]` |
+| `ANTHROPIC_API_KEY` | No | Habilita el reconocimiento de tickets por foto (OCR) |
+| `DB_PATH` | No | Ruta a la base de datos SQLite (default: `/data/gastos.db`) |
+
+### Obtener el telegram_id de cada usuario
 Cada usuario debe enviarle un mensaje a @userinfobot en Telegram.
 
 ## Uso
