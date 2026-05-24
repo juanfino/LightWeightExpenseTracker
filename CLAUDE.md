@@ -66,13 +66,17 @@ On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env
 
 ## Deployment
 
-The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU.
+The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU. **Deploy to the Pi is manual** — GitHub Actions does not auto-pull.
 
-On the Pi, the app is deployed as a Docker Compose service alongside `homeassistant` and `cloudflared` (both using `network_mode: host`). The compose file lives at `~/docker-compose.yml` on the Pi; the canonical service definition is `docker-compose.yml` in this repo.
+**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:5000`.
 
-Persistent data is mounted from `~/gastos-data/` on the Pi into `/data/` inside the container.
+On the Pi, the app runs as a Docker Compose service alongside `homeassistant` and `cloudflared` (all `network_mode: host`). The canonical service definition is `docker-compose.yml` in this repo. Env vars for all services live in `~/.env`.
 
-To update: `docker compose pull gastos && docker compose up -d gastos`
+To update:
+```bash
+ssh juanfino@192.168.68.72 "docker compose pull gastos && docker compose up -d gastos"
+ssh juanfino@192.168.68.72 "docker logs -f gastos"
+```
 
 ## Versioning
 

@@ -4,21 +4,29 @@ A family expense tracker: send a message like `Supermercado 150000` to a Telegra
 
 ## Deployment
 
-### Continuous delivery
+### Making a change
 
-Every push to `main` builds a multi-arch image (`linux/arm64`, `linux/amd64`) and pushes it to:
+1. Code your change locally
+2. Push to `main` (or merge a PR to `main`)
+3. GitHub Actions builds and pushes the image automatically (~2-3 min)
+4. Check the Actions tab to confirm the run is green
 
-```
-ghcr.io/juanfino/lightweightexpensetracker:latest
-```
+The image is published to `ghcr.io/juanfino/lightweightexpensetracker:latest` (multi-arch: `linux/arm64`, `linux/amd64`). The same commit is also tagged with its git SHA for traceability.
 
-The same commit is also tagged with its git SHA for traceability.
+### Deploying to the Pi
 
-### Deploy / update on the Pi
+SSH into the Pi and run:
 
 ```bash
-docker compose pull gastos && docker compose up -d gastos
+ssh juanfino@192.168.68.72 "docker compose pull gastos && docker compose up -d gastos"
+ssh juanfino@192.168.68.72 "docker logs -f gastos"
 ```
+
+### Verifying
+
+- Logs show "Bot Telegram iniciando" and polling requests
+- Dashboard available at https://expenses.juampifinochietto.com
+- Bot responds in Telegram
 
 ### Environment variables
 
@@ -37,4 +45,4 @@ The SQLite database is mounted from `~/gastos-data/gastos.db` on the Pi into `/d
 
 ### Exposing the dashboard
 
-The dashboard runs on port 5000. Configure a Cloudflare Tunnel entry pointing `expenses.yourdomain.com → localhost:5000`.
+The dashboard runs on port 5000. A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:5000` on the Pi.

@@ -76,7 +76,12 @@ Configurado manualmente en el dashboard de Cloudflare Zero Trust.
    - `ghcr.io/juanfino/lightweightexpensetracker:latest`
    - `ghcr.io/juanfino/lightweightexpensetracker:<git-sha>`
 
-Para desplegar en el Pi: `docker compose pull gastos && docker compose up -d gastos`
+**Deploy al Pi es manual** (no hay auto-pull desde CI). Desde la máquina local:
+
+```bash
+ssh juanfino@192.168.68.72 "docker compose pull gastos && docker compose up -d gastos"
+ssh juanfino@192.168.68.72 "docker logs -f gastos"
+```
 
 ---
 
