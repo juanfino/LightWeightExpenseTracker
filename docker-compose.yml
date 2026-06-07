@@ -1,12 +1,33 @@
 services:
-  gastos:
-    image: ghcr.io/juanfino/lightweightexpensetracker:latest
-    container_name: gastos
+  homeassistant:
+    container_name: homeassistant
+    image: ghcr.io/home-assistant/home-assistant:stable
     restart: unless-stopped
-    env_file: ~/.env
+    privileged: true
+    network_mode: host
+    volumes:
+      - ~/homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+
+  cloudflared:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    network_mode: host
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+
+  gastos:
+    container_name: gastos
+    image: ghcr.io/juanfino/lightweightexpensetracker:latest
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ~/.env
     volumes:
       - ~/gastos-data:/data
-    network_mode: host
     dns:
       - 8.8.8.8
       - 1.1.1.1
