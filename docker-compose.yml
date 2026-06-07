@@ -7,3 +7,12 @@ services:
     volumes:
       - ~/gastos-data:/data
     network_mode: host
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('https://api.telegram.org', timeout=5)"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
