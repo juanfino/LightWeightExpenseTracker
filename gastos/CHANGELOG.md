@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.1
+- Infra: DNS explícito (`8.8.8.8`, `1.1.1.1`) en el servicio Docker para evitar que un `resolv.conf` desactualizado rompa la conectividad del bot silenciosamente
+- Infra: healthcheck que verifica conectividad saliente a `api.telegram.org` cada 2 minutos; el contenedor pasa a `unhealthy` si falla 3 veces consecutivas
+
 ## 1.8.0
 - Bot: selección de subcategoría después de asignar categoría manualmente — si la categoría elegida tiene subcategorías, se muestra un teclado inline con las opciones + botón "Sin subcategoría"
 - Bot: al elegir una subcategoría, se actualizan tanto el gasto como el binding de la keyword con `subcategory_id`
