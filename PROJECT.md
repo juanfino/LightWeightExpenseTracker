@@ -76,6 +76,14 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Always `git pull` locally before starting a Claude Code session** — CC builds from local disk, not from GitHub.
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
 
+## Infrastructure Philosophy
+
+The `docker-compose.yml` on the Pi (`/home/juanfino/docker-compose.yml`) is the **operational source of truth** — it is managed manually and may include services from multiple unrelated projects. The copy committed to this repo exists for **auditing and history only** and is not read directly by the Pi.
+
+When CC modifies `docker-compose.yml` as part of a PR, the relevant changes must be manually applied to the Pi's copy. The repo copy should then be updated to match.
+
+The Pi is intended to host multiple independent projects. A single global compose file on the host is preferred over per-project compose files to keep service management centralized.
+
 ## Active Backlog
 
 - Pin `anthropic` version in `requirements.txt`
