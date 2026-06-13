@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.3
+- Fix: los handlers de `pending_fixed_direct` y `pending_amount_edit` en `bot.py` ahora intentan extraer el monto via `parse_message()` cuando `_normalize_amount()` falla — evita "Monto inválido" si el usuario escribe `"Doméstica 35000"` mientras hay un estado pendiente activo
+
+## 1.8.2
+- Parser: agregados tests para mensajes con conceptos acentuados (`Doméstica 35000`) y separador de miles argentino (`35.000`); el parser ya manejaba estos casos correctamente
+
 ## 1.8.1
 - Infra: DNS explícito (`8.8.8.8`, `1.1.1.1`) en el servicio Docker para evitar que un `resolv.conf` desactualizado rompa la conectividad del bot silenciosamente
 - Infra: healthcheck que verifica conectividad saliente a `api.telegram.org` cada 2 minutos; el contenedor pasa a `unhealthy` si falla 3 veces consecutivas

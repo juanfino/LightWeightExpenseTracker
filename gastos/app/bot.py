@@ -239,6 +239,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fdata = pending_fixed_direct.pop(chat_id)
         amount = msg_parser._normalize_amount(text)
         if amount is None:
+            parsed = msg_parser.parse_message(text)
+            if parsed:
+                amount = parsed["amount"]
+        if amount is None:
             pending_fixed_direct[chat_id] = fdata
             await update.message.reply_text(
                 "❌ Monto inválido. Ejemplos: <code>15000</code>, <code>2500,50</code>",
@@ -269,6 +273,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in pending_amount_edit:
         expense_id = pending_amount_edit.pop(chat_id)
         amount = msg_parser._normalize_amount(text)
+        if amount is None:
+            parsed = msg_parser.parse_message(text)
+            if parsed:
+                amount = parsed["amount"]
         if amount is None:
             pending_amount_edit[chat_id] = expense_id
             await update.message.reply_text(

@@ -127,6 +127,9 @@ if __name__ == "__main__":
         ("farmacia 2500.50",      {"concept": "Farmacia",          "amount": 2500.5}),
         ("farmacia 2500,50",      {"concept": "Farmacia",          "amount": 2500.5}),
         ("super 2.500,50",        {"concept": "Super",             "amount": 2500.5}),
+        ("Doméstica 35000",        {"concept": "Doméstica",         "amount": 35000.0}),
+        ("Domestica 35000",        {"concept": "Domestica",         "amount": 35000.0}),
+        ("Domestica 35.000",       {"concept": "Domestica",         "amount": 35000.0}),
         ("solo texto",            None),
         ("123456",                None),
     ]
