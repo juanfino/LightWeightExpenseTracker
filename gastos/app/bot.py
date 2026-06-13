@@ -22,7 +22,8 @@ MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
 
 # Gastos pendientes de confirmación tras OCR, keyed por chat_id
 pending_ocr: dict[int, dict] = {}
-# Gastos pendientes de confirmación tras voice, keyed por chat_id
+# Gastos pendientes de confirmación tras voice, keyed por chat_id.
+# Structure: {"queue": [expense_dict, ...], "total": N, "done": 0}
 pending_voice: dict[int, dict] = {}
 # Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
 pending_amount_edit: dict[int, int] = {}
@@ -230,6 +231,45 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def _send_next_voice_confirmation(chat_id: int, bot) -> None:
+    """Pop the next expense from pending_voice and send an inline confirmation message."""
+    state = pending_voice.get(chat_id)
+    if not state or not state["queue"]:
+        pending_voice.pop(chat_id, None)
+        return
+
+    item = state["queue"].pop(0)
+    state["done"] += 1
+    index = state["done"]
+    total = state["total"]
+
+    cat = db.get_category_by_id(item["category_id"]) if item["category_id"] else None
+    cat_name = cat["name"] if cat else None
+    cat_icon = cat["icon"] if cat else None
+
+    counter = f"🎙️ Gasto {index} de {total}\n" if total > 1 else "🎙️ \n"
+    cat_line = f"\n📂 Categoría: {_cat_line(cat_icon, cat_name, item['subcategory_id'])}" if cat_name else ""
+
+    # Store current item so handle_callback can read it without re-popping
+    state["current"] = item
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"{counter}"
+            f"📋 Concepto: {item['concept']}\n"
+            f"💰 Monto: {fmt_amount(item['amount'])}"
+            f"{cat_line}\n\n"
+            "¿Guardamos?"
+        ),
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, guardar", callback_data="voice:confirm"),
+            InlineKeyboardButton("❌ Cancelar",    callback_data="voice:cancel"),
+        ]]),
+    )
+
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
@@ -249,7 +289,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     audio_bytes = bytes(await tg_file.download_as_bytearray())
 
     try:
-        data = audio_module.transcribe_and_extract(audio_bytes, openai_api_key, anthropic_api_key)
+        result = audio_module.transcribe_and_extract(audio_bytes, openai_api_key, anthropic_api_key)
     except Exception as e:
         logger.error("Error procesando audio: %s", e)
         await status_msg.edit_text(
@@ -259,47 +299,60 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if not data["amount"]:
+    transcription = result["transcription"]
+    valid = [e for e in result["expenses"] if e["amount"] is not None]
+    skipped = [e for e in result["expenses"] if e["amount"] is None]
+
+    if not valid:
         await status_msg.edit_text(
-            f"⚠️ Escuché: \"<i>{data['transcription']}</i>\"\n\n"
-            "No pude detectar el monto. Cargá el gasto manualmente:\n"
+            f"⚠️ Escuché: \"<i>{transcription}</i>\"\n\n"
+            "No pude detectar ningún monto. Cargá los gastos manualmente:\n"
             "<code>Comercio monto</code>",
             parse_mode="HTML",
         )
         return
 
+    # Categorize all valid expenses
     chat_id = update.message.chat_id
     keywords = db.get_all_keywords()
-    category_id, subcategory_id = categorizer.categorize(data["concept"], keywords)
-    categories = {r["id"]: r for r in db.get_all_categories()}
-    cat = categories.get(category_id)
-    cat_name = cat["name"] if cat else None
-    cat_icon = cat["icon"] if cat else None
+    queue = []
+    for expense in valid:
+        category_id, subcategory_id = categorizer.categorize(expense["concept"], keywords)
+        queue.append({
+            "concept": expense["concept"],
+            "amount": expense["amount"],
+            "category_id": category_id,
+            "subcategory_id": subcategory_id,
+            "transcription": transcription,
+        })
 
     pending_voice[chat_id] = {
-        "concept": data["concept"],
-        "amount": data["amount"],
-        "category_id": category_id,
-        "subcategory_id": subcategory_id,
-        "transcription": data["transcription"],
+        "queue": queue,
+        "total": len(queue),
+        "done": 0,
+        "current": None,
     }
 
-    cat_line = ""
-    if cat_name:
-        cat_line = f"\n📂 Categoría: {_cat_line(cat_icon, cat_name, subcategory_id)}"
+    # Delete the "Procesando audio..." status message before sending confirmations
+    await status_msg.delete()
 
-    await status_msg.edit_text(
-        f"🎙️ Escuché: \"<i>{data['transcription']}</i>\"\n\n"
-        f"📋 Concepto: {data['concept']}\n"
-        f"💰 Monto: {fmt_amount(data['amount'])}"
-        f"{cat_line}\n\n"
-        "¿Guardamos?",
+    # Warn about skipped items (no amount detected)
+    if skipped:
+        names = ", ".join(e["concept"] for e in skipped)
+        await update.message.reply_text(
+            f"⚠️ No pude detectar el monto de: <b>{names}</b>. Lo salteé.",
+            parse_mode="HTML",
+        )
+
+    # Show transcription summary then first confirmation
+    count_str = f"{len(queue)} gasto{'s' if len(queue) != 1 else ''}"
+    await update.message.reply_text(
+        f"🎙️ Escuché: \"<i>{transcription}</i>\"\n"
+        f"Encontré <b>{count_str}</b>. Revisemos uno por uno:",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Sí, guardar", callback_data="voice:confirm"),
-            InlineKeyboardButton("❌ Cancelar",    callback_data="voice:cancel"),
-        ]]),
     )
+
+    await _send_next_voice_confirmation(chat_id, context.bot)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1017,42 +1070,55 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if cb == "voice:confirm":
-        if chat_id not in pending_voice:
+        state = pending_voice.get(chat_id)
+        if not state or not state.get("current"):
             await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
             return
-        voice_data = pending_voice.pop(chat_id)
-        cat = db.get_category_by_id(voice_data["category_id"]) if voice_data["category_id"] else None
+        item = state.pop("current")
+        cat = db.get_category_by_id(item["category_id"]) if item["category_id"] else None
         cat_name = cat["name"] if cat else "Sin categoría"
         cat_icon = cat["icon"] if cat else "❓"
         try:
             expense_id = db.create_expense(
                 user_id=user["id"],
-                category_id=voice_data["category_id"],
-                subcategory_id=voice_data["subcategory_id"],
-                concept=voice_data["concept"],
-                amount=voice_data["amount"],
-                raw_text=f"[VOZ] {voice_data['transcription']}",
+                category_id=item["category_id"],
+                subcategory_id=item["subcategory_id"],
+                concept=item["concept"],
+                amount=item["amount"],
+                raw_text=f"[VOZ] {item['transcription']}",
             )
         except Exception as e:
             logger.error("Error guardando gasto de voz: %s", e)
             await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
             return
-        keyboard = _build_category_keyboard(expense_id) if voice_data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+        keyboard = _build_category_keyboard(expense_id) if item["category_id"] is None else _build_edit_only_keyboard(expense_id)
         await query.edit_message_text(
             f"✅ <b>Gasto registrado</b>\n"
-            f"📋 {voice_data['concept']}\n"
-            f"💰 {fmt_amount(voice_data['amount'])}\n"
-            f"{_cat_line(cat_icon, cat_name, voice_data['subcategory_id'])}\n"
+            f"📋 {item['concept']}\n"
+            f"💰 {fmt_amount(item['amount'])}\n"
+            f"{_cat_line(cat_icon, cat_name, item['subcategory_id'])}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+        if state["queue"]:
+            await _send_next_voice_confirmation(chat_id, context.bot)
+        else:
+            pending_voice.pop(chat_id, None)
         return
 
     elif cb == "voice:cancel":
-        pending_voice.pop(chat_id, None)
-        await query.edit_message_text("❌ Carga cancelada.")
+        state = pending_voice.get(chat_id)
+        if not state:
+            await query.edit_message_text("❌ Gasto salteado.")
+            return
+        state.pop("current", None)
+        await query.edit_message_text("❌ Gasto salteado.")
+        if state["queue"]:
+            await _send_next_voice_confirmation(chat_id, context.bot)
+        else:
+            pending_voice.pop(chat_id, None)
         return
 
     if cb.startswith("c:"):

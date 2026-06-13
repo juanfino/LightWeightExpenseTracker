@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.0
+- Bot: mensajes de voz ahora soportan múltiples gastos en un solo audio (ej: "mil en la verdulería, tres mil en la ferretería y quinientos en nafta")
+- Audio: `transcribe_and_extract` retorna lista de gastos `[{concept, amount}]`; Claude extrae todos los gastos mencionados en la transcripción
+- Bot: flujo de confirmación por cola — cada gasto válido se muestra de a uno con botones inline "✅ Sí, guardar" / "❌ Cancelar"; gastos sin monto detectable son avisados y salteados automáticamente
+- Bot: helper `_send_next_voice_confirmation` gestiona la cola y muestra contador "Gasto X de Y" cuando hay más de uno
+
 ## 1.9.1
 - Bot: confirmación de gastos de voz cambiada a botones inline ("✅ Sí, guardar" / "❌ Cancelar"), igual que el flujo OCR; se elimina el handler de texto `/si` / `/no` para voz
 
