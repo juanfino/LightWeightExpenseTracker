@@ -24,9 +24,17 @@ def load_config() -> dict:
     except json.JSONDecodeError as e:
         raise RuntimeError(f"USERS_JSON no es JSON válido: {e}") from e
 
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not openai_api_key:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "OPENAI_API_KEY no configurada — los mensajes de voz no serán procesados"
+        )
+
     return {
         "telegram_token": os.environ["TELEGRAM_TOKEN"],
         "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
+        "openai_api_key": openai_api_key,
         "users": users,
     }
 
@@ -85,6 +93,7 @@ def main():
     bot.USERS = users
     app = bot.build_app()
     app.bot_data["anthropic_api_key"] = config.get("anthropic_api_key", "")
+    app.bot_data["openai_api_key"] = config.get("openai_api_key", "")
     logger.info("Bot Telegram iniciando (polling)...")
     app.run_polling(drop_pending_updates=True)
 

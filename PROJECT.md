@@ -37,6 +37,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Expense entry via Telegram:** plain text, e.g. `Supermercado 150000`
 - **Auto-categorization:** keyword matching (two-level: category + subcategory). Silent inference — no extra prompts.
 - **OCR receipt scanning:** send a photo; bot extracts `{comercio, monto, fecha}` via Anthropic Vision, prompts for confirmation before saving
+- **Voice expense entry:** send a voice note (e.g. "ferretería diez mil pesos"); bot transcribes with OpenAI Whisper, normalizes written numbers to digits via Claude, and prompts for confirmation before saving
 - **Argentine number formatting:** `.` = thousands separator, `,` = decimal (e.g. `$5.580,00`). `_parse_monto()` handles both notations; `100.000` → 100000, `2.500,50` → 2500.5
 - **Gastos Fijos:** recurring fixed expense tracking with monthly payment status and inline bot flow
 - **USD/ARS exchange rate tracking:** `CambioDolar <monto_usd> <cotizacion>` command; dedicated dashboard page
@@ -52,6 +53,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
+- `audio.py` — Whisper transcription + Claude extraction; returns `{transcription, concept, amount}`
 - `backup.py` — sends DB file as Telegram document; called by scheduler and admin endpoint
 - `seed.py` — idempotent `seed(conn)` run on every startup; handles schema migrations and default data
 
@@ -64,6 +66,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "..."}]` |
 | `ANTHROPIC_API_KEY` | No | Enables OCR |
+| `OPENAI_API_KEY` | No | Enables voice message expense entry |
 | `DB_PATH` | No | Default: `/data/gastos.db` |
 
 ## Known Gotchas
@@ -73,6 +76,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Flask + bot in one process:** threading is a deliberate tradeoff. Don't split into separate services without explicit discussion.
 - **Subcategory inference is silent:** no extra Telegram prompts after category assignment.
 - **DNS staleness on long-running containers:** `resolv.conf` can go stale if the host network changes. Mitigated by `dns: [8.8.8.8, 1.1.1.1]` and healthcheck in `docker-compose.yml`. Symptom: `[Errno -3] Try again` in bot logs while container shows `Up`.
+- **Whisper returns written numbers:** Whisper transcribes verbatim — "diez mil" stays as text. Claude (`audio.py`) normalizes them to digits before saving. If you bypass `audio.py` and use Whisper output directly, amounts will be `null`.
 - **Always `git pull` locally before starting a Claude Code session** — CC builds from local disk, not from GitHub.
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
 

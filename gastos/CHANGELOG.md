@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.0
+- Bot: soporte de mensajes de voz — el usuario puede enviar un audio describiendo un gasto (ej: "ferretería diez mil pesos") y el bot lo transcribe con Whisper y extrae concepto y monto con Claude
+- Audio: nuevo módulo `audio.py` — transcripción con OpenAI Whisper (`whisper-1`, idioma `es`) y extracción estructurada con `claude-haiku-4-5-20251001`
+- Bot: flujo de confirmación para gastos de voz con `pending_voice`, análogo al flujo OCR con `/si` / `/no`
+- Config: nueva variable de entorno opcional `OPENAI_API_KEY` — habilita el procesamiento de audio; si ausente, el bot responde con aviso y registra warning
+
 ## 1.8.3
 - Fix: los handlers de `pending_fixed_direct` y `pending_amount_edit` en `bot.py` ahora intentan extraer el monto via `parse_message()` cuando `_normalize_amount()` falla — evita "Monto inválido" si el usuario escribe `"Doméstica 35000"` mientras hay un estado pendiente activo
 
