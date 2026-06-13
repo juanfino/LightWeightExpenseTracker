@@ -290,11 +290,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await status_msg.edit_text(
         f"🎙️ Escuché: \"<i>{data['transcription']}</i>\"\n\n"
-        f"📝 Concepto: {data['concept']}\n"
+        f"📋 Concepto: {data['concept']}\n"
         f"💰 Monto: {fmt_amount(data['amount'])}"
         f"{cat_line}\n\n"
-        "¿Confirmar? /si o /no",
+        "¿Guardamos?",
         parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, guardar", callback_data="voice:confirm"),
+            InlineKeyboardButton("❌ Cancelar",    callback_data="voice:cancel"),
+        ]]),
     )
 
 
@@ -414,50 +418,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    if chat_id in pending_voice:
-        response = text.lower()
-        if response in ("sí", "si", "s", "dale", "ok"):
-            data = pending_voice.pop(chat_id)
-            cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
-            cat_name = cat["name"] if cat else "Sin categoría"
-            cat_icon = cat["icon"] if cat else "❓"
-            try:
-                expense_id = db.create_expense(
-                    user_id=user["id"],
-                    category_id=data["category_id"],
-                    subcategory_id=data["subcategory_id"],
-                    concept=data["concept"],
-                    amount=data["amount"],
-                    raw_text=f"[VOZ] {data['transcription']}",
-                )
-            except Exception as e:
-                logger.error("Error guardando gasto de voz: %s", e)
-                await update.message.reply_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
-                return
-            keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
-            await update.message.reply_text(
-                f"✅ <b>Gasto registrado</b>\n"
-                f"📋 {data['concept']}\n"
-                f"💰 {fmt_amount(data['amount'])}\n"
-                f"{_cat_line(cat_icon, cat_name, data['subcategory_id'])}\n"
-                f"👤 {user['name']}\n"
-                f"<code>#ID{expense_id}</code>",
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
-        elif response in ("no", "n", "cancelar"):
-            del pending_voice[chat_id]
-            await update.message.reply_text("❌ Carga cancelada.")
-        else:
-            await update.message.reply_text(
-                "Por favor respondé <b>sí</b> o <b>no</b>.", parse_mode="HTML"
-            )
-        return
-
     # Abandon any stale pending state if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
     pending_subcategory.pop(chat_id, None)
-    pending_voice.pop(chat_id, None)
 
     parsed = msg_parser.parse_message(text)
 
@@ -1050,6 +1013,45 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif cb == "ocr:cancel":
         pending_ocr.pop(chat_id, None)
+        await query.edit_message_text("❌ Carga cancelada.")
+        return
+
+    if cb == "voice:confirm":
+        if chat_id not in pending_voice:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        voice_data = pending_voice.pop(chat_id)
+        cat = db.get_category_by_id(voice_data["category_id"]) if voice_data["category_id"] else None
+        cat_name = cat["name"] if cat else "Sin categoría"
+        cat_icon = cat["icon"] if cat else "❓"
+        try:
+            expense_id = db.create_expense(
+                user_id=user["id"],
+                category_id=voice_data["category_id"],
+                subcategory_id=voice_data["subcategory_id"],
+                concept=voice_data["concept"],
+                amount=voice_data["amount"],
+                raw_text=f"[VOZ] {voice_data['transcription']}",
+            )
+        except Exception as e:
+            logger.error("Error guardando gasto de voz: %s", e)
+            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+            return
+        keyboard = _build_category_keyboard(expense_id) if voice_data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+        await query.edit_message_text(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {voice_data['concept']}\n"
+            f"💰 {fmt_amount(voice_data['amount'])}\n"
+            f"{_cat_line(cat_icon, cat_name, voice_data['subcategory_id'])}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+        return
+
+    elif cb == "voice:cancel":
+        pending_voice.pop(chat_id, None)
         await query.edit_message_text("❌ Carga cancelada.")
         return
 
