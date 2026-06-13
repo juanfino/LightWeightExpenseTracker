@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.9.1
+- Bot: confirmación de gastos de voz cambiada a botones inline ("✅ Sí, guardar" / "❌ Cancelar"), igual que el flujo OCR; se elimina el handler de texto `/si` / `/no` para voz
+
 ## 1.9.0
 - Bot: soporte de mensajes de voz — el usuario puede enviar un audio describiendo un gasto (ej: "ferretería diez mil pesos") y el bot lo transcribe con Whisper y extrae concepto y monto con Claude
 - Audio: nuevo módulo `audio.py` — transcripción con OpenAI Whisper (`whisper-1`, idioma `es`) y extracción estructurada con `claude-haiku-4-5-20251001`
