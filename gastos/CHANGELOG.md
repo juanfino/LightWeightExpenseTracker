@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.0
+- Bot: soporte de mensajes de voz — el usuario puede enviar un audio describiendo un gasto (ej: "ferretería diez mil pesos") y el bot lo transcribe con Whisper y extrae concepto y monto con Claude
+- Audio: nuevo módulo `audio.py` — transcripción con OpenAI Whisper (`whisper-1`, idioma `es`) y extracción estructurada con `claude-haiku-4-5-20251001`
+- Bot: flujo de confirmación para gastos de voz con `pending_voice`, análogo al flujo OCR con `/si` / `/no`
+- Config: nueva variable de entorno opcional `OPENAI_API_KEY` — habilita el procesamiento de audio; si ausente, el bot responde con aviso y registra warning
+
+## 1.8.3
+- Fix: los handlers de `pending_fixed_direct` y `pending_amount_edit` en `bot.py` ahora intentan extraer el monto via `parse_message()` cuando `_normalize_amount()` falla — evita "Monto inválido" si el usuario escribe `"Doméstica 35000"` mientras hay un estado pendiente activo
+
+## 1.8.2
+- Parser: agregados tests para mensajes con conceptos acentuados (`Doméstica 35000`) y separador de miles argentino (`35.000`); el parser ya manejaba estos casos correctamente
+
 ## 1.8.1
 - Infra: DNS explícito (`8.8.8.8`, `1.1.1.1`) en el servicio Docker para evitar que un `resolv.conf` desactualizado rompa la conectividad del bot silenciosamente
 - Infra: healthcheck que verifica conectividad saliente a `api.telegram.org` cada 2 minutos; el contenedor pasa a `unhealthy` si falla 3 veces consecutivas

@@ -10,6 +10,7 @@ import db
 import parser as msg_parser
 import categorizer
 import ocr as ocr_module
+import audio as audio_module
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,8 @@ MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
 
 # Gastos pendientes de confirmación tras OCR, keyed por chat_id
 pending_ocr: dict[int, dict] = {}
+# Gastos pendientes de confirmación tras voice, keyed por chat_id
+pending_voice: dict[int, dict] = {}
 # Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
 pending_amount_edit: dict[int, int] = {}
 # Gasto parseado esperando confirmación de match con gasto fijo
@@ -227,6 +230,74 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    openai_api_key = context.bot_data.get("openai_api_key", "")
+    if not openai_api_key:
+        logger.warning("OPENAI_API_KEY no configurada; voice ignorado")
+        await update.message.reply_text("🎙️ El procesamiento de audio no está configurado.")
+        return
+
+    anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
+
+    status_msg = await update.message.reply_text("🎙️ Procesando audio...")
+
+    tg_file = await update.message.voice.get_file()
+    audio_bytes = bytes(await tg_file.download_as_bytearray())
+
+    try:
+        data = audio_module.transcribe_and_extract(audio_bytes, openai_api_key, anthropic_api_key)
+    except Exception as e:
+        logger.error("Error procesando audio: %s", e)
+        await status_msg.edit_text(
+            "❌ No pude procesar el audio. Intentá de nuevo o cargá el gasto manualmente:\n"
+            "<code>Comercio monto</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    if not data["amount"]:
+        await status_msg.edit_text(
+            f"⚠️ Escuché: \"<i>{data['transcription']}</i>\"\n\n"
+            "No pude detectar el monto. Cargá el gasto manualmente:\n"
+            "<code>Comercio monto</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    chat_id = update.message.chat_id
+    keywords = db.get_all_keywords()
+    category_id, subcategory_id = categorizer.categorize(data["concept"], keywords)
+    categories = {r["id"]: r for r in db.get_all_categories()}
+    cat = categories.get(category_id)
+    cat_name = cat["name"] if cat else None
+    cat_icon = cat["icon"] if cat else None
+
+    pending_voice[chat_id] = {
+        "concept": data["concept"],
+        "amount": data["amount"],
+        "category_id": category_id,
+        "subcategory_id": subcategory_id,
+        "transcription": data["transcription"],
+    }
+
+    cat_line = ""
+    if cat_name:
+        cat_line = f"\n📂 Categoría: {_cat_line(cat_icon, cat_name, subcategory_id)}"
+
+    await status_msg.edit_text(
+        f"🎙️ Escuché: \"<i>{data['transcription']}</i>\"\n\n"
+        f"📝 Concepto: {data['concept']}\n"
+        f"💰 Monto: {fmt_amount(data['amount'])}"
+        f"{cat_line}\n\n"
+        "¿Confirmar? /si o /no",
+        parse_mode="HTML",
+    )
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
@@ -238,6 +309,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in pending_fixed_direct:
         fdata = pending_fixed_direct.pop(chat_id)
         amount = msg_parser._normalize_amount(text)
+        if amount is None:
+            parsed = msg_parser.parse_message(text)
+            if parsed:
+                amount = parsed["amount"]
         if amount is None:
             pending_fixed_direct[chat_id] = fdata
             await update.message.reply_text(
@@ -269,6 +344,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in pending_amount_edit:
         expense_id = pending_amount_edit.pop(chat_id)
         amount = msg_parser._normalize_amount(text)
+        if amount is None:
+            parsed = msg_parser.parse_message(text)
+            if parsed:
+                amount = parsed["amount"]
         if amount is None:
             pending_amount_edit[chat_id] = expense_id
             await update.message.reply_text(
@@ -335,9 +414,50 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    if chat_id in pending_voice:
+        response = text.lower()
+        if response in ("sí", "si", "s", "dale", "ok"):
+            data = pending_voice.pop(chat_id)
+            cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
+            cat_name = cat["name"] if cat else "Sin categoría"
+            cat_icon = cat["icon"] if cat else "❓"
+            try:
+                expense_id = db.create_expense(
+                    user_id=user["id"],
+                    category_id=data["category_id"],
+                    subcategory_id=data["subcategory_id"],
+                    concept=data["concept"],
+                    amount=data["amount"],
+                    raw_text=f"[VOZ] {data['transcription']}",
+                )
+            except Exception as e:
+                logger.error("Error guardando gasto de voz: %s", e)
+                await update.message.reply_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+                return
+            keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+            await update.message.reply_text(
+                f"✅ <b>Gasto registrado</b>\n"
+                f"📋 {data['concept']}\n"
+                f"💰 {fmt_amount(data['amount'])}\n"
+                f"{_cat_line(cat_icon, cat_name, data['subcategory_id'])}\n"
+                f"👤 {user['name']}\n"
+                f"<code>#ID{expense_id}</code>",
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+        elif response in ("no", "n", "cancelar"):
+            del pending_voice[chat_id]
+            await update.message.reply_text("❌ Carga cancelada.")
+        else:
+            await update.message.reply_text(
+                "Por favor respondé <b>sí</b> o <b>no</b>.", parse_mode="HTML"
+            )
+        return
+
     # Abandon any stale pending state if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
     pending_subcategory.pop(chat_id, None)
+    pending_voice.pop(chat_id, None)
 
     parsed = msg_parser.parse_message(text)
 
@@ -1165,6 +1285,7 @@ def build_app():
     app.add_handler(CommandHandler("ayuda",             cmd_ayuda))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
     _cambiodolar_filter = filters.TEXT & filters.Regex(r'(?i)^cambiodolar\b')
     app.add_handler(MessageHandler(_cambiodolar_filter, handle_cambiodolar))
