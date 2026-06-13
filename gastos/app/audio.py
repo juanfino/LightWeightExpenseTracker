@@ -11,21 +11,37 @@ _MODEL = "claude-haiku-4-5-20251001"
 _WHISPER_PROMPT = "Gastos en pesos argentinos: 10000, 148900, 5000."
 
 _EXTRACT_PROMPT = (
-    "Analizá esta transcripción de un mensaje de voz sobre un gasto. "
-    "Convertí los números escritos en español a dígitos "
-    "(ej: 'diez mil' → 10000, 'ciento cuarenta y ocho mil novecientos' → 148900). "
-    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita'). "
-    "Respondé ÚNICAMENTE con un JSON válido sin explicaciones:\n"
-    '{"concept": "<nombre del comercio o concepto, capitalizado>", '
-    '"amount": <monto como número float, o null si no se detecta>}'
+    "Analizá esta transcripción de un mensaje de voz sobre uno o varios gastos. "
+    "Identificá cada gasto mencionado y convertí los números escritos en español a dígitos "
+    "(ej: 'diez mil' → 10000, 'quinientos' → 500, 'tres mil' → 3000). "
+    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita', 'mangos'). "
+    "El usuario puede mencionar varios gastos en una sola oración, "
+    "ej: 'gasté mil en la verdulería, tres mil en la ferretería y quinientos en nafta'. "
+    "Si un gasto mencionado no tiene monto claro, incluilo igual con amount null. "
+    "Respondé ÚNICAMENTE con un array JSON válido sin explicaciones ni bloques de código:\n"
+    '[{"concept": "<nombre del comercio o concepto, capitalizado>", '
+    '"amount": <monto como número float, o null si no se detecta>}, ...]'
 )
 
 
-def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str) -> dict:
-    """Transcribe voice audio and extract expense data.
+def _parse_amount(raw) -> float | None:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
-    Returns dict with keys: 'transcription', 'concept', 'amount' (float or None).
-    Raises RuntimeError on failure.
+
+def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str) -> dict:
+    """Transcribe voice audio and extract one or more expenses.
+
+    Returns:
+        {
+            "transcription": str,
+            "expenses": [{"concept": str, "amount": float | None}, ...]
+        }
+    Raises RuntimeError on transcription or extraction failure.
     """
     oa_client = openai.OpenAI(api_key=openai_api_key)
     audio_file = io.BytesIO(audio_bytes)
@@ -51,7 +67,7 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
         an_client = anthropic.Anthropic(api_key=anthropic_api_key)
         message = an_client.messages.create(
             model=_MODEL,
-            max_tokens=128,
+            max_tokens=512,
             messages=[{
                 "role": "user",
                 "content": f"{_EXTRACT_PROMPT}\n\nTranscripción: {transcription}",
@@ -65,15 +81,22 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
     except Exception as e:
         raise RuntimeError(f"Error al extraer datos del gasto: {e}") from e
 
-    amount = data.get("amount")
-    if amount is not None:
-        try:
-            amount = float(amount)
-        except (TypeError, ValueError):
-            amount = None
+    if not isinstance(data, list):
+        raise RuntimeError(f"Claude devolvió formato inesperado (esperaba array): {data!r}")
+
+    expenses = [
+        {
+            "concept": (item.get("concept") or "").strip() or "Desconocido",
+            "amount": _parse_amount(item.get("amount")),
+        }
+        for item in data
+        if isinstance(item, dict)
+    ]
+
+    if not expenses:
+        raise RuntimeError("Claude no detectó ningún gasto en la transcripción")
 
     return {
         "transcription": transcription,
-        "concept": data.get("concept") or "",
-        "amount": amount,
+        "expenses": expenses,
     }
