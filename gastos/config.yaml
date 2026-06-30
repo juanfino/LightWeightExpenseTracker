@@ -8,9 +8,9 @@ arch:
   - armv7
   - amd64
 ports:
-  5000/tcp: 5000
+  8090/tcp: 8090
 ports_description:
-  5000/tcp: "Dashboard web"
+  8090/tcp: "Dashboard web"
 options:
   telegram_token: ""
   anthropic_api_key: ""
