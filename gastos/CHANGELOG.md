@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.1
+- Config: puerto del dashboard movido de 5000 a 8090 para liberar el puerto para Frigate; configurable vía env var `DASHBOARD_PORT`
+
 ## 1.10.0
 - Bot: mensajes de voz ahora soportan múltiples gastos en un solo audio (ej: "mil en la verdulería, tres mil en la ferretería y quinientos en nafta")
 - Audio: `transcribe_and_extract` retorna lista de gastos `[{concept, amount}]`; Claude extrae todos los gastos mencionados en la transcripción

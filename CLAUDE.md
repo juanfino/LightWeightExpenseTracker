@@ -68,7 +68,7 @@ On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env
 
 The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU. **Deploy to the Pi is manual** — GitHub Actions does not auto-pull.
 
-**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:5000`.
+**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:8090`.
 
 On the Pi, the app runs as a Docker Compose service alongside `homeassistant` and `cloudflared` (all `network_mode: host`). The canonical service definition is `docker-compose.yml` in this repo. Env vars for all services live in `~/.env`.
 
