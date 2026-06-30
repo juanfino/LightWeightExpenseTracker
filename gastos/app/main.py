@@ -85,7 +85,8 @@ def main():
     import dashboard
     dash_thread = threading.Thread(target=dashboard.run_dashboard, daemon=True, name="dashboard")
     dash_thread.start()
-    logger.info("Dashboard iniciado en puerto 5000")
+    dash_port = int(os.environ.get("DASHBOARD_PORT", 5000))
+    logger.info("Dashboard iniciado en puerto %d", dash_port)
 
     # 6. Iniciar bot Telegram (bloquea el hilo principal)
     import bot
