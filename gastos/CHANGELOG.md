@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0
+- Dashboard mobile: nuevo menú tipo drawer que se desliza desde la derecha con fondo oscurecido (scrim) y botón de cierre, en reemplazo del dropdown de ancho completo. El botón hamburguesa ahora queda anclado a la derecha del topbar
+- Dashboard mobile: las tablas de Historial, Dólares (historial de cambios), Categorías, Keywords y Fijos (administrar) se muestran como tarjetas apiladas con etiquetas por columna, eliminando el scroll horizontal (nueva clase reutilizable `.rtable` en `base.html`)
+- Fijos mobile: en "Estado del mes" el monto y los botones de pago bajan a su propia línea de ancho completo, evitando que se superpongan con el concepto
+- Dashboard mobile: menos padding lateral en topbar, contenedor y cards para ganar ancho útil en pantallas chicas
+
 ## 1.11.0
 - Dashboard: paleta de colores distinta por usuario — cada usuario recibe un color bien diferenciado de `USER_COLOR_PALETTE` en `_sync_users`, para que se distingan claro en el gráfico "Por semana" y en los tags de gastos (antes todos compartían el mismo violeta por defecto)
 - Bot: gastos por voz de alta confianza se registran automáticamente sin pedir confirmación — `audio.py` ahora devuelve un `confidence` (0–1) por gasto y solo se piden confirmar los dudosos (umbral `AUTOSAVE_CONFIDENCE = 0.9`)

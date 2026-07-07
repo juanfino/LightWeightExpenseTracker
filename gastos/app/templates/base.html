@@ -316,30 +316,81 @@
       cursor: pointer;
       flex-shrink: 0;
       font-size: 18px;
+      margin-left: auto;   /* empuja el hamburguesa al extremo derecho */
     }
 
     .nav-toggle:hover { background: var(--surface2); }
 
-    .mobile-menu {
-      display: none;
+    /* Scrim (fondo oscurecido detrás del drawer) */
+    .menu-scrim {
       position: fixed;
-      top: 52px;
-      left: 0;
-      right: 0;
-      z-index: 49;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      padding: 8px;
-      flex-direction: column;
-      gap: 2px;
+      inset: 0;
+      z-index: 55;
+      background: rgba(0,0,0,0.5);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s ease, visibility 0.25s ease;
     }
 
-    .mobile-menu.open { display: flex; }
+    .menu-scrim.open { opacity: 1; visibility: visible; }
+
+    /* Drawer lateral derecho */
+    .mobile-menu {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100%;
+      width: min(78vw, 280px);
+      z-index: 60;
+      background: var(--bg2);
+      border-left: 1px solid var(--border);
+      box-shadow: -8px 0 28px rgba(0,0,0,0.28);
+      display: flex;
+      flex-direction: column;
+      padding: 8px;
+      gap: 2px;
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+    }
+
+    .mobile-menu.open { transform: translateX(0); }
+
+    .mobile-menu-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 8px 12px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mobile-menu-brand {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .mobile-menu-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--border2);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .mobile-menu-close:hover { background: var(--surface2); }
 
     .mobile-menu .tab-link {
-      padding: 10px 14px;
+      padding: 12px 14px;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 15px;
     }
 
     .mobile-menu .tab-link.active {
@@ -350,6 +401,54 @@
     @media (max-width: 640px) {
       .topbar-tabs { display: none; }
       .nav-toggle  { display: flex; }
+    }
+
+    /* ── Tabla responsive: filas como tarjetas en mobile ── */
+    @media (max-width: 640px) {
+      .rtable thead { display: none; }
+      .rtable, .rtable tbody, .rtable tr, .rtable td { display: block; width: 100%; }
+      .rtable tr {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+      }
+      .rtable tr:hover td { background: transparent; }
+      .rtable td {
+        border: none;
+        padding: 4px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        text-align: right;
+      }
+      .rtable td::before {
+        content: attr(data-label);
+        color: var(--text2);
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        text-align: left;
+        flex-shrink: 0;
+      }
+      .rtable td.cell-actions {
+        justify-content: flex-end;
+        gap: 8px;
+        padding-top: 8px;
+      }
+      .rtable td.cell-actions::before { display: none; }
+      /* Celda full-width sin etiqueta (ej. panel de subcategorías) */
+      .rtable td.cell-full { display: block; padding: 0; text-align: left; }
+      .rtable td.cell-full::before { display: none; }
+      /* Ocultar celdas vacías (ej. subcategoría ausente) para no dejar labels sueltos */
+      .rtable td:empty { display: none; }
+
+      /* Ganar ancho útil en pantallas chicas */
+      .container { padding: 20px 14px; }
+      .topbar    { padding: 0 14px; }
+      .card      { padding: 16px; }
     }
 
     {% block extra_styles %}{% endblock %}
@@ -374,7 +473,15 @@
 
   </div>
 
+  <div class="menu-scrim" id="menu-scrim"></div>
+
   <nav class="mobile-menu" id="mobile-menu">
+    <div class="mobile-menu-header">
+      <span class="mobile-menu-brand">💸 Gastos Familiares</span>
+      <button class="mobile-menu-close" id="menu-close" aria-label="Cerrar menú">
+        <i class="ti ti-x"></i>
+      </button>
+    </div>
     <a href="/"         class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
     <a href="/history"  class="tab-link {{ self.nav_history() }}">Historial</a>
     <a href="/fijos"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
@@ -393,21 +500,29 @@
 
       const toggle = document.getElementById('nav-toggle');
       const menu   = document.getElementById('mobile-menu');
+      const scrim  = document.getElementById('menu-scrim');
+      const close  = document.getElementById('menu-close');
 
-      toggle.addEventListener('click', function(e) {
-        e.stopPropagation();
-        const open = menu.classList.toggle('open');
-        toggle.querySelector('i').className = open ? 'ti ti-x' : 'ti ti-menu-2';
+      function openMenu() {
+        menu.classList.add('open');
+        scrim.classList.add('open');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeMenu() {
+        menu.classList.remove('open');
+        scrim.classList.remove('open');
+        document.body.style.overflow = '';
+      }
+
+      toggle.addEventListener('click', openMenu);
+      close.addEventListener('click', closeMenu);
+      scrim.addEventListener('click', closeMenu);
+
+      // Cerrar al tocar cualquier link del drawer
+      menu.querySelectorAll('.tab-link').forEach(function(link) {
+        link.addEventListener('click', closeMenu);
       });
-
-      document.addEventListener('click', function() {
-        if (menu.classList.contains('open')) {
-          menu.classList.remove('open');
-          toggle.querySelector('i').className = 'ti ti-menu-2';
-        }
-      });
-
-      menu.addEventListener('click', function(e) { e.stopPropagation(); });
     });
 
   </script>

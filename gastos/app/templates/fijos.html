@@ -31,12 +31,30 @@
 .fixed-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
 
 .fixed-row:last-child { border-bottom: none; }
+
+.fixed-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  /* En mobile, monto + botones bajan a su propia línea (ancho completo)
+     para no superponerse con el concepto */
+  .fixed-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
 
 .fixed-icon {
   width: 36px;
@@ -175,7 +193,8 @@
   </div>
 
   <div class="card">
-    <table id="admin-table">
+   <div style="overflow-x:auto">
+    <table id="admin-table" class="rtable">
       <thead>
         <tr>
           <th>Concepto</th>
@@ -187,6 +206,7 @@
       </thead>
       <tbody id="admin-tbody"></tbody>
     </table>
+   </div>
     <div id="admin-empty" class="empty" style="display:none">No hay gastos fijos configurados.</div>
   </div>
 
@@ -326,8 +346,10 @@
               ${r.subcategory_name ? `<span class="badge">${r.subcategory_name}</span>` : ''}
             </div>
           </div>
-          ${amountHtml}
-          ${payBtn}
+          <div class="fixed-actions">
+            ${amountHtml}
+            ${payBtn}
+          </div>
         </div>
       `;
     }).join('');
@@ -408,11 +430,11 @@
 
     tbody.innerHTML = allFixed.map(fe => `
       <tr>
-        <td>${fe.category_icon} ${fe.concept}</td>
-        <td class="mono">${fe.estimated_amount ? fmtAmount(fe.estimated_amount) : '—'}</td>
-        <td><span class="badge">${fe.category_name}</span></td>
-        <td>${fe.subcategory_name ? `<span class="badge">${fe.subcategory_name}</span>` : '<span style="color:var(--text2)">—</span>'}</td>
-        <td>
+        <td data-label="Concepto">${fe.category_icon} ${fe.concept}</td>
+        <td class="mono" data-label="Estimado">${fe.estimated_amount ? fmtAmount(fe.estimated_amount) : '—'}</td>
+        <td data-label="Categoría"><span class="badge">${fe.category_name}</span></td>
+        <td data-label="Subcategoría">${fe.subcategory_name ? `<span class="badge">${fe.subcategory_name}</span>` : '<span style="color:var(--text2)">—</span>'}</td>
+        <td class="cell-actions">
           <div class="admin-actions">
             <button class="btn" style="font-size:12px;padding:5px 10px"
               onclick="openEditModal(${fe.id})">Editar</button>
