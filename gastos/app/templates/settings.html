@@ -124,7 +124,7 @@ button[disabled] {
       </span>
     </div>
 
-    <table>
+    <table class="rtable">
       <thead>
         <tr>
           <th>Icono</th>
@@ -164,13 +164,12 @@ button[disabled] {
       </span>
     </div>
 
-    <table id="kw-table">
+    <table id="kw-table" class="rtable">
       <thead>
         <tr>
           <th class="sortable" data-sort-kw="keyword">Keyword</th>
           <th class="sortable" data-sort-kw="category">Categoría</th>
           <th>Subcategoría</th>
-          <th></th>
           <th></th>
         </tr>
       </thead>
@@ -183,18 +182,16 @@ button[disabled] {
             data-category-id="{{ kw.category_id or '' }}"
             data-subcategory-id="{{ kw.subcategory_id or '' }}"
             data-subcategory="{{ kw.subcategory_name or '' }}">
-          <td class="mono">{{ kw.keyword }}</td>
-          <td><span class="badge">{{ kw.category_name }}</span></td>
-          <td>{% if kw.subcategory_name %}<span style="font-size:12px; color:var(--muted)">{{ kw.subcategory_name }}</span>{% endif %}</td>
-          <td>
-            <button class="btn" style="padding:4px 10px; font-size:12px"
-              onclick="enterKwEditMode({{ kw.id }})">Editar</button>
-          </td>
-          <td>
-            <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
-              onclick="deleteKeyword({{ kw.id }}, '{{ kw.keyword }}')">
-              Borrar
-            </button>
+          <td class="mono" data-label="Keyword">{{ kw.keyword }}</td>
+          <td data-label="Categoría"><span class="badge">{{ kw.category_name }}</span></td>
+          <td data-label="Subcategoría">{% if kw.subcategory_name %}<span style="font-size:12px; color:var(--muted)">{{ kw.subcategory_name }}</span>{% endif %}</td>
+          <td class="cell-actions">
+            <div style="display:flex; gap:6px; justify-content:flex-end">
+              <button class="btn" style="padding:4px 10px; font-size:12px"
+                onclick="enterKwEditMode({{ kw.id }})">Editar</button>
+              <button class="btn btn-danger" style="padding:4px 10px; font-size:12px"
+                onclick="deleteKeyword({{ kw.id }}, '{{ kw.keyword }}')">Borrar</button>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -314,21 +311,21 @@ button[disabled] {
                       + ' style="padding:4px 10px;font-size:12px"'
                       + ' onclick="toggleSubcats(' + cat.id + ')">Ver subcategorías (' + cnt + ')</button>';
       subcatDetailRow = '<tr id="subcat-row-' + cat.id + '" style="display:none">'
-                      + '<td colspan="5" style="padding:0">'
+                      + '<td colspan="5" class="cell-full" style="padding:0">'
                       + '<div id="subcat-panel-' + cat.id + '"'
                       + ' style="padding:12px 20px 16px 52px;background:rgba(0,0,0,.15);border-top:1px solid var(--border)">'
                       + '</div></td></tr>';
     }
 
     return `<tr id="cat-row-${cat.id}">
-      <td style="font-size:20px">${cat.icon}</td>
-      <td>${cat.name}${protectedBadge}</td>
-      <td>
+      <td data-label="Icono" style="font-size:20px">${cat.icon}</td>
+      <td data-label="Nombre">${cat.name}${protectedBadge}</td>
+      <td data-label="Color">
         <span class="color-dot" style="background:${cat.color}"></span>
         <span class="mono" style="font-size:12px; color:var(--muted)">${cat.color}</span>
       </td>
-      <td style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">${expenseCount}</td>
-      <td><div style="display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap">${subcatToggleBtn} ${editBtn} ${deleteBtn}</div></td>
+      <td data-label="Gastos" style="color:var(--muted); font-size:12px; font-family:var(--font-mono)">${expenseCount}</td>
+      <td class="cell-actions"><div style="display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap">${subcatToggleBtn} ${editBtn} ${deleteBtn}</div></td>
     </tr>${subcatDetailRow}`;
   }
 
@@ -676,13 +673,15 @@ button[disabled] {
          + ' data-category-id="' + (d.categoryId || "") + '"'
          + ' data-subcategory-id="' + (d.subcategoryId || "") + '"'
          + ' data-subcategory="' + subcatName.replace(/"/g, "&quot;") + '">'
-         + '<td class="mono">' + d.keyword + '</td>'
-         + '<td><span class="badge">' + catName + '</span></td>'
-         + '<td>' + (subcatName ? '<span style="font-size:12px;color:var(--muted)">' + subcatName + '</span>' : '') + '</td>'
-         + '<td><button class="btn" style="padding:4px 10px;font-size:12px"'
-         + ' onclick="enterKwEditMode(' + d.id + ')">Editar</button></td>'
-         + '<td><button class="btn btn-danger" style="padding:4px 10px;font-size:12px"'
-         + ' onclick="deleteKeyword(' + d.id + ', \'' + d.keyword.replace(/'/g, "\\'") + '\')">Borrar</button></td>'
+         + '<td class="mono" data-label="Keyword">' + d.keyword + '</td>'
+         + '<td data-label="Categoría"><span class="badge">' + catName + '</span></td>'
+         + '<td data-label="Subcategoría">' + (subcatName ? '<span style="font-size:12px;color:var(--muted)">' + subcatName + '</span>' : '') + '</td>'
+         + '<td class="cell-actions"><div style="display:flex;gap:6px;justify-content:flex-end">'
+         + '<button class="btn" style="padding:4px 10px;font-size:12px"'
+         + ' onclick="enterKwEditMode(' + d.id + ')">Editar</button>'
+         + '<button class="btn btn-danger" style="padding:4px 10px;font-size:12px"'
+         + ' onclick="deleteKeyword(' + d.id + ', \'' + d.keyword.replace(/'/g, "\\'") + '\')">Borrar</button>'
+         + '</div></td>'
          + '</tr>';
   }
 
@@ -691,17 +690,19 @@ button[disabled] {
       return '<option value="' + c.id + '"' + (c.id === d.categoryId ? ' selected' : '') + '>' + c.name + '</option>';
     }).join("");
     return '<tr id="kw-row-' + d.id + '">'
-         + '<td><input id="kw-edit-word-' + d.id + '" class="mono" type="text" value="' + d.keyword.replace(/"/g, "&quot;") + '"'
+         + '<td data-label="Keyword"><input id="kw-edit-word-' + d.id + '" class="mono" type="text" value="' + d.keyword.replace(/"/g, "&quot;") + '"'
          + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></td>'
-         + '<td><select id="kw-edit-cat-' + d.id + '" onchange="loadKwSubcats(' + d.id + ')"'
+         + '<td data-label="Categoría"><select id="kw-edit-cat-' + d.id + '" onchange="loadKwSubcats(' + d.id + ')"'
          + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">'
          + catOptions + '</select></td>'
-         + '<td><select id="kw-edit-subcat-' + d.id + '"'
+         + '<td data-label="Subcategoría"><select id="kw-edit-subcat-' + d.id + '"'
          + ' style="width:100%;padding:4px 6px;font-size:13px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">'
          + '<option value="">— ninguna —</option>'
          + '</select></td>'
-         + '<td><button class="btn" style="padding:4px 10px;font-size:12px" onclick="saveKwEdit(' + d.id + ')">Guardar</button></td>'
-         + '<td><button class="btn" style="padding:4px 10px;font-size:12px" onclick="cancelKwEdit(' + d.id + ')">Cancelar</button></td>'
+         + '<td class="cell-actions"><div style="display:flex;gap:6px;justify-content:flex-end">'
+         + '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="saveKwEdit(' + d.id + ')">Guardar</button>'
+         + '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="cancelKwEdit(' + d.id + ')">Cancelar</button>'
+         + '</div></td>'
          + '</tr>';
   }
 

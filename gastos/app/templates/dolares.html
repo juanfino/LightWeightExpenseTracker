@@ -121,7 +121,8 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   </div>
 
   <div class="card">
-    <table id="historial-table">
+   <div style="overflow-x:auto">
+    <table id="historial-table" class="rtable">
       <thead>
         <tr>
           <th class="sortable" data-sort="fecha">Fecha</th>
@@ -135,6 +136,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       </thead>
       <tbody id="historial-tbody"></tbody>
     </table>
+   </div>
     <div id="historial-empty" class="empty" style="display:none">No hay cambios registrados.</div>
   </div>
 
@@ -387,13 +389,13 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
   function buildRow(r) {
     return '<tr id="crow-' + r.id + '">'
-      + '<td class="mono" style="color:var(--text2)">' + r.fecha + '</td>'
-      + '<td>' + r.usuario + '</td>'
-      + '<td>' + tipoBadge(r.tipo) + '</td>'
-      + '<td class="mono">' + fmtUSD(r.monto_usd) + '</td>'
-      + '<td class="mono">' + fmtARS(r.cotizacion) + '</td>'
-      + '<td class="mono">' + fmtARS(r.monto_ars) + '</td>'
-      + '<td><div style="display:flex;gap:6px">'
+      + '<td class="mono" data-label="Fecha" style="color:var(--text2)">' + r.fecha + '</td>'
+      + '<td data-label="Usuario">' + r.usuario + '</td>'
+      + '<td data-label="Tipo">' + tipoBadge(r.tipo) + '</td>'
+      + '<td class="mono" data-label="USD">' + fmtUSD(r.monto_usd) + '</td>'
+      + '<td class="mono" data-label="Cotización">' + fmtARS(r.cotizacion) + '</td>'
+      + '<td class="mono" data-label="ARS obtenidos">' + fmtARS(r.monto_ars) + '</td>'
+      + '<td class="cell-actions"><div style="display:flex;gap:6px">'
       +   '<button class="btn" style="padding:4px 10px;font-size:12px" title="Editar" onclick="openEdit(' + r.id + ')">'
       +     '<i class="ti ti-pencil"></i>'
       +   '</button>'
