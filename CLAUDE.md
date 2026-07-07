@@ -46,10 +46,12 @@ python3 gastos/app/categorizer.py
 - `db.py` — All SQLite operations. Uses a `get_conn()` context manager that auto-commits/rollbacks. `DB_PATH` is a module-level global set by `main.py`.
 - `dashboard.py` — Flask app. Timestamps stored as UTC in DB; `dashboard.py` converts to Buenos Aires time (UTC-3) for display.
 - `ocr.py` — Uses `claude-haiku-4-5-20251001` via the Anthropic SDK to extract `{comercio, monto, fecha}` from ticket images.
+- `audio.py` — Voice pipeline. `transcribe()` (OpenAI Whisper `whisper-1`, `es`) → `extract_expenses()` (Claude `claude-haiku-4-5-20251001`) returns `[{concept, amount, confidence}]`. `confidence` (0–1) drives auto-save: `bot.py` registers voice expenses ≥ `AUTOSAVE_CONFIDENCE` (0.9) directly and only queues the rest for inline confirmation.
+- `dolar.py` — Uses `claude-haiku-4-5-20251001` to interpret natural-language dollar operations (`parse_dolar` → `{tipo: venta|compra, monto_usd, cotizacion, confidence}` or `None`). Gated by `looks_like_dolar()` (cheap keyword regex). Routed from both `handle_message` (text) and `handle_voice` (audio); high confidence registers directly, low confidence asks inline confirmation (`pending_dolar`). Legacy `CambioDolar <usd> <cotizacion>` command still works and records a sale.
 - `backup.py` — Sends `gastos.db` as a Telegram document to all configured users. Called by APScheduler at 21:00 ART and via `POST /admin/backup-now`.
 - `seed.py` — Populates default categories, subcategories, and keywords on first DB creation. Also runs idempotent migrations on every startup.
 
-**DB schema** (6 tables): `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. Categories have a protected "Sin categoría" that cannot be edited or deleted. `expenses` and `keywords` have an optional `subcategory_id` FK.
+**DB schema** (6 tables): `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. Categories have a protected "Sin categoría" that cannot be edited or deleted. `expenses` and `keywords` have an optional `subcategory_id` FK. `users.color` is assigned from a distinct palette (`_sync_users`) so users are visually separable in the dashboard. `cambios_dolar` has a `tipo` column (`venta`/`compra`, default `venta`).
 
 ## Config
 
@@ -96,6 +98,8 @@ Make sure to fully understand what is being asked before writing any code. If an
 - All DB timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3 fixed offset).
 - Amount parsing handles Argentine notation: `100.000` → 100000, `2.500,50` → 2500.5. When only a dot or comma is present with 3 digits after it, it's treated as a thousands separator.
 - OCR flow is two-step: bot sends extracted data back to the user for confirmation before saving.
+- Confidence-based auto-save: voice expenses and natural-language dollar operations are registered without confirmation when the LLM-reported `confidence` ≥ `AUTOSAVE_CONFIDENCE` (0.9 in `bot.py`); otherwise the user confirms via inline buttons. Auto-saved voice expenses still get an edit/category keyboard so nothing is unrecoverable.
+- Dollar operations are detected in both text and voice by a cheap `dolar.looks_like_dolar()` keyword gate before spending an LLM call; `parse_dolar` returns `None` for non-dollar messages so they fall through to normal expense handling.
 - User authorization is enforced per-request via `_get_authorized_user()` in `bot.py` — only `telegram_id`s in config are allowed.
 - `categorizer.categorize()` returns `(category_id, subcategory_id)` — both can be `None`. All expense creation flows must pass both values.
 - Dockerfile build context is the **repo root** (not the `gastos/` subdirectory): `docker build -f gastos/Dockerfile .`

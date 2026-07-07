@@ -8,6 +8,22 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "/data/gastos.db")
 
+# Color por defecto de un usuario recién creado (indigo). Se usa como sentinela:
+# un usuario que todavía lo tiene se considera "sin color asignado".
+DEFAULT_USER_COLOR = "#6366f1"
+
+# Paleta de colores bien separados para distinguir usuarios en el dashboard.
+USER_COLOR_PALETTE = [
+    "#6366f1",  # indigo
+    "#f59e0b",  # ámbar
+    "#10b981",  # esmeralda
+    "#ec4899",  # rosa
+    "#06b6d4",  # cyan
+    "#8b5cf6",  # violeta
+    "#ef4444",  # rojo
+    "#84cc16",  # lima
+]
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +94,8 @@ CREATE TABLE IF NOT EXISTS cambios_dolar (
     monto_usd  REAL    NOT NULL,
     cotizacion REAL    NOT NULL,
     monto_ars  REAL    NOT NULL,
-    usuario    TEXT    NOT NULL
+    usuario    TEXT    NOT NULL,
+    tipo       TEXT    NOT NULL DEFAULT 'venta'
 );
 """
 
@@ -103,6 +120,15 @@ def _migrate_users_color():
     with get_conn() as conn:
         try:
             conn.execute("ALTER TABLE users ADD COLUMN color TEXT NOT NULL DEFAULT '#6366f1'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+
+def _migrate_cambios_tipo():
+    """Adds tipo column (venta/compra) to cambios_dolar for existing databases."""
+    with get_conn() as conn:
+        try:
+            conn.execute("ALTER TABLE cambios_dolar ADD COLUMN tipo TEXT NOT NULL DEFAULT 'venta'")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -166,6 +192,7 @@ def init_db(users: dict | None = None):
         with get_conn() as conn:
             conn.executescript(SCHEMA)
     _migrate_users_color()
+    _migrate_cambios_tipo()
     _migrate_fixed_payment_nullable_expense()
     _migrate_expenses_subcategory()
     _migrate_keywords_subcategory()
@@ -186,6 +213,22 @@ def _sync_users(users: dict):
                 " ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name",
                 (str(telegram_id), name),
             )
+    _assign_default_user_colors()
+
+
+def _assign_default_user_colors():
+    """Asigna un color distinto de la paleta a cada usuario que todavía tenga el
+    color por defecto, para que se distingan bien en el dashboard. No pisa colores
+    elegidos a mano (los que difieren del default)."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id, color FROM users ORDER BY id").fetchall()
+        for index, row in enumerate(rows):
+            if row["color"] == DEFAULT_USER_COLOR:
+                new_color = USER_COLOR_PALETTE[index % len(USER_COLOR_PALETTE)]
+                conn.execute(
+                    "UPDATE users SET color = ? WHERE id = ?",
+                    (new_color, row["id"]),
+                )
 
 
 # ── Usuarios ──────────────────────────────────────────────────────────────────
@@ -1045,13 +1088,13 @@ def get_fixed_expense_monthly_summary(year: int, month: int) -> dict:
 
 # ── Cambios de Dólar ──────────────────────────────────────────────────────────
 
-def registrar_cambio(fecha: str, monto_usd: float, cotizacion: float, usuario: str) -> int:
+def registrar_cambio(fecha: str, monto_usd: float, cotizacion: float, usuario: str, tipo: str = "venta") -> int:
     monto_ars = monto_usd * cotizacion
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO cambios_dolar (fecha, monto_usd, cotizacion, monto_ars, usuario)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (fecha, monto_usd, cotizacion, monto_ars, usuario),
+            "INSERT INTO cambios_dolar (fecha, monto_usd, cotizacion, monto_ars, usuario, tipo)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (fecha, monto_usd, cotizacion, monto_ars, usuario, tipo),
         )
         return cur.lastrowid
 
@@ -1079,7 +1122,7 @@ def get_cambios_resumen_mes(year: int, month: int) -> dict:
 def get_cambios_historial(limit: int = 50) -> list:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, fecha, monto_usd, cotizacion, monto_ars, usuario"
+            "SELECT id, fecha, monto_usd, cotizacion, monto_ars, usuario, tipo"
             " FROM cambios_dolar ORDER BY fecha DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -1123,11 +1166,17 @@ def delete_cambio(cambio_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float) -> bool:
+def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float, tipo: str | None = None) -> bool:
     monto_ars = monto_usd * cotizacion
     with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=? WHERE id=?",
-            (fecha, monto_usd, cotizacion, monto_ars, cambio_id),
-        )
+        if tipo is None:
+            cur = conn.execute(
+                "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=? WHERE id=?",
+                (fecha, monto_usd, cotizacion, monto_ars, cambio_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=?, tipo=? WHERE id=?",
+                (fecha, monto_usd, cotizacion, monto_ars, tipo, cambio_id),
+            )
         return cur.rowcount > 0

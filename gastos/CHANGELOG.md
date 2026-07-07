@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.11.0
+- Dashboard: paleta de colores distinta por usuario — cada usuario recibe un color bien diferenciado de `USER_COLOR_PALETTE` en `_sync_users`, para que se distingan claro en el gráfico "Por semana" y en los tags de gastos (antes todos compartían el mismo violeta por defecto)
+- Bot: gastos por voz de alta confianza se registran automáticamente sin pedir confirmación — `audio.py` ahora devuelve un `confidence` (0–1) por gasto y solo se piden confirmar los dudosos (umbral `AUTOSAVE_CONFIDENCE = 0.9`)
+- Audio: `transcribe_and_extract` se dividió en `transcribe` (Whisper) y `extract_expenses` (Claude) para permitir rutear audios de dólar antes de extraer gastos
+- Bot: operaciones de dólar en lenguaje natural por texto y por voz (ej: "vendí 500 dólares a 1700", "compré 1000 dólares a 1550 cada uno") — nuevo módulo `dolar.py` interpreta tipo, monto y cotización con Claude; alta confianza registra directo, baja confianza pide confirmación inline
+- DB/Dashboard: la tabla `cambios_dolar` ahora tiene columna `tipo` (venta/compra) con migración; el historial de `/dolares` muestra el tipo y permite editarlo. El comando legacy `CambioDolar <usd> <cotizacion>` sigue funcionando (registra venta)
+
 ## 1.10.1
 - Config: puerto del dashboard movido de 5000 a 8090 para liberar el puerto para Frigate; configurable vía env var `DASHBOARD_PORT`
 

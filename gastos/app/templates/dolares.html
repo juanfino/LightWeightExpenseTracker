@@ -126,6 +126,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         <tr>
           <th class="sortable" data-sort="fecha">Fecha</th>
           <th class="sortable" data-sort="usuario">Usuario</th>
+          <th class="sortable" data-sort="tipo">Tipo</th>
           <th class="sortable mono" data-sort="monto_usd">USD</th>
           <th class="sortable mono" data-sort="cotizacion">Cotización</th>
           <th class="sortable mono" data-sort="monto_ars">ARS obtenidos</th>
@@ -159,6 +160,13 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     <div class="form-row">
       <label class="form-label">Fecha</label>
       <input type="date" id="edit-fecha">
+    </div>
+    <div class="form-row">
+      <label class="form-label">Tipo</label>
+      <select id="edit-tipo">
+        <option value="venta">Venta</option>
+        <option value="compra">Compra</option>
+      </select>
     </div>
     <div class="form-row">
       <label class="form-label">Monto USD</label>
@@ -368,10 +376,20 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   });
 
   // ── Row builder ──────────────────────────────────────────────────────────────
+  function tipoBadge(tipo) {
+    const t = (tipo || "venta").toLowerCase();
+    const isVenta = t !== "compra";
+    const color = isVenta ? "var(--green)" : "var(--amber)";
+    const label = isVenta ? "Venta" : "Compra";
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;'
+      + 'background:' + color + '22;color:' + color + '">' + label + '</span>';
+  }
+
   function buildRow(r) {
     return '<tr id="crow-' + r.id + '">'
       + '<td class="mono" style="color:var(--text2)">' + r.fecha + '</td>'
       + '<td>' + r.usuario + '</td>'
+      + '<td>' + tipoBadge(r.tipo) + '</td>'
       + '<td class="mono">' + fmtUSD(r.monto_usd) + '</td>'
       + '<td class="mono">' + fmtARS(r.cotizacion) + '</td>'
       + '<td class="mono">' + fmtARS(r.monto_ars) + '</td>'
@@ -457,6 +475,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     if (!r) return;
     editingId = id;
     document.getElementById("edit-fecha").value        = r.fecha;
+    document.getElementById("edit-tipo").value         = (r.tipo || "venta").toLowerCase();
     document.getElementById("edit-usd").value          = r.monto_usd;
     document.getElementById("edit-cot").value          = r.cotizacion;
     document.getElementById("edit-error").style.display = "none";
@@ -480,6 +499,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   document.getElementById("btn-edit-save").addEventListener("click", async function() {
     const errEl     = document.getElementById("edit-error");
     const fecha     = document.getElementById("edit-fecha").value;
+    const tipo      = document.getElementById("edit-tipo").value;
     const monto_usd = parseFloat(document.getElementById("edit-usd").value);
     const cotizacion = parseFloat(document.getElementById("edit-cot").value);
 
@@ -492,7 +512,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const res  = await fetch("/api/cambios/" + editingId, {
       method:  "PUT",
       headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({fecha, monto_usd, cotizacion}),
+      body:    JSON.stringify({fecha, tipo, monto_usd, cotizacion}),
     });
     const data = await res.json().catch(function() { return {}; });
 
@@ -507,6 +527,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     if (idx !== -1) {
       allCambios[idx] = Object.assign({}, allCambios[idx], {
         fecha,
+        tipo,
         monto_usd,
         cotizacion,
         monto_ars: data.monto_ars,

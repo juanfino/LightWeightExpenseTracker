@@ -18,9 +18,14 @@ _EXTRACT_PROMPT = (
     "El usuario puede mencionar varios gastos en una sola oración, "
     "ej: 'gasté mil en la verdulería, tres mil en la ferretería y quinientos en nafta'. "
     "Si un gasto mencionado no tiene monto claro, incluilo igual con amount null. "
+    "Para cada gasto agregá un campo 'confidence' (número entre 0 y 1) que indique qué tan "
+    "seguro estás de haber entendido bien el concepto y el monto: usá valores altos (>=0.9) "
+    "solo cuando el concepto y el monto son claros e inequívocos, y valores más bajos cuando "
+    "la transcripción es ambigua, confusa o el monto es dudoso.\n"
     "Respondé ÚNICAMENTE con un array JSON válido sin explicaciones ni bloques de código:\n"
     '[{"concept": "<nombre del comercio o concepto, capitalizado>", '
-    '"amount": <monto como número float, o null si no se detecta>}, ...]'
+    '"amount": <monto como número float, o null si no se detecta>, '
+    '"confidence": <número entre 0 y 1>}, ...]'
 )
 
 
@@ -33,16 +38,17 @@ def _parse_amount(raw) -> float | None:
         return None
 
 
-def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str) -> dict:
-    """Transcribe voice audio and extract one or more expenses.
+def _parse_confidence(raw) -> float:
+    """Confianza en [0, 1]; ante cualquier duda devuelve 0.0 para forzar confirmación."""
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, val))
 
-    Returns:
-        {
-            "transcription": str,
-            "expenses": [{"concept": str, "amount": float | None}, ...]
-        }
-    Raises RuntimeError on transcription or extraction failure.
-    """
+
+def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
+    """Transcribe voice audio to text using Whisper. Raises RuntimeError on failure."""
     oa_client = openai.OpenAI(api_key=openai_api_key)
     audio_file = io.BytesIO(audio_bytes)
     audio_file.name = "voice.ogg"
@@ -62,7 +68,15 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
         raise RuntimeError("Whisper devolvió una transcripción vacía")
 
     logger.info("Transcripción Whisper: %s", transcription)
+    return transcription
 
+
+def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
+    """Extract one or more expenses from a transcription.
+
+    Returns [{"concept": str, "amount": float | None, "confidence": float}, ...].
+    Raises RuntimeError on extraction failure.
+    """
     try:
         an_client = anthropic.Anthropic(api_key=anthropic_api_key)
         message = an_client.messages.create(
@@ -88,6 +102,7 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
         {
             "concept": (item.get("concept") or "").strip() or "Desconocido",
             "amount": _parse_amount(item.get("amount")),
+            "confidence": _parse_confidence(item.get("confidence")),
         }
         for item in data
         if isinstance(item, dict)
@@ -96,7 +111,21 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
     if not expenses:
         raise RuntimeError("Claude no detectó ningún gasto en la transcripción")
 
+    return expenses
+
+
+def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str) -> dict:
+    """Transcribe voice audio and extract one or more expenses.
+
+    Returns:
+        {
+            "transcription": str,
+            "expenses": [{"concept": str, "amount": float | None, "confidence": float}, ...]
+        }
+    Raises RuntimeError on transcription or extraction failure.
+    """
+    transcription = transcribe(audio_bytes, openai_api_key)
     return {
         "transcription": transcription,
-        "expenses": expenses,
+        "expenses": extract_expenses(transcription, anthropic_api_key),
     }

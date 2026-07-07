@@ -628,9 +628,13 @@ def api_cambios_update(cambio_id: int):
     fecha      = (data.get("fecha") or "").strip()
     monto_usd  = data.get("monto_usd")
     cotizacion = data.get("cotizacion")
+    tipo       = (data.get("tipo") or "").strip().lower() or None
 
     if not fecha or monto_usd is None or cotizacion is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+
+    if tipo is not None and tipo not in ("venta", "compra"):
+        return jsonify({"ok": False, "error": "Tipo inválido (venta/compra)"}), 400
 
     try:
         datetime.strptime(fecha, "%Y-%m-%d")
@@ -645,7 +649,7 @@ def api_cambios_update(cambio_id: int):
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "Montos inválidos"}), 400
 
-    updated = db.update_cambio(cambio_id, fecha, monto_usd, cotizacion)
+    updated = db.update_cambio(cambio_id, fecha, monto_usd, cotizacion, tipo=tipo)
     if updated:
         return jsonify({"ok": True, "monto_ars": monto_usd * cotizacion})
     return jsonify({"ok": False, "error": "Cambio no encontrado"}), 404
