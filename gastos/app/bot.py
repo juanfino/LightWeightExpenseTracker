@@ -11,11 +11,16 @@ import parser as msg_parser
 import categorizer
 import ocr as ocr_module
 import audio as audio_module
+import dolar as dolar_module
 
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 BAIRES = timezone(timedelta(hours=-3))
+
+# Umbral de confianza para registrar automáticamente (voz y dólar) sin pedir
+# confirmación. Conservador: solo lo muy claro se guarda solo.
+AUTOSAVE_CONFIDENCE = 0.9
 
 MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
@@ -33,6 +38,9 @@ pending_fixed_match: dict[int, dict] = {}
 pending_fixed_direct: dict[int, dict] = {}
 # Gasto esperando selección de subcategoría, keyed por chat_id → expense_id
 pending_subcategory: dict[int, int] = {}
+# Operación de dólar (compra/venta) pendiente de confirmación, keyed por chat_id.
+# Structure: {"tipo": str, "monto_usd": float, "cotizacion": float}
+pending_dolar: dict[int, dict] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -270,6 +278,41 @@ async def _send_next_voice_confirmation(chat_id: int, bot) -> None:
     )
 
 
+async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> None:
+    """Registra directo un gasto de voz de alta confianza y avisa (con teclado para
+    editar/re-categorizar si algo salió mal)."""
+    cat = db.get_category_by_id(item["category_id"]) if item["category_id"] else None
+    cat_name = cat["name"] if cat else "Sin categoría"
+    cat_icon = cat["icon"] if cat else "❓"
+    try:
+        expense_id = db.create_expense(
+            user_id=user["id"],
+            category_id=item["category_id"],
+            subcategory_id=item["subcategory_id"],
+            concept=item["concept"],
+            amount=item["amount"],
+            raw_text=f"[VOZ] {item['transcription']}",
+        )
+    except Exception as e:
+        logger.error("Error guardando gasto de voz automático: %s", e)
+        await bot.send_message(chat_id=chat_id, text="⚠️ Error al guardar un gasto. Intentá de nuevo.")
+        return
+    keyboard = _build_category_keyboard(expense_id) if item["category_id"] is None else _build_edit_only_keyboard(expense_id)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {item['concept']}\n"
+            f"💰 {fmt_amount(item['amount'])}\n"
+            f"{_cat_line(cat_icon, cat_name, item['subcategory_id'])}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>"
+        ),
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
@@ -288,10 +331,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tg_file = await update.message.voice.get_file()
     audio_bytes = bytes(await tg_file.download_as_bytearray())
 
+    chat_id = update.message.chat_id
+
     try:
-        result = audio_module.transcribe_and_extract(audio_bytes, openai_api_key, anthropic_api_key)
+        transcription = audio_module.transcribe(audio_bytes, openai_api_key)
     except Exception as e:
-        logger.error("Error procesando audio: %s", e)
+        logger.error("Error transcribiendo audio: %s", e)
         await status_msg.edit_text(
             "❌ No pude procesar el audio. Intentá de nuevo o cargá el gasto manualmente:\n"
             "<code>Comercio monto</code>",
@@ -299,9 +344,27 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    transcription = result["transcription"]
-    valid = [e for e in result["expenses"] if e["amount"] is not None]
-    skipped = [e for e in result["expenses"] if e["amount"] is None]
+    # Si el audio suena a operación de dólar, intentar interpretarlo como tal.
+    if dolar_module.looks_like_dolar(transcription):
+        op = dolar_module.parse_dolar(transcription, anthropic_api_key)
+        if op is not None:
+            await status_msg.delete()
+            await _handle_dolar_operation(chat_id, context.bot, user, op)
+            return
+
+    try:
+        expenses = audio_module.extract_expenses(transcription, anthropic_api_key)
+    except Exception as e:
+        logger.error("Error extrayendo gastos del audio: %s", e)
+        await status_msg.edit_text(
+            "❌ No pude procesar el audio. Intentá de nuevo o cargá el gasto manualmente:\n"
+            "<code>Comercio monto</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    valid = [e for e in expenses if e["amount"] is not None]
+    skipped = [e for e in expenses if e["amount"] is None]
 
     if not valid:
         await status_msg.edit_text(
@@ -312,28 +375,25 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Categorize all valid expenses
-    chat_id = update.message.chat_id
+    # Categorize valid expenses and split by confidence: los muy claros se
+    # registran directo, los dudosos se confirman uno por uno.
     keywords = db.get_all_keywords()
-    queue = []
+    auto_items, confirm_items = [], []
     for expense in valid:
         category_id, subcategory_id = categorizer.categorize(expense["concept"], keywords)
-        queue.append({
+        item = {
             "concept": expense["concept"],
             "amount": expense["amount"],
             "category_id": category_id,
             "subcategory_id": subcategory_id,
             "transcription": transcription,
-        })
+        }
+        if expense["confidence"] >= AUTOSAVE_CONFIDENCE:
+            auto_items.append(item)
+        else:
+            confirm_items.append(item)
 
-    pending_voice[chat_id] = {
-        "queue": queue,
-        "total": len(queue),
-        "done": 0,
-        "current": None,
-    }
-
-    # Delete the "Procesando audio..." status message before sending confirmations
+    # Delete the "Procesando audio..." status message before sending results
     await status_msg.delete()
 
     # Warn about skipped items (no amount detected)
@@ -344,15 +404,31 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
-    # Show transcription summary then first confirmation
-    count_str = f"{len(queue)} gasto{'s' if len(queue) != 1 else ''}"
+    # Transcription summary
+    parts = []
+    if auto_items:
+        parts.append(f"registré <b>{len(auto_items)}</b> automáticamente")
+    if confirm_items:
+        parts.append(f"revisemos <b>{len(confirm_items)}</b>")
+    summary = " y ".join(parts) if parts else ""
     await update.message.reply_text(
-        f"🎙️ Escuché: \"<i>{transcription}</i>\"\n"
-        f"Encontré <b>{count_str}</b>. Revisemos uno por uno:",
+        f"🎙️ Escuché: \"<i>{transcription}</i>\"\n{summary.capitalize()}:",
         parse_mode="HTML",
     )
 
-    await _send_next_voice_confirmation(chat_id, context.bot)
+    # Auto-registrar los de alta confianza
+    for item in auto_items:
+        await _register_voice_expense(chat_id, context.bot, user, item)
+
+    # Encolar los dudosos para confirmación uno por uno
+    if confirm_items:
+        pending_voice[chat_id] = {
+            "queue": confirm_items,
+            "total": len(confirm_items),
+            "done": 0,
+            "current": None,
+        }
+        await _send_next_voice_confirmation(chat_id, context.bot)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -474,6 +550,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Abandon any stale pending state if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
     pending_subcategory.pop(chat_id, None)
+
+    # Si el mensaje suena a operación de dólar, intentar interpretarlo como tal.
+    anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
+    if anthropic_api_key and dolar_module.looks_like_dolar(text):
+        op = dolar_module.parse_dolar(text, anthropic_api_key)
+        if op is not None:
+            await _handle_dolar_operation(chat_id, context.bot, user, op)
+            return
 
     parsed = msg_parser.parse_message(text)
 
@@ -775,6 +859,15 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💰 <b>REGISTRAR UN GASTO</b>\n"
         "   <code>Supermercado 15000</code>\n"
         "   <code>YPF 100.000</code>\n"
+        "\n"
+        "🎙️ <b>POR VOZ</b>\n"
+        "   Mandá un audio: \"gasté 30 mil en la verdulería\".\n"
+        "   Si es claro, se registra solo; si no, te pido confirmar.\n"
+        "\n"
+        "💵 <b>DÓLARES (compra/venta)</b>\n"
+        "   Escribí o mandá audio en lenguaje natural:\n"
+        "   \"vendí 500 dólares a 1700\"\n"
+        "   \"compré 1000 dólares a 1550 cada uno\"\n"
         "\n"
         "📊 <b>CONSULTAS</b>\n"
         "   /gastos     → resumen del mes\n"
@@ -1121,6 +1214,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pending_voice.pop(chat_id, None)
         return
 
+    if cb == "dolar:confirm":
+        op = pending_dolar.pop(chat_id, None)
+        if not op:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
+        db.registrar_cambio(fecha_str, op["monto_usd"], op["cotizacion"], user["name"], tipo=op["tipo"])
+        titulo = "Venta registrada" if op["tipo"] == "venta" else "Compra registrada"
+        await query.edit_message_text(
+            f"✅ <b>{titulo}</b>\n{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}",
+            parse_mode="HTML",
+        )
+        return
+
+    elif cb == "dolar:cancel":
+        pending_dolar.pop(chat_id, None)
+        await query.edit_message_text("❌ Operación cancelada.")
+        return
+
     if cb.startswith("c:"):
         _, expense_id_str, cat_id_str = cb.split(":")
         expense_id, cat_id = int(expense_id_str), int(cat_id_str)
@@ -1292,7 +1404,60 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("💰 Enviá el nuevo monto:")
 
 
-# ── CambioDolar ───────────────────────────────────────────────────────────────
+# ── Dólar (compra / venta) ─────────────────────────────────────────────────────
+
+def _dolar_summary(tipo: str, monto_usd: float, cotizacion: float) -> str:
+    """Texto del cuerpo de una operación de dólar (sin encabezado)."""
+    monto_ars = monto_usd * cotizacion
+    verbo = "Vendiste" if tipo == "venta" else "Compraste"
+    ars_label = "ARS obtenidos" if tipo == "venta" else "ARS pagados"
+    fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
+    return (
+        f"💵 {verbo}: {fmt_usd(monto_usd)}\n"
+        f"💱 Cotización: {fmt_amount(cotizacion)}\n"
+        f"💰 {ars_label}: {fmt_amount(monto_ars)}\n"
+        f"📅 Fecha: {fecha_display}"
+    )
+
+
+async def _register_dolar_and_announce(chat_id: int, bot, user: dict, op: dict) -> None:
+    """Registra una operación de dólar y avisa."""
+    fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
+    db.registrar_cambio(fecha_str, op["monto_usd"], op["cotizacion"], user["name"], tipo=op["tipo"])
+    titulo = "Venta registrada" if op["tipo"] == "venta" else "Compra registrada"
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"✅ <b>{titulo}</b>\n{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}",
+        parse_mode="HTML",
+    )
+
+
+async def _handle_dolar_operation(chat_id: int, bot, user: dict, op: dict) -> None:
+    """Registra directo si la confianza es alta; si no, pide confirmación inline."""
+    if op["confidence"] >= AUTOSAVE_CONFIDENCE:
+        await _register_dolar_and_announce(chat_id, bot, user, op)
+        return
+
+    pending_dolar[chat_id] = {
+        "tipo": op["tipo"],
+        "monto_usd": op["monto_usd"],
+        "cotizacion": op["cotizacion"],
+    }
+    titulo = "venta" if op["tipo"] == "venta" else "compra"
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"💱 Entendí una <b>{titulo}</b> de dólares:\n"
+            f"{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}\n\n"
+            "¿Registramos?"
+        ),
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Sí, registrar", callback_data="dolar:confirm"),
+            InlineKeyboardButton("❌ Cancelar",      callback_data="dolar:cancel"),
+        ]]),
+    )
+
 
 async def handle_cambiodolar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
@@ -1319,18 +1484,9 @@ async def handle_cambiodolar(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(_fmt_error, parse_mode="HTML")
         return
 
-    monto_ars    = monto_usd * cotizacion
-    fecha_str    = datetime.now(BAIRES).strftime("%Y-%m-%d")
-    fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
-    db.registrar_cambio(fecha_str, monto_usd, cotizacion, user["name"])
-
-    await update.message.reply_text(
-        f"✅ Cambio registrado\n"
-        f"💵 USD: {fmt_usd(monto_usd)}\n"
-        f"💱 Cotización: {fmt_amount(cotizacion)}\n"
-        f"💰 ARS obtenidos: {fmt_amount(monto_ars)}\n"
-        f"📅 Fecha: {fecha_display}",
-        parse_mode="HTML",
+    await _register_dolar_and_announce(
+        update.message.chat_id, context.bot, user,
+        {"tipo": "venta", "monto_usd": monto_usd, "cotizacion": cotizacion},
     )
 
 
