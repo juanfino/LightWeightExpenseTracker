@@ -242,13 +242,19 @@ def get_user_by_telegram_id(tg_id: str):
 
 # ── Gastos ────────────────────────────────────────────────────────────────────
 
+def _normalize_concept(concept: str) -> str:
+    """Collapse internal whitespace/newlines so a malformed concept (e.g. from a
+    voice extraction) can't break the dashboard's inline JS delete/edit handlers."""
+    return " ".join(concept.split())
+
+
 def create_expense(user_id: int, category_id: int | None, concept: str, amount: float, raw_text: str, subcategory_id: int | None = None) -> int:
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, concept, amount, raw_text, now_utc),
+            (user_id, category_id, subcategory_id, _normalize_concept(concept), amount, raw_text, now_utc),
         )
         return cur.lastrowid
 
@@ -257,11 +263,12 @@ def create_expense_full(user_id: int, category_id: int | None, concept: str, amo
     """Like create_expense but accepts an explicit date (YYYY-MM-DD in ART/UTC-3).
     Stores as 03:00 UTC (= midnight ART) so date queries using '-3 hours' return the correct day."""
     created_at = f"{date_str} 03:00:00"
+    concept = _normalize_concept(concept)
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, concept.strip(), amount, concept.strip(), created_at),
+            (user_id, category_id, subcategory_id, concept, amount, concept, created_at),
         )
         return cur.lastrowid
 
@@ -439,16 +446,17 @@ def get_expenses_by_user(year: int, month: int):
 # ── Edición de gastos ─────────────────────────────────────────────────────────
 
 def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None, subcategory_id: int | None = None) -> bool:
+    concept = _normalize_concept(concept)
     with get_conn() as conn:
         if subcategory_id is not None:
             cur = conn.execute(
                 "UPDATE expenses SET concept=?, amount=?, category_id=?, subcategory_id=? WHERE id=?",
-                (concept.strip(), amount, category_id, subcategory_id, expense_id),
+                (concept, amount, category_id, subcategory_id, expense_id),
             )
         else:
             cur = conn.execute(
                 "UPDATE expenses SET concept=?, amount=?, category_id=? WHERE id=?",
-                (concept.strip(), amount, category_id, expense_id),
+                (concept, amount, category_id, expense_id),
             )
         return cur.rowcount > 0
 

@@ -259,7 +259,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
   // ── Row builders ───────────────────────────────────────────────────────────
   function buildReadRow(r) {
-    const safeConcept = r.concept.replace(/'/g, "\\'");
+    const safeConcept = r.concept.replace(/\s+/g, ' ').trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const subcatHtml  = r.subcategory_name
       ? '<span style="font-size:11px;color:var(--muted);padding:2px 7px;border:1px solid var(--border);border-radius:4px;white-space:nowrap">' + r.subcategory_name + '</span>'
       : '';
