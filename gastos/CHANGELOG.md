@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.1
+- Fix: voice message processing could hang the entire bot for several minutes with no user feedback (missing timeout + blocking call on event loop). Added 15s timeout, disabled SDK auto-retry, and added a retry button so failures are fast and recoverable without re-recording.
+
 ## 1.12.0
 - Dashboard mobile: nuevo menú tipo drawer que se desliza desde la derecha con fondo oscurecido (scrim) y botón de cierre, en reemplazo del dropdown de ancho completo. El botón hamburguesa ahora queda anclado a la derecha del topbar
 - Dashboard mobile: las tablas de Historial, Dólares (historial de cambios), Categorías, Keywords y Fijos (administrar) se muestran como tarjetas apiladas con etiquetas por columna, eliminando el scroll horizontal (nueva clase reutilizable `.rtable` en `base.html`)

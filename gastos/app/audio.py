@@ -49,7 +49,7 @@ def _parse_confidence(raw) -> float:
 
 def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
     """Transcribe voice audio to text using Whisper. Raises RuntimeError on failure."""
-    oa_client = openai.OpenAI(api_key=openai_api_key)
+    oa_client = openai.OpenAI(api_key=openai_api_key, timeout=15.0, max_retries=0)
     audio_file = io.BytesIO(audio_bytes)
     audio_file.name = "voice.ogg"
 
@@ -78,7 +78,7 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     Raises RuntimeError on extraction failure.
     """
     try:
-        an_client = anthropic.Anthropic(api_key=anthropic_api_key)
+        an_client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=15.0, max_retries=0)
         message = an_client.messages.create(
             model=_MODEL,
             max_tokens=512,
