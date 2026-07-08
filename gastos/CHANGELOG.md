@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.12.2
+- Fix: un gasto con un salto de línea en el concepto (ej. generado por una extracción de voz) rompía el atributo `onclick` del botón "Borrar" en el Historial, dejándolo inerte sin ningún error visible para el usuario. Ahora se escapan correctamente saltos de línea y backslashes, y `db.py` normaliza espacios/saltos de línea al crear o editar un gasto para que no vuelva a ocurrir.
+
 ## 1.12.1
 - Fix: voice message processing could hang the entire bot for several minutes with no user feedback (missing timeout + blocking call on event loop). Added 15s timeout, disabled SDK auto-retry, and added a retry button so failures are fast and recoverable without re-recording.
 
