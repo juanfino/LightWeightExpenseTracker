@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -30,6 +31,9 @@ pending_ocr: dict[int, dict] = {}
 # Gastos pendientes de confirmación tras voice, keyed por chat_id.
 # Structure: {"queue": [expense_dict, ...], "total": N, "done": 0}
 pending_voice: dict[int, dict] = {}
+# Audio pendiente de reintento tras fallo de transcripción/extracción, keyed por chat_id.
+# Se sobreescribe con cada nuevo audio; no requiere TTL más allá de eso.
+pending_voice_retry: dict[int, bytes] = {}
 # Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
 pending_amount_edit: dict[int, int] = {}
 # Gasto parseado esperando confirmación de match con gasto fijo
@@ -313,55 +317,47 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
     )
 
 
-async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = await _get_authorized_user(update)
-    if user is None:
-        return
-
+async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes,
+                                status_msg, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Transcribe → extrae gastos → responde. Usado por handle_voice() y por el
+    callback "voice:retry" para poder reintentar sin volver a grabar."""
     openai_api_key = context.bot_data.get("openai_api_key", "")
-    if not openai_api_key:
-        logger.warning("OPENAI_API_KEY no configurada; voice ignorado")
-        await update.message.reply_text("🎙️ El procesamiento de audio no está configurado.")
-        return
-
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
 
-    status_msg = await update.message.reply_text("🎙️ Procesando audio...")
-
-    tg_file = await update.message.voice.get_file()
-    audio_bytes = bytes(await tg_file.download_as_bytearray())
-
-    chat_id = update.message.chat_id
-
-    try:
-        transcription = audio_module.transcribe(audio_bytes, openai_api_key)
-    except Exception as e:
-        logger.error("Error transcribiendo audio: %s", e)
+    async def _fail(e: Exception, where: str) -> None:
+        logger.error("Error %s audio: %s", where, e)
+        pending_voice_retry[chat_id] = audio_bytes
         await status_msg.edit_text(
             "❌ No pude procesar el audio. Intentá de nuevo o cargá el gasto manualmente:\n"
             "<code>Comercio monto</code>",
             parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Reintentar", callback_data="voice:retry"),
+            ]]),
         )
+
+    try:
+        transcription = await asyncio.to_thread(audio_module.transcribe, audio_bytes, openai_api_key)
+    except Exception as e:
+        await _fail(e, "transcribiendo")
         return
 
     # Si el audio suena a operación de dólar, intentar interpretarlo como tal.
     if dolar_module.looks_like_dolar(transcription):
         op = dolar_module.parse_dolar(transcription, anthropic_api_key)
         if op is not None:
+            pending_voice_retry.pop(chat_id, None)
             await status_msg.delete()
-            await _handle_dolar_operation(chat_id, context.bot, user, op)
+            await _handle_dolar_operation(chat_id, bot, user, op)
             return
 
     try:
-        expenses = audio_module.extract_expenses(transcription, anthropic_api_key)
+        expenses = await asyncio.to_thread(audio_module.extract_expenses, transcription, anthropic_api_key)
     except Exception as e:
-        logger.error("Error extrayendo gastos del audio: %s", e)
-        await status_msg.edit_text(
-            "❌ No pude procesar el audio. Intentá de nuevo o cargá el gasto manualmente:\n"
-            "<code>Comercio monto</code>",
-            parse_mode="HTML",
-        )
+        await _fail(e, "extrayendo gastos de")
         return
+
+    pending_voice_retry.pop(chat_id, None)
 
     valid = [e for e in expenses if e["amount"] is not None]
     skipped = [e for e in expenses if e["amount"] is None]
@@ -399,8 +395,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Warn about skipped items (no amount detected)
     if skipped:
         names = ", ".join(e["concept"] for e in skipped)
-        await update.message.reply_text(
-            f"⚠️ No pude detectar el monto de: <b>{names}</b>. Lo salteé.",
+        await bot.send_message(
+            chat_id=chat_id,
+            text=f"⚠️ No pude detectar el monto de: <b>{names}</b>. Lo salteé.",
             parse_mode="HTML",
         )
 
@@ -411,14 +408,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if confirm_items:
         parts.append(f"revisemos <b>{len(confirm_items)}</b>")
     summary = " y ".join(parts) if parts else ""
-    await update.message.reply_text(
-        f"🎙️ Escuché: \"<i>{transcription}</i>\"\n{summary.capitalize()}:",
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"🎙️ Escuché: \"<i>{transcription}</i>\"\n{summary.capitalize()}:",
         parse_mode="HTML",
     )
 
     # Auto-registrar los de alta confianza
     for item in auto_items:
-        await _register_voice_expense(chat_id, context.bot, user, item)
+        await _register_voice_expense(chat_id, bot, user, item)
 
     # Encolar los dudosos para confirmación uno por uno
     if confirm_items:
@@ -428,7 +426,28 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "done": 0,
             "current": None,
         }
-        await _send_next_voice_confirmation(chat_id, context.bot)
+        await _send_next_voice_confirmation(chat_id, bot)
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_authorized_user(update)
+    if user is None:
+        return
+
+    openai_api_key = context.bot_data.get("openai_api_key", "")
+    if not openai_api_key:
+        logger.warning("OPENAI_API_KEY no configurada; voice ignorado")
+        await update.message.reply_text("🎙️ El procesamiento de audio no está configurado.")
+        return
+
+    status_msg = await update.message.reply_text("🎙️ Procesando audio...")
+
+    tg_file = await update.message.voice.get_file()
+    audio_bytes = bytes(await tg_file.download_as_bytearray())
+
+    chat_id = update.message.chat_id
+
+    await _process_voice_audio(chat_id, context.bot, user, audio_bytes, status_msg, context)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1212,6 +1231,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _send_next_voice_confirmation(chat_id, context.bot)
         else:
             pending_voice.pop(chat_id, None)
+        return
+
+    elif cb == "voice:retry":
+        audio_bytes = pending_voice_retry.get(chat_id)
+        if not audio_bytes:
+            await query.answer("⏱ Ya no tengo el audio para reintentar.", show_alert=True)
+            return
+        await query.edit_message_text("🎙️ Procesando audio...", reply_markup=None)
+        await _process_voice_audio(chat_id, context.bot, user, audio_bytes, query.message, context)
         return
 
     if cb == "dolar:confirm":
