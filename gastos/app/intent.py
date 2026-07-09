@@ -210,7 +210,11 @@ def _build_system_prompt(user) -> str:
         "  - Nunca inventes ids de categoría/subcategoría: usá los de arriba. Si el usuario menciona "
         "una categoría que no existe en una edición, igual pasala por nombre en 'changes.category' "
         "(el sistema ofrecerá crearla).\n"
-        "  - Emití SIEMPRE consultas SELECT de solo lectura; nunca INSERT/UPDATE/DELETE."
+        "  - Emití SIEMPRE consultas SELECT de solo lectura; nunca INSERT/UPDATE/DELETE.\n"
+        "  - Tenés memoria de los mensajes de los últimos 5 minutos de este chat (ya incluidos como "
+        "turnos previos si corresponde). Si el mensaje actual depende de algo dicho antes de esa "
+        "ventana, o de una conversación que no ves en tu contexto, no asumas nada ni inventes un "
+        "dato: pedile al usuario que repita la pregunta completa."
     )
 
 
@@ -254,7 +258,7 @@ def _extract_ids(rows: list[dict]) -> list[int]:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def route_intent(text: str, user, anthropic_api_key: str) -> dict:
+def route_intent(text: str, user, anthropic_api_key: str, history: list | None = None) -> dict:
     """Classify and act on a free-text message. Returns a dict with a 'kind':
       - {"kind":"log", "concept","amount","date","category","subcategory"}
       - {"kind":"edit", "candidate_ids":[int], "changes":{...}}
@@ -263,7 +267,12 @@ def route_intent(text: str, user, anthropic_api_key: str) -> dict:
       - {"kind":"report", "text"}   (Spanish reply already composed)
       - {"kind":"reply", "text"}    (clarification / free text)
       - {"kind":"error", "text"}
-    Performs no Telegram I/O; the bot turns this into messages/confirmation flows.
+
+    ``history`` is an optional list of prior {"role": "user"/"assistant", "content": str}
+    turns (a short rolling window kept by the caller) prepended before the current
+    message, so the model can resolve short-lived follow-ups ("dame el desglose",
+    "sí, por persona") within that window. Performs no Telegram I/O; the bot turns
+    the result into messages/confirmation flows.
     """
     try:
         client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=20.0, max_retries=0)
@@ -272,7 +281,8 @@ def route_intent(text: str, user, anthropic_api_key: str) -> dict:
         logger.error("Error preparando intent layer: %s", e)
         return {"kind": "error", "text": "⚠️ No pude procesar el mensaje. Probá de nuevo."}
 
-    messages = [{"role": "user", "content": text}]
+    messages = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
+    messages.append({"role": "user", "content": text})
 
     try:
         for _ in range(_MAX_TOOL_TURNS):
