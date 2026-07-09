@@ -63,13 +63,22 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 .page-info {
   font-family: var(--font-mono);
 }
+
+.cat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
 {% endblock %}
 
 {% block content %}
 <div class="container">
 
-  <!-- Add expense button -->
-  <div style="display:flex; justify-content:flex-end; margin-bottom:16px">
+  <!-- Page header -->
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:28px">
+    <div style="font-size:26px; font-weight:700; letter-spacing:-0.01em">Historial</div>
     <button class="btn btn-primary" id="btn-add-expense">+ Agregar gasto</button>
   </div>
 
@@ -210,6 +219,24 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   let page        = 0;
   const categories = JSON.parse(document.getElementById("cat-data").textContent);
 
+  // Category palette keyed by name (design tokens); DB color is only a fallback.
+  const CAT_COLORS = {
+    'Hogar':            'oklch(0.72 0.12 150)',
+    'Casa Bari':        'oklch(0.75 0.13 95)',
+    'Hijos':            'oklch(0.74 0.13 55)',
+    'Vehículos':        'oklch(0.72 0.12 35)',
+    'Salud':            'oklch(0.70 0.15 20)',
+    'Servicios':        'oklch(0.72 0.11 230)',
+    'Entretenimiento':  'oklch(0.72 0.12 300)',
+    'Transporte':       'oklch(0.72 0.11 200)',
+    'Trabajo':          'oklch(0.68 0.12 280)',
+    'Gastos Generales': 'oklch(0.72 0.10 340)',
+    'Sin categoría':    'oklch(0.55 0.010 55)',
+  };
+  function getCatColor(name, dbColor) {
+    return CAT_COLORS[name] || dbColor || 'oklch(0.55 0.010 55)';
+  }
+
   // ── Sorting ────────────────────────────────────────────────────────────────
   let sortCol = "created_at";
   let sortDir = -1; // -1 = desc, 1 = asc
@@ -273,7 +300,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td data-label="Concepto">' + r.concept + '</td>'
-      + '<td data-label="Categoría"><span class="badge"><span>' + (r.category_icon || "❓") + '</span><span>' + (r.category_name || "Sin categoría") + '</span></span></td>'
+      + '<td data-label="Categoría"><span style="display:flex;align-items:center;gap:8px"><span class="cat-dot" style="background:' + getCatColor(r.category_name, r.category_color) + '"></span>' + (r.category_name || "Sin categoría") + '</span></td>'
       + '<td class="hide-mobile" data-label="Subcategoría">' + subcatHtml + '</td>'
       + '<td class="mono" data-label="Monto" style="font-weight:600">' + fmtAmount(r.amount) + '</td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
@@ -292,7 +319,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const safeConceptAttr = r.concept.replace(/"/g, "&quot;");
 
-    return '<tr id="row-' + r.id + '" style="background:rgba(124,106,247,.07)">'
+    return '<tr id="row-' + r.id + '" style="background:color-mix(in oklab, var(--accent) 8%, transparent)">'
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:0;box-sizing:border-box"></td>'
