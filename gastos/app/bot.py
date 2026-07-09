@@ -13,6 +13,7 @@ import categorizer
 import ocr as ocr_module
 import audio as audio_module
 import dolar as dolar_module
+import intent as intent_module
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,12 @@ pending_subcategory: dict[int, int] = {}
 # Operación de dólar (compra/venta) pendiente de confirmación, keyed por chat_id.
 # Structure: {"tipo": str, "monto_usd": float, "cotizacion": float}
 pending_dolar: dict[int, dict] = {}
+# Mutación en lenguaje natural pendiente de confirmación (edición o taxonomía),
+# keyed por chat_id. Structure: {"kind": "edit"|"category"|"subcategory", ...}
+pending_nl_confirm: dict[int, dict] = {}
+# Selección entre varios gastos candidatos para una edición NL, keyed por chat_id.
+# Structure: {"changes": {...}, "candidates": [expense_id, ...]}
+pending_nl_pick: dict[int, dict] = {}
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -155,6 +162,36 @@ def _cat_line(cat_icon: str, cat_name: str, subcategory_id) -> str:
         if subcat:
             return f"{cat_icon} {cat_name} › {subcat['name']}"
     return f"{cat_icon} {cat_name}"
+
+
+# ── Capa de intención — enrutado ──────────────────────────────────────────────
+
+# Señales de que un mensaje NO es un simple "concepto monto" y conviene escalarlo
+# a la capa de intención (ediciones, taxonomía, consultas, frases más ricas o con
+# slang). El camino rápido determinista se reserva para lo que no dispara esto.
+_INTENT_TRIGGER_RE = re.compile(
+    r"(?i)(?:\b("
+    r"cu[aá]nto|cu[aá]nta|cu[aá]les?|"                      # preguntas
+    r"gast[eé]|gast[oó]|gastamos|gastaste|gastaron|"        # reportes
+    r"edit[aá]|editar|corrig[eií]|corregir|cambi[aá]|cambiar|actualiz[aá]|actualizar|modific\w*|"  # edición
+    r"equivoqu[eé]|"                                        # corrección
+    r"[uú]ltim[oa]s?|ante[uú]ltim\w*|pen[uú]ltim\w*|"       # referencias
+    r"categor[ií]as?|subcategor[ií]as?|"                    # taxonomía
+    r"agreg[aá]|agregar|cre[aá]|crear|"                     # taxonomía (verbos)
+    r"anot[aá]|anotame|anotar|"                             # "anotame ..."
+    r"lucas?|palos?|"                                       # slang de montos
+    r"trimestre|reporte|resumen"                            # períodos/reportes
+    r")\b)"
+    r"|pon[eé]\s+que"                                       # "poné que ..."
+    r"|\bgasto\s+\d+"                                       # "el gasto 124"
+)
+
+
+def _needs_intent(text: str) -> bool:
+    """True si el mensaje tiene señales de intención conversacional (edición,
+    taxonomía, consulta o frase rica) y debe ir a la capa de intención en vez del
+    parser determinista."""
+    return bool(_INTENT_TRIGGER_RE.search(text or ""))
 
 
 # ── Gastos fijos — helpers ────────────────────────────────────────────────────
@@ -569,6 +606,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Abandon any stale pending state if the user sends a new message
     pending_fixed_match.pop(chat_id, None)
     pending_subcategory.pop(chat_id, None)
+    pending_nl_confirm.pop(chat_id, None)
+    pending_nl_pick.pop(chat_id, None)
 
     # Si el mensaje suena a operación de dólar, intentar interpretarlo como tal.
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
@@ -579,6 +618,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     parsed = msg_parser.parse_message(text)
+
+    # Camino rápido determinista: "concepto monto" simple, sin señales de intención
+    # conversacional → se guarda al instante (comportamiento histórico). Todo lo demás
+    # (ediciones, taxonomía, consultas, frases más ricas) pasa por la capa de intención.
+    if anthropic_api_key and (parsed is None or _needs_intent(text)):
+        await _handle_intent_message(chat_id, context.bot, user, text, anthropic_api_key)
+        return
 
     if parsed is None:
         await update.message.reply_text(
@@ -1261,6 +1307,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Operación cancelada.")
         return
 
+    if cb == "nl:cancel":
+        pending_nl_confirm.pop(chat_id, None)
+        pending_nl_pick.pop(chat_id, None)
+        await query.edit_message_text("❌ Cancelado.")
+        return
+
+    if cb == "nl:ok":
+        data = pending_nl_confirm.pop(chat_id, None)
+        if not data:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        await _nl_apply(query, user, data)
+        return
+
+    if cb.startswith("nl:pick:"):
+        pick = pending_nl_pick.pop(chat_id, None)
+        if not pick:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        expense_id = int(cb.split(":")[2])
+        if expense_id not in pick["candidates"]:
+            await query.answer("⏱ Opción inválida.", show_alert=True)
+            return
+        expense = db.get_expense_by_id(expense_id)
+        if not expense or expense["user_id"] != user["id"]:
+            await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
+            return
+        await query.edit_message_text(f"✏️ Editando <code>#ID{expense_id}</code>…", parse_mode="HTML")
+        await _nl_prepare_edit_confirm(chat_id, context.bot, user, expense, pick["changes"])
+        return
+
     if cb.startswith("c:"):
         _, expense_id_str, cat_id_str = cb.split(":")
         expense_id, cat_id = int(expense_id_str), int(cat_id_str)
@@ -1515,6 +1592,281 @@ async def handle_cambiodolar(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _register_dolar_and_announce(
         update.message.chat_id, context.bot, user,
         {"tipo": "venta", "monto_usd": monto_usd, "cotizacion": cotizacion},
+    )
+
+
+# ── Capa de intención — handlers ──────────────────────────────────────────────
+
+def _nl_yes_no() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Sí", callback_data="nl:ok"),
+        InlineKeyboardButton("❌ No", callback_data="nl:cancel"),
+    ]])
+
+
+async def _handle_intent_message(chat_id: int, bot, user, text: str, anthropic_api_key: str) -> None:
+    """Corre la capa de intención en un thread (llamada bloqueante al LLM) y
+    despacha el resultado al flujo correspondiente."""
+    try:
+        result = await asyncio.to_thread(
+            intent_module.route_intent, text, dict(user), anthropic_api_key
+        )
+    except Exception as e:
+        logger.error("Error en capa de intención: %s", e)
+        await bot.send_message(chat_id=chat_id, text="⚠️ Hubo un error interpretando el mensaje. Probá de nuevo.")
+        return
+
+    kind = result.get("kind")
+    if kind == "log":
+        await _nl_do_log(chat_id, bot, user, text, result)
+    elif kind == "edit":
+        await _nl_start_edit(chat_id, bot, user, result)
+    elif kind == "category":
+        await _nl_propose_category(chat_id, bot, result["name"])
+    elif kind == "subcategory":
+        await _nl_propose_subcategory(chat_id, bot, result["parent"], result["name"])
+    elif kind in ("report", "reply", "error"):
+        # Texto libre redactado por el modelo (o error): plano, sin parse_mode, para
+        # no romper con caracteres especiales.
+        await bot.send_message(chat_id=chat_id, text=result.get("text", "🤔 No te entendí."))
+    else:
+        await bot.send_message(chat_id=chat_id, text="🤔 No te entendí. ¿Podés reformularlo?")
+
+
+def _resolve_log_category(concept: str, cat_name: str | None, subcat_name: str | None):
+    """Devuelve (category_id, subcategory_id). Si el modelo indicó una categoría
+    existente, la usa; si no, cae al categorizador por keywords."""
+    category_id, subcategory_id = None, None
+    if cat_name:
+        cat = db.find_category_normalized(cat_name)
+        if cat:
+            category_id = cat["id"]
+            if subcat_name:
+                sub = db.find_subcategory_normalized(category_id, subcat_name)
+                if sub:
+                    subcategory_id = sub["id"]
+    if category_id is None:
+        keywords = db.get_all_keywords()
+        category_id, subcategory_id = categorizer.categorize(concept, keywords)
+    return category_id, subcategory_id
+
+
+async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
+    """Registra un gasto interpretado en lenguaje natural (auto-guardado, con
+    teclado de editar/categoría — nada queda irreversible)."""
+    concept = result["concept"]
+    amount = result["amount"]
+    date_str = result.get("date")
+    category_id, subcategory_id = _resolve_log_category(concept, result.get("category"), result.get("subcategory"))
+    try:
+        if date_str:
+            expense_id = db.create_expense_full(
+                user["id"], category_id, concept, amount, date_str, subcategory_id=subcategory_id
+            )
+        else:
+            expense_id = db.create_expense(
+                user_id=user["id"], category_id=category_id, subcategory_id=subcategory_id,
+                concept=concept, amount=amount, raw_text=f"[NL] {text}",
+            )
+    except Exception as e:
+        logger.error("Error guardando gasto NL: %s", e)
+        await bot.send_message(chat_id=chat_id, text="⚠️ Hubo un error al guardar el gasto. Intentá de nuevo.")
+        return
+
+    cat = db.get_category_by_id(category_id) if category_id else None
+    cat_name = cat["name"] if cat else "Sin categoría"
+    cat_icon = cat["icon"] if cat else "❓"
+    keyboard = _build_category_keyboard(expense_id) if category_id is None else _build_edit_only_keyboard(expense_id)
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ <b>Gasto registrado</b>\n"
+            f"📋 {concept}\n"
+            f"💰 {fmt_amount(amount)}\n"
+            f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
+            f"👤 {user['name']}\n"
+            f"<code>#ID{expense_id}</code>"
+        ),
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
+async def _nl_start_edit(chat_id: int, bot, user, result: dict) -> None:
+    """Resuelve los candidatos de una edición (filtrando por dueño) y decide entre
+    confirmar (1), pedir aclaración (0) o mostrar un selector (varios)."""
+    changes = result.get("changes") or {}
+    candidate_ids = result.get("candidate_ids") or []
+
+    owned = []
+    for eid in candidate_ids:
+        exp = db.get_expense_by_id(eid)
+        if exp and exp["user_id"] == user["id"]:
+            owned.append(exp)
+
+    if not owned:
+        await bot.send_message(chat_id=chat_id, text="🤔 No encontré un gasto tuyo que coincida. ¿Podés ser más específico?")
+        return
+
+    if len(owned) == 1:
+        await _nl_prepare_edit_confirm(chat_id, bot, user, owned[0], changes)
+        return
+
+    pending_nl_pick[chat_id] = {"changes": changes, "candidates": [e["id"] for e in owned]}
+    buttons = []
+    for e in owned[:10]:
+        concept_short = (e["concept"] or "")[:24]
+        buttons.append([InlineKeyboardButton(
+            f"#{e['id']} · {concept_short} · {fmt_amount(e['amount'])}",
+            callback_data=f"nl:pick:{e['id']}",
+        )])
+    buttons.append([InlineKeyboardButton("❌ Cancelar", callback_data="nl:cancel")])
+    await bot.send_message(
+        chat_id=chat_id,
+        text="Encontré varios gastos. ¿Cuál querés editar?",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+def _describe_changes(expense, changes: dict) -> list[str]:
+    """Líneas de preview de una edición propuesta."""
+    lines = []
+    if "amount" in changes:
+        lines.append(f"💰 Monto → {fmt_amount(changes['amount'])}")
+    if "concept" in changes:
+        lines.append(f"📋 Concepto → {changes['concept']}")
+    if "date" in changes:
+        lines.append(f"📅 Fecha → {changes['date']}")
+    cat_name = changes.get("category")
+    if cat_name:
+        cat = db.find_category_normalized(cat_name)
+        if cat:
+            lines.append(f"🏷 Categoría → {cat['icon']} {cat['name']}")
+        else:
+            lines.append(f"🏷 Categoría → {cat_name} (nueva, se va a crear)")
+    if changes.get("subcategory"):
+        lines.append(f"↳ Subcategoría → {changes['subcategory']}")
+    return lines
+
+
+async def _nl_prepare_edit_confirm(chat_id: int, bot, user, expense, changes: dict) -> None:
+    change_lines = _describe_changes(expense, changes)
+    if not change_lines:
+        await bot.send_message(chat_id=chat_id, text="🤔 No entendí qué querés cambiar del gasto.")
+        return
+    pending_nl_confirm[chat_id] = {"kind": "edit", "expense_id": expense["id"], "changes": changes}
+    body = (
+        f"✏️ <b>Voy a editar este gasto</b>\n"
+        f"<code>#ID{expense['id']}</code> — {expense['concept']} ({fmt_amount(expense['amount'])})\n\n"
+        + "\n".join(change_lines)
+        + "\n\n¿Confirmás?"
+    )
+    await bot.send_message(chat_id=chat_id, text=body, parse_mode="HTML", reply_markup=_nl_yes_no())
+
+
+async def _nl_propose_category(chat_id: int, bot, name: str) -> None:
+    existing = db.find_category_normalized(name)
+    if existing:
+        await bot.send_message(chat_id=chat_id, text=f"ℹ️ La categoría <b>{existing['name']}</b> ya existe.", parse_mode="HTML")
+        return
+    pending_nl_confirm[chat_id] = {"kind": "category", "name": name}
+    await bot.send_message(chat_id=chat_id, text=f"🏷 ¿Creo la categoría <b>{name}</b>?", parse_mode="HTML", reply_markup=_nl_yes_no())
+
+
+async def _nl_propose_subcategory(chat_id: int, bot, parent: str, name: str) -> None:
+    cat = db.find_category_normalized(parent)
+    if not cat:
+        await bot.send_message(chat_id=chat_id, text=f"🤔 No existe la categoría <b>{parent}</b>. Creála primero.", parse_mode="HTML")
+        return
+    existing = db.find_subcategory_normalized(cat["id"], name)
+    if existing:
+        await bot.send_message(chat_id=chat_id, text=f"ℹ️ La subcategoría <b>{existing['name']}</b> ya existe en {cat['name']}.", parse_mode="HTML")
+        return
+    pending_nl_confirm[chat_id] = {"kind": "subcategory", "category_id": cat["id"], "category_name": cat["name"], "name": name}
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"🏷 ¿Creo la subcategoría <b>{name}</b> en <b>{cat['name']}</b>?",
+        parse_mode="HTML", reply_markup=_nl_yes_no(),
+    )
+
+
+async def _nl_apply(query, user, data: dict) -> None:
+    """Aplica una mutación NL confirmada (edición o taxonomía)."""
+    kind = data.get("kind")
+    if kind == "category":
+        cat_id = db.create_category(data["name"], "💰", "#6366f1")
+        if cat_id is None:
+            await query.edit_message_text(f"ℹ️ La categoría <b>{data['name']}</b> ya existía.", parse_mode="HTML")
+        else:
+            await query.edit_message_text(f"✅ Categoría <b>{data['name']}</b> creada.", parse_mode="HTML")
+        return
+
+    if kind == "subcategory":
+        if db.find_subcategory_normalized(data["category_id"], data["name"]):
+            await query.edit_message_text(f"ℹ️ La subcategoría <b>{data['name']}</b> ya existía.", parse_mode="HTML")
+            return
+        db.add_subcategory(data["category_id"], data["name"])
+        await query.edit_message_text(
+            f"✅ Subcategoría <b>{data['name']}</b> creada en <b>{data['category_name']}</b>.", parse_mode="HTML"
+        )
+        return
+
+    if kind == "edit":
+        await _nl_apply_edit(query, user, data["expense_id"], data["changes"])
+        return
+
+
+async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
+    # Re-chequeo de ownership antes de cualquier UPDATE.
+    expense = db.get_expense_by_id(expense_id)
+    if not expense or expense["user_id"] != user["id"]:
+        await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
+        return
+
+    fields: dict = {}
+    if "amount" in changes:
+        fields["amount"] = changes["amount"]
+    if "concept" in changes:
+        fields["concept"] = changes["concept"]
+    if "date" in changes:
+        fields["date_str"] = changes["date"]
+
+    target_cat_id = expense["category_id"]
+    cat_name = changes.get("category")
+    if cat_name:
+        cat = db.find_category_normalized(cat_name)
+        if cat is None:
+            new_id = db.create_category(cat_name, "💰", "#6366f1")
+            cat = db.get_category_by_id(new_id) if new_id else db.find_category_normalized(cat_name)
+        if cat:
+            fields["category_id"] = cat["id"]
+            target_cat_id = cat["id"]
+
+    sub_name = changes.get("subcategory")
+    if sub_name and target_cat_id:
+        sub = db.find_subcategory_normalized(target_cat_id, sub_name)
+        if sub:
+            fields["subcategory_id"] = sub["id"]
+        else:
+            fields["subcategory_id"] = db.add_subcategory(target_cat_id, sub_name)
+
+    if not db.update_expense_fields(expense_id, user["id"], **fields):
+        await query.edit_message_text("⚠️ No pude editar el gasto.")
+        return
+
+    updated = db.get_expense_by_id(expense_id)
+    cat = db.get_category_by_id(updated["category_id"]) if updated["category_id"] else None
+    cat_name_d = cat["name"] if cat else "Sin categoría"
+    cat_icon = cat["icon"] if cat else "❓"
+    await query.edit_message_text(
+        f"✅ <b>Gasto actualizado</b>\n"
+        f"📋 {updated['concept']}\n"
+        f"💰 {fmt_amount(updated['amount'])}\n"
+        f"{_cat_line(cat_icon, cat_name_d, updated['subcategory_id'])}\n"
+        f"👤 {user['name']}\n"
+        f"<code>#ID{expense_id}</code>",
+        parse_mode="HTML",
+        reply_markup=_build_edit_only_keyboard(expense_id),
     )
 
 

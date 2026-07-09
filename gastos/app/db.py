@@ -301,6 +301,30 @@ def get_recent_expenses(limit: int = 50):
         ).fetchall()
 
 
+def get_recent_expenses_for_user(user_id: int, limit: int = 30):
+    """Like get_recent_expenses but scoped to a single user. Used to give the
+    natural-language intent layer the requesting user's recent context so it can
+    resolve references like "el último gasto"."""
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT e.id, e.user_id, e.category_id, e.concept, e.amount, e.raw_text, e.created_at,
+                   u.name AS user_name,
+                   COALESCE(c.name, 'Sin categoría') AS category_name,
+                   e.subcategory_id,
+                   s.name AS subcategory_name
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            LEFT JOIN categories c ON c.id = e.category_id
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
+            WHERE e.user_id = ?
+            ORDER BY e.created_at DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+
+
 def get_expenses_by_month(year: int, month: int):
     with get_conn() as conn:
         return conn.execute(
@@ -506,6 +530,45 @@ def update_expense_category(expense_id: int, user_id: int, category_id: int) -> 
         return cur.rowcount > 0
 
 
+def update_expense_fields(expense_id: int, user_id: int, *, amount: float | None = None,
+                          concept: str | None = None, category_id: int | None = None,
+                          subcategory_id: int | None = None, date_str: str | None = None) -> bool:
+    """Parameterized, user-scoped UPDATE that only touches the fields provided.
+
+    Used by the natural-language edit flow: the model supplies which fields to
+    change, application code builds the write. ``WHERE ... AND user_id = ?``
+    enforces ownership at the SQL level (a user can only edit their own expenses
+    via the bot; the web dashboard uses the unscoped helpers). ``None`` means
+    "leave unchanged". ``date_str`` (YYYY-MM-DD, ART) is stored as 03:00 UTC to
+    match create_expense_full so ART date queries land on the right day."""
+    sets: list[str] = []
+    params: list = []
+    if amount is not None:
+        sets.append("amount = ?")
+        params.append(amount)
+    if concept is not None:
+        sets.append("concept = ?")
+        params.append(_normalize_concept(concept))
+    if category_id is not None:
+        sets.append("category_id = ?")
+        params.append(category_id)
+    if subcategory_id is not None:
+        sets.append("subcategory_id = ?")
+        params.append(subcategory_id)
+    if date_str is not None:
+        sets.append("created_at = ?")
+        params.append(f"{date_str} 03:00:00")
+    if not sets:
+        return False
+    params.extend([expense_id, user_id])
+    with get_conn() as conn:
+        cur = conn.execute(
+            f"UPDATE expenses SET {', '.join(sets)} WHERE id = ? AND user_id = ?",
+            params,
+        )
+        return cur.rowcount > 0
+
+
 def recategorize_by_concept(concept: str, category_id: int) -> int:
     """Actualiza category_id de todos los gastos cuyo concept contenga 'concept' (case-insensitive)."""
     with get_conn() as conn:
@@ -540,6 +603,20 @@ def get_category_by_name(name: str):
         return conn.execute(
             "SELECT * FROM categories WHERE name = ?", (name,)
         ).fetchone()
+
+
+def find_category_normalized(name: str):
+    """Return an existing category row whose name matches `name` ignoring accents
+    and case (consistent with categorizer matching), or None. Used to dup-guard
+    taxonomy creation from the natural-language layer."""
+    from categorizer import normalize
+    target = normalize((name or "").strip())
+    if not target:
+        return None
+    for c in get_all_categories():
+        if normalize(c["name"]) == target:
+            return c
+    return None
 
 
 def get_expense_count_by_category() -> dict:
@@ -935,6 +1012,19 @@ def get_subcategory_by_id(subcategory_id: int):
         return conn.execute(
             "SELECT * FROM subcategories WHERE id = ?", (subcategory_id,)
         ).fetchone()
+
+
+def find_subcategory_normalized(category_id: int, name: str):
+    """Return an existing subcategory row under `category_id` whose name matches
+    `name` ignoring accents and case, or None. Dup-guard for taxonomy creation."""
+    from categorizer import normalize
+    target = normalize((name or "").strip())
+    if not target:
+        return None
+    for s in get_subcategories(category_id):
+        if normalize(s["name"]) == target:
+            return s
+    return None
 
 
 def add_subcategory(category_id: int, name: str) -> int:
