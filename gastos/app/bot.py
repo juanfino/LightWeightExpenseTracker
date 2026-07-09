@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone, timedelta
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -52,6 +53,14 @@ pending_nl_confirm: dict[int, dict] = {}
 # Selección entre varios gastos candidatos para una edición NL, keyed por chat_id.
 # Structure: {"changes": {...}, "candidates": [expense_id, ...]}
 pending_nl_pick: dict[int, dict] = {}
+# Ventana deslizante de historial conversacional para la capa de intención, keyed
+# por chat_id. Structure: [{"role": "user"|"assistant", "content": str, "ts": float}, ...].
+# Se recorta a los últimos NL_HISTORY_TTL_SECONDS segundos y NL_HISTORY_MAX_MESSAGES
+# mensajes en cada acceso — así una consulta como "dame el desglose por persona"
+# puede resolver a qué reporte anterior se refiere, sin mantener memoria indefinida.
+pending_nl_history: dict[int, list[dict]] = {}
+NL_HISTORY_TTL_SECONDS = 300
+NL_HISTORY_MAX_MESSAGES = 10
 
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
@@ -1619,12 +1628,54 @@ def _nl_yes_no() -> InlineKeyboardMarkup:
     ]])
 
 
+def _nl_history_get(chat_id: int) -> list[dict]:
+    """Historial de la capa de intención para un chat, recortado a los últimos
+    NL_HISTORY_TTL_SECONDS segundos y NL_HISTORY_MAX_MESSAGES mensajes — ventana
+    deslizante, sin necesidad de un evento explícito de reset."""
+    now = time.monotonic()
+    entries = [e for e in pending_nl_history.get(chat_id, []) if now - e["ts"] <= NL_HISTORY_TTL_SECONDS]
+    entries = entries[-NL_HISTORY_MAX_MESSAGES:]
+    pending_nl_history[chat_id] = entries
+    return entries
+
+
+def _nl_history_append(chat_id: int, user_text: str, assistant_text: str) -> None:
+    now = time.monotonic()
+    entries = _nl_history_get(chat_id)
+    entries.append({"role": "user", "content": user_text, "ts": now})
+    entries.append({"role": "assistant", "content": assistant_text, "ts": now})
+    pending_nl_history[chat_id] = entries[-NL_HISTORY_MAX_MESSAGES:]
+
+
+def _nl_summarize_result(kind: str, result: dict) -> str:
+    """Resumen corto de lo que se entendió/propuso, guardado como turno del
+    asistente en el historial — da continuidad sin tener que reconstruir el
+    flujo completo de confirmación en cada acceso."""
+    if kind == "log":
+        return f"Registré {result['concept']} por {fmt_amount(result['amount'])}."
+    if kind == "edit":
+        n = len(result.get("candidate_ids") or [])
+        if n == 1:
+            return "Encontré el gasto para editar."
+        if n == 0:
+            return "No encontré ningún gasto que coincida."
+        return f"Encontré {n} gastos candidatos para editar."
+    if kind == "category":
+        return f"Propuse crear la categoría {result['name']}."
+    if kind == "subcategory":
+        return f"Propuse crear la subcategoría {result['name']} en {result['parent']}."
+    return result.get("text", "")
+
+
 async def _handle_intent_message(chat_id: int, bot, user, text: str, anthropic_api_key: str) -> None:
     """Corre la capa de intención en un thread (llamada bloqueante al LLM) y
     despacha el resultado al flujo correspondiente."""
+    history = [
+        {"role": e["role"], "content": e["content"]} for e in _nl_history_get(chat_id)
+    ]
     try:
         result = await asyncio.to_thread(
-            intent_module.route_intent, text, dict(user), anthropic_api_key
+            intent_module.route_intent, text, dict(user), anthropic_api_key, history
         )
     except Exception as e:
         logger.error("Error en capa de intención: %s", e)
@@ -1632,6 +1683,8 @@ async def _handle_intent_message(chat_id: int, bot, user, text: str, anthropic_a
         return
 
     kind = result.get("kind")
+    _nl_history_append(chat_id, text, _nl_summarize_result(kind, result))
+
     if kind == "log":
         await _nl_do_log(chat_id, bot, user, text, result)
     elif kind == "edit":

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.14.0
+- Bot: la capa de intención en lenguaje natural ahora tiene memoria conversacional de corto plazo — una ventana deslizante de hasta 5 minutos o los últimos 10 mensajes (lo que ocurra primero), por chat. Permite resolver preguntas de seguimiento como "dame el desglose de esos gastos" o "sí, por persona" sin tener que repetir la consulta completa. Pasado ese límite (o si el mensaje depende de algo dicho antes), el modelo aclara que no tiene memoria en vez de inventar una respuesta
+- La memoria vive solo en proceso (se pierde si el bot reinicia, igual que el resto de los estados `pending_*`) y no se persiste en la base de datos
+
 ## 1.13.0
 - Bot: nueva capa de intención en lenguaje natural. Además del formato clásico `concepto monto`, ahora se le puede hablar al bot de forma conversacional y entiende cuatro tipos de intención: registrar gastos ("anotame 100 lucas en el súper"), editar gastos existentes ("che, me equivoqué, el último gasto fueron 90000"; "el gasto 124: total 40000 y categoría nafta"), administrar la taxonomía ("agregá la categoría Niños"; "en Casa agregá la subcategoría Productos de limpieza") y responder consultas de solo lectura ("cuánto gasté esta semana"; "cuánto gastó Cele en comida en marzo")
 - Bot: ruteo híbrido — el parser determinista sigue siendo el camino rápido instantáneo para el simple `concepto monto`; solo las frases con señales de intención (ediciones, taxonomía, consultas, slang como "lucas") escalan al modelo, vía tool use / function calling de Claude (nuevo módulo `intent.py`, primer uso de function calling del proyecto)
