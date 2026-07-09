@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.13.0
+- Bot: nueva capa de intención en lenguaje natural. Además del formato clásico `concepto monto`, ahora se le puede hablar al bot de forma conversacional y entiende cuatro tipos de intención: registrar gastos ("anotame 100 lucas en el súper"), editar gastos existentes ("che, me equivoqué, el último gasto fueron 90000"; "el gasto 124: total 40000 y categoría nafta"), administrar la taxonomía ("agregá la categoría Niños"; "en Casa agregá la subcategoría Productos de limpieza") y responder consultas de solo lectura ("cuánto gasté esta semana"; "cuánto gastó Cele en comida en marzo")
+- Bot: ruteo híbrido — el parser determinista sigue siendo el camino rápido instantáneo para el simple `concepto monto`; solo las frases con señales de intención (ediciones, taxonomía, consultas, slang como "lucas") escalan al modelo, vía tool use / function calling de Claude (nuevo módulo `intent.py`, primer uso de function calling del proyecto)
+- Bot: el logueo conversacional se auto-guarda (con teclado de editar/categoría, nada irreversible); las ediciones y la creación de categorías/subcategorías siempre piden confirmación con botones inline. Las ediciones con varios candidatos muestran un selector
+- Seguridad: las consultas/reportes se responden con SQL generado por el modelo pero ejecutado bajo guardrails estrictos (nuevo módulo `sqlro.py`): solo `SELECT`/`WITH`, una sola sentencia, conexión de solo lectura (`mode=ro`) y timeout de statement. Vía Telegram un usuario solo puede editar sus propios gastos (el SQL de targeting filtra por usuario y se re-chequea antes del UPDATE); el dashboard web queda sin cambios. La creación de categorías/subcategorías está protegida contra duplicados sin acentos/mayúsculas
+
 ## 1.12.2
 - Fix: un gasto con un salto de línea en el concepto (ej. generado por una extracción de voz) rompía el atributo `onclick` del botón "Borrar" en el Historial, dejándolo inerte sin ningún error visible para el usuario. Ahora se escapan correctamente saltos de línea y backslashes, y `db.py` normaliza espacios/saltos de línea al crear o editar un gasto para que no vuelva a ocurrir.
 

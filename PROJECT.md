@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 1.8.1 (canonical source: `gastos/config.yaml`)
+- **Version:** 1.13.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -27,7 +27,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 - Python, Flask, SQLite
 - `python-telegram-bot` v20 (async, long polling)
-- Anthropic Vision API (`claude-haiku-4-5-20251001`) for OCR receipt scanning
+- Anthropic API (`claude-haiku-4-5-20251001`) for OCR receipt scanning, voice/dollar extraction, and the natural-language intent layer (tool use / function calling)
 - Docker (Alpine base), multi-arch (`linux/arm64`, `linux/amd64`)
 - GitHub Actions → `ghcr.io/juanfino/lightweightexpensetracker` (public registry, auto-build on merge to `main`)
 - Deploys are **manual**: `docker compose pull gastos && docker compose up -d gastos` on the Pi
@@ -35,6 +35,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 ## Key Features
 
 - **Expense entry via Telegram:** plain text, e.g. `Supermercado 150000`
+- **Natural-language intent layer:** conversational messages that aren't the plain `concept amount` form route through a Claude tool-use layer (`intent.py`) covering four intent families — logging (`"anotame 100 lucas en el súper"`), editing (`"el último gasto fueron 90000"`, `"el gasto 124: total 40000 y categoría nafta"`), taxonomy management (`"agregá la categoría Niños"`), and read-only reports (`"cuánto gastó Cele en comida en marzo"`). Hybrid routing keeps the deterministic parser as the instant fast path; a keyword heuristic (`_needs_intent`) escalates the rest. **Tools:** `log_expense`, `edit_expense`, `create_category`, `create_subcategory`, `run_report`. Mutations are structured/parameterized and confirmed with inline buttons (logging auto-saves with an edit keyboard); reads are model-generated SQL run under strict guardrails (`sqlro.py`): `SELECT`/`WITH` only, single statement, read-only connection (`mode=ro`), statement timeout. Via Telegram a user may only edit their own expenses (targeting SQL filters by user + ownership re-check before the parameterized UPDATE); the web dashboard is unchanged.
 - **Auto-categorization:** keyword matching (two-level: category + subcategory). Silent inference — no extra prompts.
 - **OCR receipt scanning:** send a photo; bot extracts `{comercio, monto, fecha}` via Anthropic Vision, prompts for confirmation before saving
 - **Voice expense entry:** send a voice note (e.g. "ferretería diez mil pesos"); bot transcribes with OpenAI Whisper, normalizes written numbers to digits via Claude, and prompts for confirmation before saving
@@ -47,13 +48,16 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 ## Module Responsibilities
 
 - `main.py` — entrypoint; loads env config, initializes DB, schedules backup, starts Flask thread, starts bot polling
-- `bot.py` — Telegram handlers; holds `pending_ocr` and `pending_amount_edit` dicts (keyed by `chat_id`)
+- `bot.py` — Telegram handlers; holds per-`chat_id` pending-state dicts (`pending_ocr`, `pending_amount_edit`, `pending_dolar`, `pending_nl_confirm`, `pending_nl_pick`, …). Hybrid routing in `handle_message`: fast path for plain `concept amount`, else the intent layer
+- `intent.py` — natural-language intent layer via Claude tool use; returns a structured result dict (`log`/`edit`/`category`/`subcategory`/`report`/`reply`). Injects taxonomy + the user's recent expenses + ART date; performs no Telegram I/O
+- `sqlro.py` — read-only SQL executor (guardrails): `SELECT`/`WITH` only, single statement, `mode=ro` connection, statement timeout, row cap. Used by reports and edit-targeting
 - `parser.py` — parses free-text into `{concept, amount}`; returns `None` if no valid amount
-- `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable
-- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`
+- `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding
+- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`. `update_expense_fields()` is the parameterized, user-scoped UPDATE used by bot edits
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
-- `audio.py` — Whisper transcription + Claude extraction; returns `{transcription, concept, amount}`
+- `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
+- `dolar.py` — natural-language USD buy/sell parsing (`looks_like_dolar` gate + `parse_dolar`); confidence-based auto-save
 - `backup.py` — sends DB file as Telegram document; called by scheduler and admin endpoint
 - `seed.py` — idempotent `seed(conn)` run on every startup; handles schema migrations and default data
 
@@ -65,7 +69,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "..."}]` |
-| `ANTHROPIC_API_KEY` | No | Enables OCR |
+| `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, and the natural-language intent layer |
 | `OPENAI_API_KEY` | No | Enables voice message expense entry |
 | `DB_PATH` | No | Default: `/data/gastos.db` |
 
