@@ -125,45 +125,6 @@
 
 .view-btn:hover:not(.active) { color: var(--text); }
 
-/* ── Stat strip ── */
-.stat-strip {
-  display: flex;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
-}
-
-.stat-cell {
-  flex: 1;
-  padding: 22px 28px;
-  border-right: 1px solid var(--border);
-}
-
-.stat-cell:first-child { padding-left: 4px; }
-.stat-cell-top { flex: 1.4; border-right: none; }
-
-.stat-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 10px;
-}
-
-.stat-value {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 700px) {
-  .stat-strip { flex-wrap: wrap; }
-  .stat-cell { flex: 1 1 50%; border-right: none; padding: 18px 8px; }
-  .stat-cell-top { flex: 1 1 100%; border-top: 1px solid var(--border); }
-}
-
 /* ── Top del mes (stat strip) ── */
 .top3-list {
   display: flex;
