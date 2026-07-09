@@ -118,6 +118,56 @@
   height: 32px !important;
 }
 
+/* ── Top 3 gastos (KPI card) ── */
+.top3-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.top3-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.top3-rank {
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 12px;
+  flex: none;
+}
+
+.top3-concept {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.top3-amount {
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  flex: none;
+}
+
+.top3-empty {
+  color: var(--text3);
+  font-size: 13px;
+}
+
+/* divider between the two stacked charts in the weekly card */
+.chart-divider {
+  border-top: 1px solid var(--border);
+  margin: 18px 0 14px;
+}
+
 /* ── Charts grid ── */
 .charts-grid {
   display: grid;
@@ -531,10 +581,8 @@
         <div class="sparkline-wrap"><canvas id="spark-avg"></canvas></div>
       </div>
       <div class="card kpi-card">
-        <div class="card-title">Categoría top</div>
-        <div class="card-value" id="card-top-icon" style="font-size:24px">—</div>
-        <div class="card-sub" id="card-top-name"></div>
-        <div class="sparkline-wrap"><canvas id="spark-top"></canvas></div>
+        <div class="card-title">Top 3 del mes</div>
+        <div class="top3-list" id="card-top3"></div>
       </div>
     </div>
 
@@ -554,6 +602,12 @@
         <div class="chart-wrap">
           <canvas id="chart-bar"></canvas>
           <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
+        </div>
+        <div class="chart-divider"></div>
+        <div class="section-title" style="margin-bottom:14px">Últimos 6 meses</div>
+        <div class="chart-wrap">
+          <canvas id="chart-months"></canvas>
+          <div id="months-empty" class="empty" style="display:none">Sin datos</div>
         </div>
       </div>
     </div>
@@ -675,6 +729,7 @@
 
   let doughnutChart    = null;
   let barChart         = null;
+  let monthsChart      = null;
   let annualBarChart   = null;
   let annualLineChart  = null;
   const sparkCharts    = {};
@@ -822,7 +877,7 @@
 
     renderCards(summary, currentExpenses);
     renderDoughnut(summary.by_category);
-    renderBar(summary.by_week_by_user || []);
+    renderBar(summary.by_week_by_user || [], summary.by_week_prev || []);
     renderRecent(currentExpenses.slice(0, 10));
   }
 
@@ -839,13 +894,21 @@
     const avg = daysElapsed > 0 ? total / daysElapsed : 0;
     document.getElementById("card-avg").textContent = fmtAmount(avg);
 
-    if (summary.by_category && summary.by_category.length > 0) {
-      const top = summary.by_category[0];
-      document.getElementById("card-top-icon").textContent = top.icon;
-      document.getElementById("card-top-name").textContent = top.name;
+    const top3 = [...expenses]
+      .sort((a, b) => (b.amount || 0) - (a.amount || 0))
+      .slice(0, 3);
+    const top3El = document.getElementById("card-top3");
+    if (top3.length === 0) {
+      top3El.innerHTML = '<div class="top3-empty">Sin gastos este mes</div>';
     } else {
-      document.getElementById("card-top-icon").textContent = "—";
-      document.getElementById("card-top-name").textContent = "";
+      const esc = s => (s || "").replace(/[&<>"]/g, c =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      top3El.innerHTML = top3.map((e, i) => `
+        <div class="top3-row">
+          <span class="top3-rank">${i + 1}</span>
+          <span class="top3-concept" title="${esc(e.concept)}">${esc(e.concept)}</span>
+          <span class="top3-amount">${fmtAmount(e.amount)}</span>
+        </div>`).join("");
     }
   }
 
@@ -894,12 +957,12 @@
 
   async function loadSparklines() {
     const data = await fetch('/api/sparklines').then(r => r.json()).catch(() => []);
+    renderMonths(data);
     if (!data || data.length < 2) return;
 
     makeSparkline('spark-total', data.map(d => d.total),     ACCENT_CLR);
     makeSparkline('spark-count', data.map(d => d.count),     AMBER_CLR);
     makeSparkline('spark-avg',   data.map(d => d.avg_daily), GREEN_CLR);
-    makeSparkline('spark-top',   data.map(d => d.total),     ACCENT_CLR);
 
     const cur  = data[data.length - 1];
     const prev = data[data.length - 2];
@@ -963,8 +1026,8 @@
     `).join("");
   }
 
-  // ── Weekly stacked bar (by user) ───────────────────────────────────────────
-  function renderBar(byWeekByUser) {
+  // ── Weekly stacked bar (by user) + prev-month reference line ───────────────
+  function renderBar(byWeekByUser, byWeekPrev) {
     const canvas  = document.getElementById("chart-bar");
     const emptyEl = document.getElementById("bar-empty");
     if (barChart) { barChart.destroy(); barChart = null; }
@@ -982,24 +1045,52 @@
     byWeekByUser.forEach(w => Object.keys(w.by_user || {}).forEach(n => userNames.add(n)));
     const names = [...userNames];
 
+    // Union of week numbers present this month and last month, so the
+    // reference line stays aligned even if one month has an extra (Sem 5) week.
+    const curByWeek  = {}; byWeekByUser.forEach(w => { curByWeek[w.week] = w; });
+    const prevByWeek = {}; (byWeekPrev || []).forEach(w => { prevByWeek[w.week] = w.total; });
+    const weeks  = [...new Set([...Object.keys(curByWeek), ...Object.keys(prevByWeek)].map(Number))].sort((a, b) => a - b);
+    const labels = weeks.map(w => "Sem " + w);
+
+    const userDatasets = names.map(name => ({
+      type:            "bar",
+      label:           name,
+      data:            weeks.map(w => ((curByWeek[w] && curByWeek[w].by_user) || {})[name] || 0),
+      backgroundColor: (window.userColors && window.userColors[name]) || ACCENT_CLR,
+      borderRadius:    4,
+      borderSkipped:   false,
+      stack:           "actual",
+      order:           1,
+    }));
+
+    const hasPrev  = weeks.some(w => prevByWeek[w] != null);
+    const PREV_CLR = isDark ? '#9a94b8' : '#8a82a8';
+    if (hasPrev) {
+      userDatasets.push({
+        type:                 "line",
+        label:                "Mes anterior",
+        data:                 weeks.map(w => (prevByWeek[w] != null ? prevByWeek[w] : null)),
+        borderColor:          PREV_CLR,
+        borderDash:           [5, 4],
+        borderWidth:          2,
+        pointRadius:          3,
+        pointBackgroundColor: PREV_CLR,
+        tension:              0.3,
+        fill:                 false,
+        spanGaps:             true,
+        order:                0,
+      });
+    }
+
     barChart = new Chart(canvas, {
       type: "bar",
-      data: {
-        labels:   byWeekByUser.map(r => r.label),
-        datasets: names.map(name => ({
-          label:           name,
-          data:            byWeekByUser.map(w => (w.by_user || {})[name] || 0),
-          backgroundColor: (window.userColors && window.userColors[name]) || ACCENT_CLR,
-          borderRadius:    4,
-          borderSkipped:   false,
-        })),
-      },
+      data: { labels, datasets: userDatasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
           legend: {
-            display: names.length > 1,
+            display: names.length > 1 || hasPrev,
             labels: {
               color: CHART_TICK,
               usePointStyle: true,
@@ -1016,6 +1107,53 @@
           x: { stacked: true, grid: { color: CHART_GRID }, ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" } } },
           y: {
             stacked: true,
+            beginAtZero: true,
+            grid: { color: CHART_GRID },
+            ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" }, callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0) + "k" : v) },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Últimos 6 meses (total mensual) ────────────────────────────────────────
+  function renderMonths(data) {
+    const canvas  = document.getElementById("chart-months");
+    const emptyEl = document.getElementById("months-empty");
+    if (!canvas) return;
+    if (monthsChart) { monthsChart.destroy(); monthsChart = null; }
+
+    if (!data || data.length === 0) {
+      canvas.style.display  = "none";
+      if (emptyEl) emptyEl.style.display = "flex";
+      return;
+    }
+    canvas.style.display  = "";
+    if (emptyEl) emptyEl.style.display = "none";
+
+    const MUTED_CLR = isDark ? 'rgba(124,106,247,0.35)' : 'rgba(108,92,231,0.30)';
+    monthsChart = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: data.map(d => (MONTHS_ES[d.month] || "").slice(0, 3)),
+        datasets: [{
+          data:            data.map(d => d.total),
+          backgroundColor: data.map((_, i) => i === data.length - 1 ? ACCENT_CLR : MUTED_CLR),
+          borderRadius:    4,
+          borderSkipped:   false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${fmtAmount(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" } } },
+          y: {
+            beginAtZero: true,
             grid: { color: CHART_GRID },
             ticks: { color: CHART_TICK, font: { family: "'DM Sans', sans-serif" }, callback: v => "$" + (v >= 1000 ? (v/1000).toFixed(0) + "k" : v) },
           },

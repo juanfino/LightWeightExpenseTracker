@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.0
+- Dashboard: la tarjeta "Categoría top" (arriba a la derecha) se reemplazó por "Top 3 del mes", una mini-lista con los 3 gastos individuales más grandes del mes (concepto + monto). Aporta info nueva en vez de repetir lo que ya muestra el gráfico "Por categoría"
+- Dashboard: nuevo gráfico "Últimos 6 meses" (total mensual, mes actual resaltado) debajo de "Por semana", rellenando el espacio que quedaba vacío. Reutiliza los datos de las sparklines (queda anclado a los últimos 6 meses reales, igual que las tendencias)
+- Dashboard: el gráfico "Por semana" ahora superpone una línea punteada con el total de cada semana del mes anterior, como referencia, manteniendo el desglose por usuario en las barras. Las semanas se alinean por número de semana del mes; "Sem 5" es una semana parcial (días 29–fin), así que su comparación es más ruidosa
+- Historial: al editar un gasto, los selects de categoría/subcategoría y los inputs ahora ocupan el ancho de su columna en vez de forzar un ancho fijo, evitando el scroll horizontal que dejaba el botón "Cancelar" fuera de vista
+
 ## 1.14.0
 - Bot: la capa de intención en lenguaje natural ahora tiene memoria conversacional de corto plazo — una ventana deslizante de hasta 5 minutos o los últimos 10 mensajes (lo que ocurra primero), por chat. Permite resolver preguntas de seguimiento como "dame el desglose de esos gastos" o "sí, por persona" sin tener que repetir la consulta completa. Pasado ese límite (o si el mensaje depende de algo dicho antes), el modelo aclara que no tiene memoria en vez de inventar una respuesta
 - La memoria vive solo en proceso (se pierde si el bot reinicia, igual que el resto de los estados `pending_*`) y no se persiste en la base de datos

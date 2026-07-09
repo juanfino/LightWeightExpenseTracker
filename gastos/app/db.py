@@ -424,19 +424,31 @@ def get_expenses_summary_by_category(year: int, month: int, user_name: str | Non
     return result
 
 
-def get_expenses_by_week_of_month(year: int, month: int):
-    """Agrupa los gastos del mes por semana del mes (1–5) para el gráfico de barras."""
+def get_expenses_by_week_of_month(year: int, month: int, user_name: str | None = None):
+    """Agrupa los gastos del mes por semana del mes (1–5) para el gráfico de barras.
+
+    Con `user_name` filtra al usuario indicado (mismo filtro que la variante
+    por-usuario), para que la línea comparativa del mes anterior respete el
+    filtro "Ver gastos de" del dashboard.
+    """
+    params: list = [str(year), f"{month:02d}"]
+    user_filter = ""
+    if user_name:
+        user_filter = "AND u.name = ?"
+        params.append(user_name)
     with get_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT CAST(strftime('%d', e.created_at) AS INTEGER) AS day,
                    SUM(e.amount) AS total
             FROM expenses e
+            JOIN users u ON u.id = e.user_id
             WHERE strftime('%Y', e.created_at) = ?
               AND strftime('%m', e.created_at) = ?
+              {user_filter}
             GROUP BY day
             """,
-            (str(year), f"{month:02d}"),
+            params,
         ).fetchall()
 
     weekly: dict[int, float] = {}
