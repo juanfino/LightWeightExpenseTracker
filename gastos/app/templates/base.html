@@ -4,55 +4,64 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Gastos Familiares{% endblock %}</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%237c6af7'/><rect x='9' y='6' width='14' height='18' rx='2' fill='white' opacity='.95'/><rect x='12' y='10' width='8' height='1.5' rx='.75' fill='%237c6af7'/><rect x='12' y='13' width='8' height='1.5' rx='.75' fill='%237c6af7'/><rect x='12' y='16' width='5' height='1.5' rx='.75' fill='%237c6af7'/><path d='M9 24 l2-2 2 2 2-2 2 2 2-2 2 2 v-2 H9v2z' fill='%237c6af7'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23f4b23c'/><stop offset='1' stop-color='%23e8843a'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><rect x='9' y='16' width='3.6' height='9' rx='1.5' fill='%23241a10'/><rect x='14.2' y='11' width='3.6' height='14' rx='1.5' fill='%23241a10'/><rect x='19.4' y='7' width='3.6' height='18' rx='1.5' fill='%23241a10'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      #0f0f11;
-      --bg2:     #17171a;
-      --bg3:     #1e1e22;
-      --surface: #232328;
-      --surface2:#2a2a30;
-      --border:  rgba(255,255,255,0.07);
-      --border2: rgba(255,255,255,0.12);
-      --text:    #f0f0f2;
-      --text2:   #9090a0;
-      --text3:   #5a5a6a;
-      --accent:  #7c6af7;
-      --green:   #2eca8a;
-      --red:     #f06060;
-      --amber:   #f0a030;
-      --font-sans: 'DM Sans', sans-serif;
+      --bg:      oklch(0.15 0.012 55);
+      --bg2:     oklch(0.17 0.012 55);
+      --bg3:     oklch(0.19 0.013 55);
+      --surface: oklch(0.19 0.013 55);
+      --surface2:oklch(0.24 0.015 55);
+      --border:  oklch(1 0 0 / 0.07);
+      --border-soft: oklch(1 0 0 / 0.06);
+      --border2: oklch(1 0 0 / 0.10);
+      --text:    oklch(0.96 0.004 55);
+      --text2:   oklch(0.60 0.010 55);
+      --text3:   oklch(0.50 0.010 55);
+      --accent:  oklch(0.78 0.15 75);
+      --accent-grad: linear-gradient(135deg, oklch(0.78 0.15 75), oklch(0.68 0.15 45));
+      --on-accent: oklch(0.15 0.02 60);
+      --green:   oklch(0.72 0.14 155);
+      --red:     oklch(0.68 0.17 25);
+      --amber:   oklch(0.78 0.15 75);
+      --track:   oklch(1 0 0 / 0.06);
+      --font-sans: 'Plus Jakarta Sans', sans-serif;
       /* backward-compat aliases */
-      --muted:     #9090a0;
-      --danger:    #f06060;
-      --success:   #2eca8a;
-      --font-mono: 'DM Sans', sans-serif;
+      --muted:     oklch(0.60 0.010 55);
+      --danger:    oklch(0.68 0.17 25);
+      --success:   oklch(0.72 0.14 155);
+      --font-mono: 'Plus Jakarta Sans', sans-serif;
     }
 
     @media (prefers-color-scheme: light) {
       :root {
-        --bg:      #f4f3f8;
-        --bg2:     #ededf2;
-        --bg3:     #e6e5ec;
+        --bg:      oklch(0.97 0.006 75);
+        --bg2:     oklch(0.95 0.006 75);
+        --bg3:     oklch(0.93 0.007 75);
         --surface: #ffffff;
-        --surface2:#f8f7fc;
-        --border:  rgba(0,0,0,0.07);
-        --border2: rgba(0,0,0,0.12);
-        --text:    #1a1a24;
-        --text2:   #606078;
-        --text3:   #a0a0b0;
-        --accent:  #6c5ce7;
-        --green:   #22a870;
-        --red:     #e04040;
-        --amber:   #d08020;
-        --muted:   #606078;
-        --danger:  #e04040;
-        --success: #22a870;
+        --surface2:oklch(0.96 0.007 75);
+        --border:  oklch(0 0 0 / 0.08);
+        --border-soft: oklch(0 0 0 / 0.06);
+        --border2: oklch(0 0 0 / 0.12);
+        --text:    oklch(0.25 0.010 55);
+        --text2:   oklch(0.48 0.012 55);
+        --text3:   oklch(0.60 0.012 55);
+        --accent:  oklch(0.70 0.15 70);
+        --accent-grad: linear-gradient(135deg, oklch(0.74 0.15 70), oklch(0.64 0.15 45));
+        --on-accent: oklch(0.20 0.02 60);
+        --green:   oklch(0.58 0.14 155);
+        --red:     oklch(0.58 0.19 25);
+        --amber:   oklch(0.70 0.15 70);
+        --track:   oklch(0 0 0 / 0.06);
+        --muted:   oklch(0.48 0.012 55);
+        --danger:  oklch(0.58 0.19 25);
+        --success: oklch(0.58 0.14 155);
       }
     }
 
@@ -73,8 +82,8 @@
 
     /* ── Topbar ── */
     .topbar {
-      height: 52px;
-      background: var(--bg2);
+      height: 72px;
+      background: var(--bg);
       border-bottom: 1px solid var(--border);
       position: sticky;
       top: 0;
@@ -82,32 +91,71 @@
       display: flex;
       align-items: center;
       padding: 0 20px;
-      gap: 12px;
       overflow-x: hidden;
     }
 
+    .topbar-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 36px;
+      min-width: 0;
+    }
+
     .topbar-brand {
-      font-size: 15px;
-      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
       white-space: nowrap;
       flex-shrink: 0;
+      color: var(--text);
     }
+
+    .brand-logo {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--accent-grad);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2.5px;
+    }
+
+    .brand-logo i {
+      width: 3.5px;
+      border-radius: 2px;
+      background: var(--on-accent);
+      opacity: 0.9;
+    }
+    .brand-logo i:nth-child(1) { height: 9px; }
+    .brand-logo i:nth-child(2) { height: 14px; }
+    .brand-logo i:nth-child(3) { height: 18px; }
 
     .topbar-tabs {
       display: flex;
       align-items: center;
-      gap: 2px;
-      background: var(--bg3);
-      border-radius: 10px;
-      padding: 4px;
+      gap: 4px;
       flex-shrink: 0;
     }
 
     .tab-link {
-      padding: 5px 14px;
-      border-radius: 7px;
-      font-size: 13px;
-      font-weight: 500;
+      padding: 9px 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
       color: var(--text2);
       transition: background 0.15s, color 0.15s;
       white-space: nowrap;
@@ -116,40 +164,49 @@
     .tab-link:hover { color: var(--text); }
 
     .tab-link.active {
-      background: var(--surface);
+      background: var(--surface2);
       color: var(--text);
-      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+    }
+
+    .topbar-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: oklch(0.3 0.05 55);
+      border: 1px solid var(--border2);
+      margin-left: auto;
+      flex-shrink: 0;
     }
 
     /* ── Layout ── */
     .container {
       max-width: 1100px;
       margin: 0 auto;
-      padding: 28px 20px;
+      padding: 40px 24px 72px;
     }
 
     /* ── Cards ── */
     .card {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
+      border-radius: 20px;
+      padding: 28px;
     }
 
     .card-title {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       color: var(--text3);
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
 
     .card-value {
-      font-size: 22px;
-      font-weight: 600;
+      font-size: 24px;
+      font-weight: 700;
       color: var(--text);
-      letter-spacing: -0.03em;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
     }
 
     .card-sub {
@@ -189,18 +246,18 @@
 
     th {
       text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
       color: var(--text3);
-      padding: 10px 12px;
+      padding: 12px;
       border-bottom: 1px solid var(--border);
     }
 
     td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border-soft);
       vertical-align: middle;
     }
 
@@ -214,58 +271,59 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 500;
+      padding: 4px 11px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
       background: var(--surface2);
-      border: 1px solid var(--border);
     }
 
     /* ── Buttons ── */
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 7px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: 9px;
+      font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       border: 1px solid var(--border2);
-      background: var(--surface);
+      background: transparent;
       color: var(--text);
       font-family: var(--font-sans);
-      transition: background 0.15s, border-color 0.15s;
+      transition: background 0.15s, border-color 0.15s, filter 0.15s;
     }
 
     .btn:hover { background: var(--surface2); }
 
     .btn-danger {
       border-color: transparent;
-      background: rgba(240,96,96,0.12);
+      background: color-mix(in oklch, var(--red) 14%, transparent);
       color: var(--red);
     }
 
-    .btn-danger:hover { background: rgba(240,96,96,0.22); }
+    .btn-danger:hover { background: color-mix(in oklch, var(--red) 24%, transparent); }
 
     .btn-primary {
       border-color: transparent;
       background: var(--accent);
-      color: #fff;
+      color: var(--on-accent);
+      font-weight: 700;
     }
 
-    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:hover { filter: brightness(1.06); }
 
     /* ── Form inputs ── */
     input, select {
-      background: var(--bg);
+      background: var(--bg2);
       border: 1px solid var(--border2);
-      border-radius: 8px;
+      border-radius: 9px;
       color: var(--text);
       font-family: var(--font-sans);
-      font-size: 13px;
-      padding: 7px 12px;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 9px 13px;
       outline: none;
       transition: border-color 0.15s;
     }
@@ -277,12 +335,12 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
 
     .section-title {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
     }
 
     /* ── Spacing ── */
@@ -394,13 +452,14 @@
     }
 
     .mobile-menu .tab-link.active {
-      background: var(--surface);
+      background: var(--surface2);
       color: var(--text);
     }
 
     @media (max-width: 640px) {
-      .topbar-tabs { display: none; }
-      .nav-toggle  { display: flex; }
+      .topbar-tabs   { display: none; }
+      .topbar-avatar { display: none; }
+      .nav-toggle    { display: flex; margin-left: auto; }
     }
 
     /* ── Tabla responsive: filas como tarjetas en mobile ── */
@@ -456,28 +515,39 @@
 </head>
 <body>
   <div class="topbar">
-    <span class="topbar-brand">💸 Gastos Familiares</span>
+    <div class="topbar-inner">
+      <div class="topbar-left">
+        <a href="/" class="topbar-brand">
+          <span class="brand-logo" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Gastos Familiares</span>
+        </a>
 
-    <nav class="topbar-tabs">
-      <a href="/"         class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
-      <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Historial</a>
-      <a href="/fijos"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
-      <a href="/dolares"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
-      <a href="/settings" class="tab-link {% block nav_settings %}{% endblock %}">Categorías</a>
-      <a href="/config"   class="tab-link {% block nav_config %}{% endblock %}">Sistema</a>
-    </nav>
+        <nav class="topbar-tabs">
+          <a href="/"         class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
+          <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Historial</a>
+          <a href="/fijos"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
+          <a href="/dolares"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
+          <a href="/settings" class="tab-link {% block nav_settings %}{% endblock %}">Categorías</a>
+          <a href="/config"   class="tab-link {% block nav_config %}{% endblock %}">Sistema</a>
+        </nav>
+      </div>
 
-    <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
-      <i class="ti ti-menu-2"></i>
-    </button>
+      <div class="topbar-avatar" aria-hidden="true"></div>
 
+      <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
+        <i class="ti ti-menu-2"></i>
+      </button>
+    </div>
   </div>
 
   <div class="menu-scrim" id="menu-scrim"></div>
 
   <nav class="mobile-menu" id="mobile-menu">
     <div class="mobile-menu-header">
-      <span class="mobile-menu-brand">💸 Gastos Familiares</span>
+      <span class="mobile-menu-brand" style="display:flex; align-items:center; gap:10px;">
+        <span class="brand-logo" aria-hidden="true"><i></i><i></i><i></i></span>
+        Gastos Familiares
+      </span>
       <button class="mobile-menu-close" id="menu-close" aria-label="Cerrar menú">
         <i class="ti ti-x"></i>
       </button>

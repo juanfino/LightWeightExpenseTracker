@@ -590,7 +590,7 @@ button[disabled] {
     const list  = subcatData[catId] || [];
     let html    = '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px">';
     list.forEach(function(s) {
-      html += '<span style="display:inline-flex; align-items:center; gap:4px; background:rgba(255,255,255,.08);'
+      html += '<span style="display:inline-flex; align-items:center; gap:4px; background:var(--surface2);'
             + ' border:1px solid var(--border); border-radius:6px; padding:3px 8px; font-size:12px">'
             + s.name
             + ' <button onclick="deleteSubcat(' + s.id + ', \'' + s.name.replace(/'/g, "\\'") + '\', ' + catId + ')"'

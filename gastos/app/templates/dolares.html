@@ -216,14 +216,15 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   }
 
   // ── Chart defaults ───────────────────────────────────────────────────────────
-  const isDark = !window.matchMedia("(prefers-color-scheme: light)").matches;
-  const gridColor = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
-  const tickColor = isDark ? "#9090a0" : "#606078";
-  const ACCENT    = "#7c6af7";
-  const GREEN     = "#2eca8a";
-  const BLUE      = "#38bdf8";
+  const _css      = getComputedStyle(document.documentElement);
+  const cssVar    = (n, fallback) => (_css.getPropertyValue(n).trim() || fallback);
+  const gridColor = cssVar('--track', 'oklch(1 0 0 / 0.06)');
+  const tickColor = cssVar('--text3', '#5a5a6a');
+  const ACCENT    = cssVar('--accent', 'oklch(0.78 0.15 75)');
+  const GREEN     = cssVar('--green', 'oklch(0.72 0.14 155)');
+  const BLUE      = 'oklch(0.72 0.11 230)';
 
-  Chart.defaults.font.family = "'DM Sans', sans-serif";
+  Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
   Chart.defaults.font.size   = 12;
 
   // ── Load & render summary ────────────────────────────────────────────────────

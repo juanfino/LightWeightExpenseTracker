@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.16.0
+- Rediseño visual completo del dashboard web: nueva identidad ámbar/naranja (antes violeta), tipografía Plus Jakarta Sans, tarjetas sin borde con radios más grandes y layout más espaciado, aplicado a las 6 pantallas (Dashboard, Historial, Fijos, Dólares, Categorías, Sistema) en modo claro y oscuro
+- Dashboard: el total del mes pasa a ser el elemento principal del encabezado (con la variación vs. mes anterior como badge con flecha), y las 4 tarjetas KPI se reemplazan por una tira compacta (Gastos / Promedio diario / Top del mes); se elimina el gráfico chico de tendencia (sparkline) de cada tarjeta
+- Dashboard, Historial y Fijos: las categorías y usuarios ahora se identifican con un punto de color (paleta nueva, consistente entre gráficos, listas y tablas) en lugar de íconos/emoji
+- Fijos: se agrega una barra de progreso visual al listado de "Estado del mes" (antes solo texto)
+- Los gráficos (Chart.js) leen los colores desde las variables CSS del tema, así se mantienen sincronizados entre modo claro/oscuro sin duplicar la paleta en JS
+- Se mantiene sin cambios toda la funcionalidad existente: comparación con el mes anterior en "Por semana", vista Anual, filtro por usuario, modal de registrar pago y el menú mobile
+
 ## 1.15.0
 - Dashboard: la tarjeta "Categoría top" (arriba a la derecha) se reemplazó por "Top 3 del mes", una mini-lista con los 3 gastos individuales más grandes del mes (concepto + monto). Aporta info nueva en vez de repetir lo que ya muestra el gráfico "Por categoría"
 - Dashboard: nuevo gráfico "Últimos 6 meses" (total mensual, mes actual resaltado) debajo de "Por semana", rellenando el espacio que quedaba vacío. Reutiliza los datos de las sparklines (queda anclado a los últimos 6 meses reales, igual que las tendencias)
