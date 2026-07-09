@@ -36,6 +36,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   overflow-x: auto;
 }
 
+#table-wrap select,
+#table-wrap input {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 @media (max-width: 640px) {
   .hide-mobile { display: none; }
 }
@@ -289,13 +295,13 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     return '<tr id="row-' + r.id + '" style="background:rgba(124,106,247,.07)">'
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
-      + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:120px"></td>'
-      + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '" style="min-width:140px"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
-      + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '" style="min-width:130px"><option value="">— Sin subcategoría —</option></select></td>'
-      + '<td data-label="Monto"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100px;font-family:var(--font-mono)"></td>'
+      + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:0;box-sizing:border-box"></td>'
+      + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
+      + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
+      + '<td data-label="Monto"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"></td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
-      +   '<div style="display:flex;gap:6px">'
+      +   '<div style="display:flex;gap:6px;flex-wrap:wrap">'
       +     '<button class="btn btn-primary" style="padding:4px 10px;font-size:12px" onclick="saveEdit(' + r.id + ')">Guardar</button>'
       +     '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="cancelEdit(' + r.id + ')">Cancelar</button>'
       +   '</div>'

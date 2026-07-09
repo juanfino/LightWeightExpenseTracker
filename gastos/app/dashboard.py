@@ -109,9 +109,12 @@ def api_monthly():
     usuario   = request.args.get("usuario", "").strip()
     user_name = usuario if usuario and usuario != "Todos" else None
 
+    prev_y, prev_m = (year - 1, 12) if month == 1 else (year, month - 1)
+
     by_category      = db.get_expenses_summary_by_category(year, month, user_name)
-    by_week          = db.get_expenses_by_week_of_month(year, month)
+    by_week          = db.get_expenses_by_week_of_month(year, month, user_name)
     by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month, user_name)
+    by_week_prev     = db.get_expenses_by_week_of_month(prev_y, prev_m, user_name)
     by_user_rows     = db.get_expenses_by_user(year, month)
     total = sum(r["total"] for r in by_category)
 
@@ -121,6 +124,7 @@ def api_monthly():
         "by_category":     by_category,
         "by_week":         by_week,
         "by_week_by_user": by_week_by_user,
+        "by_week_prev":    by_week_prev,
         "by_user":         [{"name": r["name"], "total": r["total"]} for r in by_user_rows],
     })
 
