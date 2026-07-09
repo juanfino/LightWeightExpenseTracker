@@ -172,7 +172,6 @@ def _cat_line(cat_icon: str, cat_name: str, subcategory_id) -> str:
 _INTENT_TRIGGER_RE = re.compile(
     r"(?i)(?:\b("
     r"cu[aá]nto|cu[aá]nta|cu[aá]les?|"                      # preguntas
-    r"gast[eé]|gast[oó]|gastamos|gastaste|gastaron|"        # reportes
     r"edit[aá]|editar|corrig[eií]|corregir|cambi[aá]|cambiar|actualiz[aá]|actualizar|modific\w*|"  # edición
     r"equivoqu[eé]|"                                        # corrección
     r"[uú]ltim[oa]s?|ante[uú]ltim\w*|pen[uú]ltim\w*|"       # referencias
@@ -388,6 +387,15 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
             await _handle_dolar_operation(chat_id, bot, user, op)
             return
 
+    # Si la transcripción tiene señales de intención conversacional (edición,
+    # taxonomía, consulta), pasarla a la capa de intención en vez del extractor
+    # de gastos, que no sabe responder preguntas ni editar/administrar taxonomía.
+    if anthropic_api_key and _needs_intent(transcription):
+        pending_voice_retry.pop(chat_id, None)
+        await status_msg.delete()
+        await _handle_intent_message(chat_id, bot, user, transcription, anthropic_api_key)
+        return
+
     try:
         expenses = await asyncio.to_thread(audio_module.extract_expenses, transcription, anthropic_api_key)
     except Exception as e:
@@ -478,11 +486,18 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status_msg = await update.message.reply_text("🎙️ Procesando audio...")
-
-    tg_file = await update.message.voice.get_file()
-    audio_bytes = bytes(await tg_file.download_as_bytearray())
-
     chat_id = update.message.chat_id
+
+    try:
+        tg_file = await update.message.voice.get_file()
+        audio_bytes = bytes(await tg_file.download_as_bytearray())
+    except Exception as e:
+        # Descarga desde Telegram puede colgarse con mala señal; sin este guard
+        # la excepción quedaba sin manejar y el "Procesando audio..." colgado
+        # para siempre (no hay error handler registrado a nivel Application).
+        logger.error("Error descargando audio de voz: %s", e)
+        await status_msg.edit_text("❌ No pude descargar el audio (problema de red). Probá enviarlo de nuevo.")
+        return
 
     await _process_voice_audio(chat_id, context.bot, user, audio_bytes, status_msg, context)
 
