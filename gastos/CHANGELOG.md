@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.17.0
+- Rediseño visual (identidad ámbar) extendido a Dólares, Categorías y Sistema, completando las 6 pantallas
+- Dólares: tira de stats reemplaza las 3 tarjetas sueltas; el tipo de cambio (Venta/Compra) se muestra como texto coloreado en vez de badge; colores de los gráficos alineados a la paleta nueva
+- Categorías: se agrega título de página; el resto de la funcionalidad (alta/edición/borrado de categorías, subcategorías y keywords) queda sin cambios
+- Sistema: tarjetas sin borde con radio más grande, se quitan los emojis de los encabezados, la tarjeta de backup separa el estado/botón de la descripción con un divisor, y el botón "Restaurar" pasa a un rojo sólido distintivo para remarcar que es una acción destructiva
+
 ## 1.16.0
 - Rediseño visual completo del dashboard web: nueva identidad ámbar/naranja (antes violeta), tipografía Plus Jakarta Sans, tarjetas sin borde con radios más grandes y layout más espaciado, aplicado a las 6 pantallas (Dashboard, Historial, Fijos, Dólares, Categorías, Sistema) en modo claro y oscuro
 - Dashboard: el total del mes pasa a ser el elemento principal del encabezado (con la variación vs. mes anterior como badge con flecha), y las 4 tarjetas KPI se reemplazan por una tira compacta (Gastos / Promedio diario / Top del mes); se elimina el gráfico chico de tendencia (sparkline) de cada tarjeta

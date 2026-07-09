@@ -115,6 +115,11 @@ button[disabled] {
 {% block content %}
 <div class="container">
 
+  <!-- Page header -->
+  <div class="page-header">
+    <div class="page-title">Categorías</div>
+  </div>
+
   <!-- ── Categorías ──────────────────────────────────────────────────────── -->
   <div class="card">
     <div class="section-header">
@@ -149,7 +154,7 @@ button[disabled] {
       </div>
       <div class="form-group">
         <label class="form-label" for="new-cat-color">Color</label>
-        <input id="new-cat-color" type="color" value="#6366f1">
+        <input id="new-cat-color" type="color" value="#f0a030">
       </div>
       <button class="btn btn-primary" id="btn-add-cat">Agregar</button>
     </div>
@@ -423,7 +428,7 @@ button[disabled] {
       renderCategories();
       document.getElementById("new-cat-name").value  = "";
       document.getElementById("new-cat-icon").value  = "";
-      document.getElementById("new-cat-color").value = "#6366f1";
+      document.getElementById("new-cat-color").value = "#f0a030";
       showToast(`Categoría "${name}" creada.`);
     } else {
       showToast(data.error || "Error al crear la categoría.", true);

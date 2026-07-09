@@ -3,17 +3,6 @@
 {% block nav_dolares %}active{% endblock %}
 
 {% block extra_styles %}
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-@media (max-width: 700px) {
-  .summary-grid { grid-template-columns: 1fr; }
-}
-
 .chart-wrap {
   position: relative;
   height: 260px;
@@ -71,23 +60,24 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 {% block content %}
 <div class="container">
 
-  <!-- ── Summary cards ──────────────────────────────────────────────────────── -->
-  <div class="section-header" style="margin-bottom:16px">
-    <div class="section-title">💵 Dólares</div>
+  <!-- Page header -->
+  <div class="page-header">
+    <div class="page-title">Dólares</div>
   </div>
 
-  <div class="summary-grid">
-    <div class="card">
-      <div class="card-title">USD cambiado este mes</div>
-      <div class="card-value" id="val-usd">—</div>
+  <!-- Stat strip -->
+  <div class="stat-strip">
+    <div class="stat-cell">
+      <div class="stat-label">USD cambiado este mes</div>
+      <div class="stat-value" id="val-usd">—</div>
     </div>
-    <div class="card">
-      <div class="card-title">Cotización promedio</div>
-      <div class="card-value" id="val-cot">—</div>
+    <div class="stat-cell">
+      <div class="stat-label">Cotización promedio</div>
+      <div class="stat-value" id="val-cot">—</div>
     </div>
-    <div class="card">
-      <div class="card-title">ARS obtenidos este mes</div>
-      <div class="card-value" id="val-ars">—</div>
+    <div class="stat-cell" style="border-right:none">
+      <div class="stat-label">ARS obtenidos este mes</div>
+      <div class="stat-value" id="val-ars">—</div>
     </div>
   </div>
 
@@ -223,6 +213,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   const ACCENT    = cssVar('--accent', 'oklch(0.78 0.15 75)');
   const GREEN     = cssVar('--green', 'oklch(0.72 0.14 155)');
   const BLUE      = 'oklch(0.72 0.11 230)';
+  const tint      = (color, alpha) => `color-mix(in oklab, ${color} ${Math.round(alpha * 100)}%, transparent)`;
 
   Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
   Chart.defaults.font.size   = 12;
@@ -250,7 +241,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         datasets: [{
           label: "USD cambiado",
           data: rows.map(r => r.total_usd),
-          backgroundColor: "rgba(56,189,248,0.7)",
+          backgroundColor: BLUE,
           borderColor: BLUE,
           borderWidth: 1,
           borderRadius: 4,
@@ -286,7 +277,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
           label: "Cotización",
           data: values,
           borderColor: ACCENT,
-          backgroundColor: "rgba(124,106,247,0.1)",
+          backgroundColor: tint(ACCENT, 0.12),
           borderWidth: 2,
           pointRadius: rows.length <= 20 ? 4 : 2,
           fill: true,
@@ -320,7 +311,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         datasets: [{
           label: "ARS obtenidos",
           data: rows.map(r => r.total_ars),
-          backgroundColor: "rgba(46,202,138,0.7)",
+          backgroundColor: GREEN,
           borderColor: GREEN,
           borderWidth: 1,
           borderRadius: 4,
@@ -384,8 +375,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const isVenta = t !== "compra";
     const color = isVenta ? "var(--green)" : "var(--amber)";
     const label = isVenta ? "Venta" : "Compra";
-    return '<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;'
-      + 'background:' + color + '22;color:' + color + '">' + label + '</span>';
+    return '<span style="font-weight:700;color:' + color + '">' + label + '</span>';
   }
 
   function buildRow(r) {

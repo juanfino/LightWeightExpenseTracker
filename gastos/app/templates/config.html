@@ -18,34 +18,31 @@
 
 .config-card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 12px;
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 20px;
 }
 
 .config-card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.config-card-icon {
-  font-size: 22px;
-  line-height: 1;
+  margin-bottom: 0;
 }
 
 .config-card-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text);
+  margin-bottom: 5px;
 }
 
 .config-card-sub {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--text2);
-  margin-top: 2px;
+}
+
+.config-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 22px 0;
 }
 
 .config-row {
@@ -56,11 +53,10 @@
 }
 
 .restore-instructions {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
 }
 
 .restore-instructions ol {
@@ -72,7 +68,7 @@
 }
 
 .restore-instructions li {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text2);
   line-height: 1.5;
 }
@@ -87,6 +83,14 @@
   flex: 1;
   min-width: 0;
 }
+
+.btn-restore {
+  border-color: transparent;
+  background: oklch(0.4 0.16 25);
+  color: oklch(0.95 0.02 25);
+}
+
+.btn-restore:hover { filter: brightness(1.08); }
 
 .status-pill {
   display: inline-flex;
@@ -119,14 +123,22 @@
   min-height: 20px;
   color: var(--text2);
 }
+
+.restore-instructions code {
+  font-family: monospace;
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
 {% endblock %}
 
 {% block content %}
 <div class="container" style="max-width: 680px;">
 
-  <div style="margin-bottom: 28px;">
-    <div style="font-size: 20px; font-weight: 600; letter-spacing: -0.02em;">Sistema</div>
-    <div style="font-size: 13px; color: var(--text2); margin-top: 4px;">Backup y restauración de la base de datos</div>
+  <div style="margin-bottom: 36px;">
+    <div class="page-title">Sistema</div>
+    <div style="font-size: 15px; color: var(--text2); margin-top: 8px;">Backup y restauración de la base de datos</div>
   </div>
 
   <!-- ── Base de datos ────────────────────────────────────────────────────── -->
@@ -135,20 +147,18 @@
 
     <!-- Backup status card -->
     <div class="config-card">
-      <div class="config-card-header">
-        <span class="config-card-icon">🗄</span>
-        <div>
+      <div class="config-row">
+        <div class="config-card-header">
           <div class="config-card-title">Base de datos</div>
           <div class="config-card-sub" id="backup-status-label">cargando…</div>
-        </div>
-      </div>
-      <div class="config-row">
-        <div style="font-size: 13px; color: var(--text2);">
-          El backup se envía automáticamente todos los días a las 21:00 ART.
         </div>
         <button class="btn btn-primary" id="btn-backup-now" style="white-space:nowrap; flex-shrink:0;">
           Backup ahora
         </button>
+      </div>
+      <div class="config-divider"></div>
+      <div style="font-size: 13.5px; color: var(--text2);">
+        El backup se envía automáticamente todos los días a las 21:00 ART.
       </div>
       <div class="feedback-msg" id="backup-feedback"></div>
     </div>
@@ -156,14 +166,11 @@
     <!-- Restore card -->
     <div class="config-card">
       <div class="config-card-header">
-        <span class="config-card-icon">📥</span>
-        <div>
-          <div class="config-card-title">Restaurar base de datos</div>
-          <div class="config-card-sub">La app se reiniciará automáticamente tras restaurar</div>
-        </div>
+        <div class="config-card-title">Restaurar base de datos</div>
+        <div class="config-card-sub">La app se reiniciará automáticamente tras restaurar</div>
       </div>
 
-      <div class="restore-instructions">
+      <div class="restore-instructions" style="margin-top: 22px;">
         <ol>
           <li>Subí tu archivo <code>gastos.db</code> a WeTransfer, Google Drive (link público) o similar</li>
           <li>Pegá la URL de descarga directa aquí abajo</li>
@@ -174,7 +181,7 @@
 
       <div class="restore-input-row">
         <input type="url" id="restore-url" placeholder="https://..." autocomplete="off" spellcheck="false" />
-        <button class="btn btn-danger" id="btn-restore" style="white-space:nowrap; flex-shrink:0;">
+        <button class="btn btn-restore" id="btn-restore" style="white-space:nowrap; flex-shrink:0;">
           Restaurar
         </button>
       </div>
