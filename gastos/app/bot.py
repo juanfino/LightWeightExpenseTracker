@@ -15,6 +15,7 @@ import ocr as ocr_module
 import audio as audio_module
 import dolar as dolar_module
 import intent as intent_module
+import fixed_matcher
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,8 @@ pending_voice: dict[int, dict] = {}
 pending_voice_retry: dict[int, bytes] = {}
 # Gastos esperando nuevo monto del usuario, keyed por chat_id → expense_id
 pending_amount_edit: dict[int, int] = {}
-# Gasto parseado esperando confirmación de match con gasto fijo
-pending_fixed_match: dict[int, dict] = {}
-# Monto pendiente para registrar un gasto fijo directamente desde /fijos
+# Monto pendiente para registrar un gasto fijo directamente desde /fijos (o desde el
+# fallback "ninguno de estos" de la búsqueda de candidatos de "ya lo pagué")
 pending_fixed_direct: dict[int, dict] = {}
 # Gasto esperando selección de subcategoría, keyed por chat_id → expense_id
 pending_subcategory: dict[int, int] = {}
@@ -143,14 +143,33 @@ def _build_category_keyboard(expense_id: int, page: int = 0) -> InlineKeyboardMa
     if nav:
         rows.append(nav)
 
-    rows.append([InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")])
+    rows.append([
+        InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}"),
+        InlineKeyboardButton("🔗 Gasto fijo",   callback_data=f"fl:{expense_id}"),
+    ])
     return InlineKeyboardMarkup(rows)
 
 
 def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}")
+        InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}"),
+        InlineKeyboardButton("🔗 Gasto fijo",   callback_data=f"fl:{expense_id}"),
     ]])
+
+
+def _build_fixed_link_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    """Picker to attach/detach an existing expense to a fixed expense — same interaction
+    language as the category picker, but single-page since fixed-expense lists are short."""
+    fixed_expenses = db.get_all_fixed_expenses()
+    rows = []
+    for i in range(0, len(fixed_expenses), 2):
+        row = [
+            InlineKeyboardButton(fe["concept"][:24], callback_data=f"flset:{expense_id}:{fe['id']}")
+            for fe in fixed_expenses[i:i + 2]
+        ]
+        rows.append(row)
+    rows.append([InlineKeyboardButton("— Ninguno —", callback_data=f"flset:{expense_id}:none")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _build_subcategory_keyboard(expense_id: int, subcats: list) -> InlineKeyboardMarkup:
@@ -204,14 +223,45 @@ def _needs_intent(text: str) -> bool:
 
 # ── Gastos fijos — helpers ────────────────────────────────────────────────────
 
-def _concept_words(concept: str) -> set[str]:
-    """Words of 3+ chars from a concept, lowercased, punctuation stripped."""
-    return {w for w in re.sub(r'[^\w\s]', '', concept.lower()).split() if len(w) >= 3}
+def _expense_period(expense) -> tuple[int, int]:
+    """Period (year, month) an expense's own date falls in, in ART."""
+    return fixed_matcher.expense_period(expense["created_at"], BAIRES)
 
 
-def _find_fixed_matches(concept: str, fixed_expenses) -> list:
-    words = _concept_words(concept)
-    return [fe for fe in fixed_expenses if words & _concept_words(fe["concept"])]
+async def _maybe_offer_fixed_link(chat_id: int, bot, expense_id: int, concept: str) -> None:
+    """Runs after ANY expense is saved, on every input path (plain text, NL, voice, OCR) —
+    the single downstream seam that offers linking a newly logged expense to a matching
+    fixed expense. Never links on its own; always asks. No-op if nothing matches, so most
+    expenses see no extra message."""
+    fixed_expenses = db.get_all_fixed_expenses()
+    matches = fixed_matcher.find_fixed_expense_matches(concept, fixed_expenses)
+    if not matches:
+        return
+
+    expense = db.get_expense_by_id(expense_id)
+    if not expense:
+        return
+    year, month = _expense_period(expense)
+
+    if len(matches) == 1:
+        fe = matches[0]
+        payments = db.get_fixed_payments_for_period(year, month)
+        already_paid = next((p["paid"] for p in payments if p["id"] == fe["id"]), False)
+        verb = "¿Es un segundo pago de tu gasto fijo" if already_paid else "¿Es el pago de tu gasto fijo"
+        msg = f"💡 {verb} <b>{fe['concept']}</b>?"
+        buttons = [[
+            InlineKeyboardButton("✅ Sí",  callback_data=f"fixlink:{expense_id}:{fe['id']}"),
+            InlineKeyboardButton("❌ No",  callback_data=f"fixlink:{expense_id}:none"),
+        ]]
+    else:
+        msg = "💡 Este gasto coincide con varios gastos fijos. ¿Es el pago de alguno?"
+        buttons = [
+            [InlineKeyboardButton(f"✅ {fe['concept']}", callback_data=f"fixlink:{expense_id}:{fe['id']}")]
+            for fe in matches
+        ]
+        buttons.append([InlineKeyboardButton("❌ Ninguno", callback_data=f"fixlink:{expense_id}:none")])
+
+    await bot.send_message(chat_id=chat_id, text=msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 
 # ── Guard de usuario ──────────────────────────────────────────────────────────
@@ -360,6 +410,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+    await _maybe_offer_fixed_link(chat_id, bot, expense_id, item["concept"])
 
 
 async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes,
@@ -533,20 +584,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
             )
             return
-        fe = db.get_fixed_expense_by_id(fdata["fixed_expense_id"])
         now = datetime.now(BAIRES)
         date_str = now.strftime("%Y-%m-%d")
-        category_id = fe["category_id"] if fe else None
-        expense_id = db.create_expense_full(user["id"], category_id, fdata["concept"], amount, date_str)
-        db.create_fixed_payment(fdata["fixed_expense_id"], expense_id, now.year, now.month)
-        cat = db.get_category_by_id(category_id) if category_id else None
+        expense_id = db.create_expense_full(user["id"], None, fdata["concept"], amount, date_str)
+        db.link_expense_to_fixed(expense_id, fdata["fixed_expense_id"], now.year, now.month)
+        expense = db.get_expense_by_id(expense_id)
+        cat = db.get_category_by_id(expense["category_id"]) if expense["category_id"] else None
         cat_name = cat["name"] if cat else "Sin categoría"
         cat_icon = cat["icon"] if cat else "❓"
         await update.message.reply_text(
             f"✅ <b>Gasto fijo registrado</b>\n"
             f"📋 {fdata['concept']}\n"
             f"💰 {fmt_amount(amount)}\n"
-            f"{cat_icon} {cat_name}\n"
+            f"{_cat_line(cat_icon, cat_name, expense['subcategory_id'])}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
@@ -618,6 +668,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<code>#ID{expense_id}</code>",
                 parse_mode="HTML",
             )
+            await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept)
         elif response in ("no", "n", "cancelar"):
             del pending_ocr[chat_id]
             await update.message.reply_text("❌ Carga cancelada.")
@@ -628,7 +679,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Abandon any stale pending state if the user sends a new message
-    pending_fixed_match.pop(chat_id, None)
     pending_subcategory.pop(chat_id, None)
     pending_nl_confirm.pop(chat_id, None)
     pending_nl_pick.pop(chat_id, None)
@@ -664,46 +714,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keywords = db.get_all_keywords()
     category_id, subcategory_id = categorizer.categorize(parsed["concept"], keywords)
 
-    # Check for fixed expense matches before saving
-    fixed_expenses = db.get_all_fixed_expenses()
-    matches = _find_fixed_matches(parsed["concept"], fixed_expenses)
-
-    if matches:
-        pending_fixed_match[chat_id] = {
-            "concept":        parsed["concept"],
-            "amount":         parsed["amount"],
-            "category_id":    category_id,
-            "subcategory_id": subcategory_id,
-            "raw_text":       text,
-        }
-        if len(matches) == 1:
-            fe = matches[0]
-            est_str = fmt_amount(fe["estimated_amount"]) if fe["estimated_amount"] else "sin estimado"
-            msg = (
-                f"💡 '<b>{parsed['concept']}</b>' coincide con tu gasto fijo "
-                f"<b>{fe['concept']}</b> ({est_str}). ¿Cómo querés registrarlo?"
-            )
-            buttons = [[
-                InlineKeyboardButton("✅ Como gasto fijo",    callback_data=f"fix:confirm:{fe['id']}"),
-                InlineKeyboardButton("📝 Registrar normal",  callback_data="fix:normal"),
-            ]]
-        else:
-            msg = f"💡 '<b>{parsed['concept']}</b>' coincide con varios gastos fijos. ¿Cuál es?"
-            buttons = []
-            for fe in matches:
-                est_str = fmt_amount(fe["estimated_amount"]) if fe["estimated_amount"] else "sin est."
-                buttons.append([InlineKeyboardButton(
-                    f"✅ {fe['concept']} ({est_str})",
-                    callback_data=f"fix:confirm:{fe['id']}",
-                )])
-            buttons.append([InlineKeyboardButton("📝 Registrar normal", callback_data="fix:normal")])
-
-        await update.message.reply_text(
-            msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-
-    # No fixed match — save normally
     categories = {r["id"]: r for r in db.get_all_categories()}
     cat = categories.get(category_id)
     cat_name = cat["name"] if cat else "Sin categoría"
@@ -738,6 +748,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+
+    await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, parsed["concept"])
 
 
 async def cmd_gastos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -904,7 +916,7 @@ async def cmd_fijos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     now = datetime.now(BAIRES)
-    rows = db.get_fixed_payments_for_month(now.year, now.month)
+    rows = db.get_fixed_payments_for_period(now.year, now.month)
 
     if not rows:
         await update.message.reply_text(
@@ -921,14 +933,23 @@ async def cmd_fijos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for r in rows:
         if r["paid"]:
-            actual = fmt_amount(r["actual_amount"]) if r["actual_amount"] else "—"
-            lines.append(f"✅ {r['concept']} — {actual}")
+            lines.append(f"✅ {r['concept']} — {fmt_amount(r['total_paid'])}")
+            # Secondary, less prominent action: a legitimate second payment in the same
+            # period (e.g. a utility billing error) must stay reachable even once "paid".
+            buttons.append([InlineKeyboardButton(
+                f"+ Otro pago: {r['concept']}",
+                callback_data=f"fix:direct_pay:{r['id']}",
+            )])
         else:
             est = f"~{fmt_amount(r['estimated_amount'])}" if r["estimated_amount"] else "sin estimado"
             lines.append(f"⬜ {r['concept']} — {est}")
             buttons.append([InlineKeyboardButton(
                 f"Registrar pago: {r['concept']}",
                 callback_data=f"fix:direct_pay:{r['id']}",
+            )])
+            buttons.append([InlineKeyboardButton(
+                f"✓ Ya lo pagué: {r['concept']}",
+                callback_data=f"fix:already:{r['id']}",
             )])
 
     lines.append(f"\n{count_paid} de {len(rows)} pagados")
@@ -1033,6 +1054,19 @@ async def cmd_nueva_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"✅ Categoría creada: {icon} <b>{name}</b>",
         parse_mode="HTML",
     )
+
+
+def _find_fixed_expense(name: str):
+    """Find an ACTIVE fixed expense by concept, ignoring accents/case. Used to resolve the
+    NL edit flow's 'fixed_expense' change — no fuzzy NL creation of new fixed expenses,
+    that stays a dashboard-only action."""
+    target = categorizer.normalize((name or "").strip())
+    if not target:
+        return None
+    for fe in db.get_all_fixed_expenses():
+        if categorizer.normalize(fe["concept"]) == target:
+            return fe
+    return None
 
 
 # ── Helper: buscar categoría normalizando acentos ─────────────────────────────
@@ -1244,6 +1278,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept)
         return
 
     elif cb == "ocr:cancel":
@@ -1284,6 +1319,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, item["concept"])
         if state["queue"]:
             await _send_next_voice_confirmation(chat_id, context.bot)
         else:
@@ -1440,75 +1476,109 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=_build_category_keyboard(int(expense_id_str), int(page_str))
         )
 
-    elif cb.startswith("fix:confirm:"):
-        fixed_expense_id = int(cb.split(":")[2])
-        if chat_id not in pending_fixed_match:
-            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+    elif cb.startswith("fixlink:"):
+        # Post-save "is this the payment for fixed expense X?" offer (_maybe_offer_fixed_link).
+        _, expense_id_str, fe_part = cb.split(":")
+        expense_id = int(expense_id_str)
+        if fe_part == "none":
+            await query.edit_message_text("👍 Gasto registrado como normal.")
             return
-        data = pending_fixed_match.pop(chat_id)
-        now = datetime.now(BAIRES)
-        try:
-            expense_id = db.create_expense(
-                user_id=user["id"],
-                category_id=data["category_id"],
-                subcategory_id=data.get("subcategory_id"),
-                concept=data["concept"],
-                amount=data["amount"],
-                raw_text=data["raw_text"],
-            )
-        except Exception as e:
-            logger.error("Error guardando gasto fijo: %s", e)
-            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
+        expense = db.get_expense_by_id(expense_id)
+        if not expense or expense["user_id"] != user["id"]:
+            await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
             return
-        db.create_fixed_payment(fixed_expense_id, expense_id, now.year, now.month)
-        fe = db.get_fixed_expense_by_id(fixed_expense_id)
-        cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
-        cat_name = cat["name"] if cat else "Sin categoría"
-        cat_icon = cat["icon"] if cat else "❓"
-        keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
+        fe_id = int(fe_part)
+        year, month = _expense_period(expense)
+        db.link_expense_to_fixed(expense_id, fe_id, year, month)
+        fe = db.get_fixed_expense_by_id(fe_id)
         await query.edit_message_text(
-            f"✅ <b>Gasto fijo registrado</b>\n"
-            f"📋 {data['concept']}\n"
-            f"💰 {fmt_amount(data['amount'])}\n"
-            f"{_cat_line(cat_icon, cat_name, data.get('subcategory_id'))}\n"
-            f"👤 {user['name']}\n"
-            f"📌 {fe['concept'] if fe else 'Gasto fijo'}\n"
-            f"<code>#ID{expense_id}</code>",
+            f"✅ Vinculado a tu gasto fijo <b>{fe['concept'] if fe else 'desconocido'}</b>.",
             parse_mode="HTML",
-            reply_markup=keyboard,
         )
 
-    elif cb == "fix:normal":
-        if chat_id not in pending_fixed_match:
-            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+    elif cb.startswith("fix:already:"):
+        # "✓ Ya lo pagué" from /fijos: search already-logged, unlinked expenses this period.
+        fixed_expense_id = int(cb.split(":")[2])
+        fe = db.get_fixed_expense_by_id(fixed_expense_id)
+        if not fe:
+            await query.answer("Gasto fijo no encontrado.", show_alert=True)
             return
-        data = pending_fixed_match.pop(chat_id)
-        cat = db.get_category_by_id(data["category_id"]) if data["category_id"] else None
-        cat_name = cat["name"] if cat else "Sin categoría"
-        cat_icon = cat["icon"] if cat else "❓"
-        try:
-            expense_id = db.create_expense(
-                user_id=user["id"],
-                category_id=data["category_id"],
-                subcategory_id=data.get("subcategory_id"),
-                concept=data["concept"],
-                amount=data["amount"],
-                raw_text=data["raw_text"],
+        now = datetime.now(BAIRES)
+        unlinked = db.get_unlinked_expenses_for_period(now.year, now.month)
+        candidates = fixed_matcher.find_candidate_expenses(fe, unlinked)
+        if not candidates:
+            pending_fixed_direct[chat_id] = {"fixed_expense_id": fixed_expense_id, "concept": fe["concept"]}
+            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe["estimated_amount"] else ""
+            await query.message.reply_text(
+                f"🔍 No encontré ningún gasto sin vincular que coincida con <b>{fe['concept']}</b>.\n"
+                f"💰 ¿Cuánto pagaste?{est_str}\nEnviá el monto:",
+                parse_mode="HTML",
             )
-        except Exception as e:
-            logger.error("Error guardando gasto normal: %s", e)
-            await query.edit_message_text("⚠️ Error al guardar el gasto. Intentá de nuevo.")
             return
-        keyboard = _build_category_keyboard(expense_id) if data["category_id"] is None else _build_edit_only_keyboard(expense_id)
-        await query.edit_message_text(
-            f"✅ <b>Gasto registrado</b>\n"
-            f"📋 {data['concept']}\n"
-            f"💰 {fmt_amount(data['amount'])}\n"
-            f"{_cat_line(cat_icon, cat_name, data.get('subcategory_id'))}\n"
-            f"👤 {user['name']}\n"
-            f"<code>#ID{expense_id}</code>",
+        buttons = [
+            [InlineKeyboardButton(
+                f"{(exp['concept'] or '')[:24]} · {fmt_amount(exp['amount'])}",
+                callback_data=f"fixpick:{fixed_expense_id}:{exp['id']}",
+            )]
+            for exp in candidates
+        ]
+        buttons.append([InlineKeyboardButton("❌ Ninguno de estos", callback_data=f"fixpick:{fixed_expense_id}:none")])
+        await query.message.reply_text(
+            f"🔍 ¿Alguno de estos es el pago de <b>{fe['concept']}</b>?",
             parse_mode="HTML",
-            reply_markup=keyboard,
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    elif cb.startswith("fixpick:"):
+        _, fe_id_str, target = cb.split(":")
+        fe_id = int(fe_id_str)
+        fe = db.get_fixed_expense_by_id(fe_id)
+        if target == "none":
+            pending_fixed_direct[chat_id] = {"fixed_expense_id": fe_id, "concept": fe["concept"] if fe else ""}
+            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe and fe["estimated_amount"] else ""
+            await query.edit_message_text(
+                f"💰 ¿Cuánto pagaste por <b>{fe['concept'] if fe else 'este gasto fijo'}</b>?{est_str}\nEnviá el monto:",
+                parse_mode="HTML",
+            )
+            return
+        expense_id = int(target)
+        expense = db.get_expense_by_id(expense_id)
+        if not expense or expense["user_id"] != user["id"]:
+            await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
+            return
+        year, month = _expense_period(expense)
+        db.link_expense_to_fixed(expense_id, fe_id, year, month)
+        await query.edit_message_text(
+            f"✅ Vinculado <code>#ID{expense_id}</code> a <b>{fe['concept'] if fe else 'gasto fijo'}</b>.",
+            parse_mode="HTML",
+        )
+
+    elif cb.startswith("fl:"):
+        # Open the fixed-expense picker from an existing expense's edit keyboard.
+        expense_id = int(cb.split(":")[1])
+        await query.message.reply_text(
+            "🔗 ¿A qué gasto fijo vinculamos este gasto?",
+            reply_markup=_build_fixed_link_keyboard(expense_id),
+        )
+
+    elif cb.startswith("flset:"):
+        _, expense_id_str, target = cb.split(":")
+        expense_id = int(expense_id_str)
+        expense = db.get_expense_by_id(expense_id)
+        if not expense or expense["user_id"] != user["id"]:
+            await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
+            return
+        if target == "none":
+            db.unlink_expense_from_fixed(expense_id)
+            await query.edit_message_text(f"🔓 <code>#ID{expense_id}</code> desvinculado de gastos fijos.", parse_mode="HTML")
+            return
+        fe_id = int(target)
+        year, month = _expense_period(expense)
+        db.link_expense_to_fixed(expense_id, fe_id, year, month)
+        fe = db.get_fixed_expense_by_id(fe_id)
+        await query.edit_message_text(
+            f"✅ <code>#ID{expense_id}</code> vinculado a <b>{fe['concept'] if fe else 'gasto fijo'}</b>.",
+            parse_mode="HTML",
         )
 
     elif cb.startswith("fix:direct_pay:"):
@@ -1758,6 +1828,7 @@ async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+    await _maybe_offer_fixed_link(chat_id, bot, expense_id, concept)
 
 
 async def _nl_start_edit(chat_id: int, bot, user, result: dict) -> None:
@@ -1796,6 +1867,10 @@ async def _nl_start_edit(chat_id: int, bot, user, result: dict) -> None:
     )
 
 
+def _is_unlink_token(fe_name: str) -> bool:
+    return fe_name.strip().lower() in ("ninguno", "ninguna", "none")
+
+
 def _describe_changes(expense, changes: dict) -> list[str]:
     """Líneas de preview de una edición propuesta."""
     lines = []
@@ -1814,6 +1889,13 @@ def _describe_changes(expense, changes: dict) -> list[str]:
             lines.append(f"🏷 Categoría → {cat_name} (nueva, se va a crear)")
     if changes.get("subcategory"):
         lines.append(f"↳ Subcategoría → {changes['subcategory']}")
+    fe_name = changes.get("fixed_expense")
+    if fe_name:
+        if _is_unlink_token(fe_name):
+            lines.append("🔗 Gasto fijo → (desvincular)")
+        else:
+            fe = _find_fixed_expense(fe_name)
+            lines.append(f"🔗 Gasto fijo → {fe['concept'] if fe else fe_name + ' (no encontrado)'}")
     return lines
 
 
@@ -1918,7 +2000,24 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
         else:
             fields["subcategory_id"] = db.add_subcategory(target_cat_id, sub_name)
 
-    if not db.update_expense_fields(expense_id, user["id"], **fields):
+    changed_anything = False
+    if fields:
+        changed_anything = db.update_expense_fields(expense_id, user["id"], **fields)
+
+    fe_name = changes.get("fixed_expense")
+    if fe_name:
+        if _is_unlink_token(fe_name):
+            db.unlink_expense_from_fixed(expense_id)
+            changed_anything = True
+        else:
+            fe = _find_fixed_expense(fe_name)
+            if fe:
+                current = db.get_expense_by_id(expense_id)
+                year, month = _expense_period(current)
+                db.link_expense_to_fixed(expense_id, fe["id"], year, month)
+                changed_anything = True
+
+    if not changed_anything:
         await query.edit_message_text("⚠️ No pude editar el gasto.")
         return
 

@@ -132,6 +132,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
             <th class="sortable" data-sort="concept">Concepto</th>
             <th class="sortable" data-sort="category_name">Categoría</th>
             <th class="hide-mobile">Subcategoría</th>
+            <th class="hide-mobile">Gasto fijo</th>
             <th class="sortable" data-sort="amount">Monto</th>
             <th class="sortable" data-sort="user_name">Usuario</th>
             <th></th>
@@ -218,6 +219,15 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   let allExpenses = [];
   let page        = 0;
   const categories = JSON.parse(document.getElementById("cat-data").textContent);
+  let allFixedExpenses    = [];
+  let fixedExpenseNameCache = {}; // id -> concept
+
+  async function loadFixedExpenses() {
+    const res = await fetch("/api/fixed-expenses").then(function(r) { return r.json(); }).catch(function() { return []; });
+    allFixedExpenses = Array.isArray(res) ? res : [];
+    fixedExpenseNameCache = {};
+    allFixedExpenses.forEach(function(fe) { fixedExpenseNameCache[fe.id] = fe.concept; });
+  }
 
   // Category palette keyed by name (design tokens); DB color is only a fallback.
   const CAT_COLORS = {
@@ -296,12 +306,16 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const subcatHtml  = r.subcategory_name
       ? '<span style="font-size:11px;color:var(--muted);padding:2px 7px;border:1px solid var(--border);border-radius:4px;white-space:nowrap">' + r.subcategory_name + '</span>'
       : '';
+    const fixedHtml = r.fixed_expense_id
+      ? '<span class="badge">🔗 ' + (fixedExpenseNameCache[r.fixed_expense_id] || '—') + '</span>'
+      : '<span style="color:var(--muted)">—</span>';
     return '<tr id="row-' + r.id + '">'
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td data-label="Concepto">' + r.concept + '</td>'
       + '<td data-label="Categoría"><span style="display:flex;align-items:center;gap:8px"><span class="cat-dot" style="background:' + getCatColor(r.category_name, r.category_color) + '"></span>' + (r.category_name || "Sin categoría") + '</span></td>'
       + '<td class="hide-mobile" data-label="Subcategoría">' + subcatHtml + '</td>'
+      + '<td class="hide-mobile" data-label="Gasto fijo">' + fixedHtml + '</td>'
       + '<td class="mono" data-label="Monto" style="font-weight:600">' + fmtAmount(r.amount) + '</td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px">'
@@ -317,14 +331,21 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       return '<option value="' + cat.id + '"' + sel + '>' + cat.icon + ' ' + cat.name + '</option>';
     }).join("");
 
+    const fixedOptions = allFixedExpenses.map(function(fe) {
+      const sel = fe.id === r.fixed_expense_id ? " selected" : "";
+      return '<option value="' + fe.id + '"' + sel + '>' + fe.concept + '</option>';
+    }).join("");
+
     const safeConceptAttr = r.concept.replace(/"/g, "&quot;");
+    const catDisabled = r.fixed_expense_id ? " disabled" : "";
 
     return '<tr id="row-' + r.id + '" style="background:color-mix(in oklab, var(--accent) 8%, transparent)">'
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
       + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
       + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:0;box-sizing:border-box"></td>'
-      + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
-      + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
+      + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
+      + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
+      + '<td class="hide-mobile" data-label="Gasto fijo"><select id="ei-fixed-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Ninguno —</option>' + fixedOptions + '</select></td>'
       + '<td data-label="Monto"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"></td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
@@ -364,11 +385,28 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const catEl    = document.getElementById("ei-cat-"    + id);
     const subcatEl = document.getElementById("ei-subcat-" + id);
+    const fixedEl  = document.getElementById("ei-fixed-"  + id);
 
     await loadSubcategories(r.category_id, subcatEl, r.subcategory_id);
 
     catEl.addEventListener("change", function() {
       loadSubcategories(catEl.value ? parseInt(catEl.value) : null, subcatEl, null);
+    });
+
+    // Selecting a fixed expense forces category/subcategory to its own (same rule the
+    // backend enforces on save) — greyed out here so the UI doesn't promise an override
+    // that saveEdit won't actually apply.
+    fixedEl.addEventListener("change", async function() {
+      const fe = allFixedExpenses.find(function(f) { return f.id === parseInt(fixedEl.value); });
+      if (fe) {
+        catEl.value = fe.category_id || "";
+        catEl.disabled = true;
+        await loadSubcategories(fe.category_id, subcatEl, fe.subcategory_id);
+        subcatEl.disabled = true;
+      } else {
+        catEl.disabled = false;
+        subcatEl.disabled = false;
+      }
     });
   }
 
@@ -384,12 +422,14 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const catEl     = document.getElementById("ei-cat-"     + id);
     const subcatEl  = document.getElementById("ei-subcat-"  + id);
     const amountEl  = document.getElementById("ei-amount-"  + id);
+    const fixedEl   = document.getElementById("ei-fixed-"   + id);
     const errEl     = document.getElementById("ei-err-"     + id);
 
     const concept  = conceptEl.value.trim();
     const amount   = parseFloat(amountEl.value);
     const catId    = catEl.value    ? parseInt(catEl.value)    : null;
     const subcatId = subcatEl.value ? parseInt(subcatEl.value) : null;
+    const fixedId  = fixedEl.value  ? parseInt(fixedEl.value)  : null;
 
     errEl.style.display = "none";
 
@@ -399,7 +439,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const res = await fetch("/api/expenses/update", {
       method:  "POST",
       headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({id, concept, amount, category_id: catId, subcategory_id: subcatId}),
+      body:    JSON.stringify({id, concept, amount, category_id: catId, subcategory_id: subcatId, fixed_expense_id: fixedId}),
     });
 
     const data = await res.json().catch(function() { return {}; });
@@ -409,19 +449,25 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       return;
     }
 
+    // When linked, the backend forces category/subcategory to the fixed expense's own —
+    // reflect whatever it actually saved, not just what the (disabled) selects showed.
+    const finalCatId    = data.category_id    !== undefined ? data.category_id    : catId;
+    const finalSubcatId = data.subcategory_id !== undefined ? data.subcategory_id : subcatId;
+
     // Update local data
     const idx = allExpenses.findIndex(function(e) { return e.id === id; });
     if (idx !== -1) {
-      const cat = categories.find(function(c) { return c.id === catId; });
+      const cat = categories.find(function(c) { return c.id === finalCatId; });
       allExpenses[idx] = Object.assign({}, allExpenses[idx], {
         concept:          concept,
         amount:           amount,
-        category_id:      catId,
+        category_id:      finalCatId,
         category_name:    cat ? cat.name  : "Sin categoría",
         category_icon:    cat ? cat.icon  : "❓",
         category_color:   cat ? cat.color : "#6b7280",
-        subcategory_id:   subcatId,
-        subcategory_name: subcatId ? (subcatNameCache[subcatId] || null) : null,
+        subcategory_id:   finalSubcatId,
+        subcategory_name: finalSubcatId ? (subcatNameCache[finalSubcatId] || null) : null,
+        fixed_expense_id: fixedId,
       });
       const tr = document.getElementById("row-" + id);
       if (tr) tr.outerHTML = buildReadRow(allExpenses[idx]);
@@ -449,7 +495,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const tbody = document.getElementById("expense-body");
     if (slice.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">Sin resultados</td></tr>';
       return;
     }
     tbody.innerHTML = slice.map(buildReadRow).join("");
@@ -589,6 +635,18 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     }
 
     document.getElementById("add-modal").style.display = "none";
+
+    if (data.suggested_fixed_expense) {
+      const fe = data.suggested_fixed_expense;
+      if (confirm('💡 "' + concept + '" coincide con tu gasto fijo "' + fe.concept + '". ¿Vinculamos este gasto?')) {
+        await fetch("/api/expenses/" + data.id + "/link-fixed", {
+          method:  "POST",
+          headers: {"Content-Type": "application/json"},
+          body:    JSON.stringify({fixed_expense_id: fe.id}),
+        });
+      }
+    }
+
     loadExpenses();
   });
 
@@ -596,6 +654,6 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   const now = new Date();
   document.getElementById("f-year").value  = now.getFullYear();
   document.getElementById("f-month").value = now.getMonth() + 1;
-  loadExpenses();
+  loadFixedExpenses().then(loadExpenses);
 </script>
 {% endblock %}

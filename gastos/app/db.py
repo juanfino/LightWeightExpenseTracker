@@ -57,14 +57,17 @@ CREATE TABLE IF NOT EXISTS keywords (
 );
 
 CREATE TABLE IF NOT EXISTS expenses (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id        INTEGER NOT NULL,
-    category_id    INTEGER,
-    subcategory_id INTEGER REFERENCES subcategories(id),
-    concept        TEXT    NOT NULL,
-    amount         REAL    NOT NULL,
-    raw_text       TEXT    NOT NULL,
-    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id              INTEGER NOT NULL,
+    category_id          INTEGER,
+    subcategory_id       INTEGER REFERENCES subcategories(id),
+    concept              TEXT    NOT NULL,
+    amount               REAL    NOT NULL,
+    raw_text             TEXT    NOT NULL,
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    fixed_expense_id     INTEGER REFERENCES fixed_expenses(id) ON DELETE SET NULL,
+    fixed_expense_year   INTEGER,
+    fixed_expense_month  INTEGER,
     FOREIGN KEY (user_id)     REFERENCES users(id),
     FOREIGN KEY (category_id) REFERENCES categories(id)
 );
@@ -76,16 +79,6 @@ CREATE TABLE IF NOT EXISTS fixed_expenses (
     category_id      INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     active           INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-);
-
-CREATE TABLE IF NOT EXISTS fixed_expense_payments (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    fixed_expense_id INTEGER NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
-    expense_id       INTEGER REFERENCES expenses(id) ON DELETE SET NULL,
-    year             INTEGER NOT NULL,
-    month            INTEGER NOT NULL,
-    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    UNIQUE(fixed_expense_id, year, month)
 );
 
 CREATE TABLE IF NOT EXISTS cambios_dolar (
@@ -133,29 +126,58 @@ def _migrate_cambios_tipo():
             pass  # column already exists
 
 
-def _migrate_fixed_payment_nullable_expense():
-    """Rebuilds fixed_expense_payments to make expense_id nullable (v1.6.0 had it NOT NULL)."""
+def _migrate_fixed_expenses_to_expense_link():
+    """One-time, idempotent conversion of the old fixed_expense_payments join table into
+    fixed_expense_id/fixed_expense_year/fixed_expense_month columns directly on expenses
+    (v2.0.0). If fixed_expense_payments doesn't exist, this is a no-op — either a fresh DB
+    (SCHEMA already created the columns) or a DB that already went through this migration.
+
+    Payments with a NULL expense_id have no amount to migrate — there's nothing to fabricate
+    an expense from — so they're counted and dropped rather than converted. This is a
+    deliberate, logged data loss; see CHANGELOG 2.0.0."""
     with get_conn() as conn:
-        info = conn.execute("PRAGMA table_info(fixed_expense_payments)").fetchall()
-        if not info:
-            return  # table doesn't exist yet; SCHEMA CREATE will handle it
-        for col in info:
-            if col["name"] == "expense_id" and col["notnull"] == 1:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS _fep_new (
-                        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                        fixed_expense_id INTEGER NOT NULL REFERENCES fixed_expenses(id) ON DELETE CASCADE,
-                        expense_id       INTEGER REFERENCES expenses(id) ON DELETE SET NULL,
-                        year             INTEGER NOT NULL,
-                        month            INTEGER NOT NULL,
-                        created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now')),
-                        UNIQUE(fixed_expense_id, year, month)
-                    );
-                    INSERT INTO _fep_new SELECT * FROM fixed_expense_payments;
-                    DROP TABLE fixed_expense_payments;
-                    ALTER TABLE _fep_new RENAME TO fixed_expense_payments;
-                """)
-                break
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='fixed_expense_payments'"
+        ).fetchone()
+        if not table_exists:
+            return
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(expenses)").fetchall()]
+        if "fixed_expense_id" not in cols:
+            conn.execute(
+                "ALTER TABLE expenses ADD COLUMN fixed_expense_id INTEGER"
+                " REFERENCES fixed_expenses(id) ON DELETE SET NULL"
+            )
+        if "fixed_expense_year" not in cols:
+            conn.execute("ALTER TABLE expenses ADD COLUMN fixed_expense_year INTEGER")
+        if "fixed_expense_month" not in cols:
+            conn.execute("ALTER TABLE expenses ADD COLUMN fixed_expense_month INTEGER")
+
+        payments = conn.execute(
+            "SELECT fixed_expense_id, expense_id, year, month FROM fixed_expense_payments"
+        ).fetchall()
+
+        converted = 0
+        dropped = 0
+        for p in payments:
+            if p["expense_id"] is not None:
+                conn.execute(
+                    "UPDATE expenses SET fixed_expense_id=?, fixed_expense_year=?, fixed_expense_month=?"
+                    " WHERE id=?",
+                    (p["fixed_expense_id"], p["year"], p["month"], p["expense_id"]),
+                )
+                converted += 1
+            else:
+                dropped += 1
+
+        conn.execute("DROP TABLE fixed_expense_payments")
+
+        logger.info(
+            "Migración fixed_expense_payments -> expenses: %d convertidos, %d descartados "
+            "(pago sin gasto vinculado, sin monto para migrar — re-vincular manualmente vía "
+            "'ya lo pagué' si corresponde).",
+            converted, dropped,
+        )
 
 
 def _migrate_expenses_subcategory():
@@ -193,7 +215,7 @@ def init_db(users: dict | None = None):
             conn.executescript(SCHEMA)
     _migrate_users_color()
     _migrate_cambios_tipo()
-    _migrate_fixed_payment_nullable_expense()
+    _migrate_fixed_expenses_to_expense_link()
     _migrate_expenses_subcategory()
     _migrate_keywords_subcategory()
     _migrate_fixed_expenses_subcategory()
@@ -289,7 +311,8 @@ def get_recent_expenses(limit: int = 50):
                    COALESCE(c.color, '#6b7280')       AS category_color,
                    COALESCE(c.icon,  '❓')             AS category_icon,
                    e.subcategory_id,
-                   s.name AS subcategory_name
+                   s.name AS subcategory_name,
+                   e.fixed_expense_id
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
@@ -312,7 +335,8 @@ def get_recent_expenses_for_user(user_id: int, limit: int = 30):
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
                    e.subcategory_id,
-                   s.name AS subcategory_name
+                   s.name AS subcategory_name,
+                   e.fixed_expense_id
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
@@ -335,7 +359,8 @@ def get_expenses_by_month(year: int, month: int):
                    COALESCE(c.color, '#6b7280')       AS category_color,
                    COALESCE(c.icon,  '❓')             AS category_icon,
                    e.subcategory_id,
-                   s.name AS subcategory_name
+                   s.name AS subcategory_name,
+                   e.fixed_expense_id
             FROM expenses e
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
@@ -1132,62 +1157,108 @@ def deactivate_fixed_expense(fe_id: int):
         conn.execute("UPDATE fixed_expenses SET active=0 WHERE id=?", (fe_id,))
 
 
-def get_fixed_payments_for_month(year: int, month: int) -> list[dict]:
+def get_fixed_payments_for_period(year: int, month: int) -> list[dict]:
+    """Returns every active fixed expense together with ALL expenses linked to it for the
+    given period. Any number of expenses may share a period (e.g. a legitimate double
+    payment from a utility billing error), so this aggregates rather than assuming at most
+    one payment per fixed expense per month like the old fixed_expense_payments table did."""
     with get_conn() as conn:
-        rows = conn.execute(
+        fixed_rows = conn.execute(
             """
             SELECT fe.id, fe.concept, fe.estimated_amount, fe.category_id, fe.subcategory_id, fe.active, fe.created_at,
                    COALESCE(c.name,  'Sin categoría') AS category_name,
                    COALESCE(c.color, '#6b7280')        AS category_color,
                    COALESCE(c.icon,  '❓')              AS category_icon,
-                   s.name AS subcategory_name,
-                   fep.id         AS payment_id,
-                   fep.expense_id AS payment_expense_id,
-                   e.amount       AS actual_amount
+                   s.name AS subcategory_name
             FROM fixed_expenses fe
             LEFT JOIN categories c ON c.id = fe.category_id
             LEFT JOIN subcategories s ON s.id = fe.subcategory_id
-            LEFT JOIN fixed_expense_payments fep
-                ON fep.fixed_expense_id = fe.id AND fep.year = ? AND fep.month = ?
-            LEFT JOIN expenses e ON e.id = fep.expense_id
             WHERE fe.active = 1
             ORDER BY fe.concept
+            """
+        ).fetchall()
+
+        payment_rows = conn.execute(
+            """
+            SELECT id, fixed_expense_id, amount, concept, created_at
+            FROM expenses
+            WHERE fixed_expense_id IS NOT NULL
+              AND fixed_expense_year = ? AND fixed_expense_month = ?
+            ORDER BY created_at
             """,
             (year, month),
         ).fetchall()
 
+    payments_by_fe: dict[int, list[dict]] = {}
+    for p in payment_rows:
+        payments_by_fe.setdefault(p["fixed_expense_id"], []).append(dict(p))
+
     result = []
-    for r in rows:
+    for r in fixed_rows:
         d = dict(r)
-        d["paid"] = d["payment_id"] is not None
+        payments = payments_by_fe.get(r["id"], [])
+        d["payments"] = payments
+        d["paid"] = len(payments) > 0
+        d["total_paid"] = sum(p["amount"] for p in payments)
+        # Single-payment convenience field for callers/templates that only show one amount.
+        d["actual_amount"] = d["total_paid"] if payments else None
         result.append(d)
     return result
 
 
-def create_fixed_payment(fixed_expense_id: int, expense_id: int, year: int, month: int):
+def get_unlinked_expenses_for_period(year: int, month: int) -> list[dict]:
+    """Expenses in the given period not yet linked to any fixed expense — the candidate
+    pool for the "ya lo pagué" search (fixed_matcher.find_candidate_expenses)."""
     with get_conn() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO fixed_expense_payments (fixed_expense_id, expense_id, year, month)"
-            " VALUES (?, ?, ?, ?)",
-            (fixed_expense_id, expense_id, year, month),
-        )
+        return conn.execute(
+            """
+            SELECT e.id, e.category_id, e.subcategory_id, e.concept, e.amount, e.created_at,
+                   u.name AS user_name
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            WHERE e.fixed_expense_id IS NULL
+              AND strftime('%Y', e.created_at) = ?
+              AND strftime('%m', e.created_at) = ?
+            ORDER BY e.created_at DESC
+            """,
+            (str(year), f"{month:02d}"),
+        ).fetchall()
 
 
-def create_fixed_payment_without_expense(fixed_expense_id: int, year: int, month: int):
+def link_expense_to_fixed(expense_id: int, fixed_expense_id: int, year: int, month: int) -> bool:
+    """Links an expense to a fixed expense for the given period, forcing the expense's
+    category/subcategory to the fixed expense's own. This is the single choke point every
+    linking flow (creation-time offer, "ya lo pagué" candidate pick, dashboard/bot manual
+    edit, NL edit) goes through, so a recurring bill can't drift category depending on which
+    path registered it."""
+    fe = get_fixed_expense_by_id(fixed_expense_id)
+    if fe is None:
+        return False
     with get_conn() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO fixed_expense_payments (fixed_expense_id, expense_id, year, month)"
-            " VALUES (?, NULL, ?, ?)",
-            (fixed_expense_id, year, month),
+        cur = conn.execute(
+            "UPDATE expenses SET fixed_expense_id=?, fixed_expense_year=?, fixed_expense_month=?,"
+            " category_id=?, subcategory_id=? WHERE id=?",
+            (fixed_expense_id, year, month, fe["category_id"], fe["subcategory_id"], expense_id),
         )
+        return cur.rowcount > 0
+
+
+def unlink_expense_from_fixed(expense_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE expenses SET fixed_expense_id=NULL, fixed_expense_year=NULL, fixed_expense_month=NULL"
+            " WHERE id=?",
+            (expense_id,),
+        )
+        return cur.rowcount > 0
 
 
 def get_fixed_expense_monthly_summary(year: int, month: int) -> dict:
-    rows = get_fixed_payments_for_month(year, month)
+    rows = get_fixed_payments_for_period(year, month)
     count_total     = len(rows)
     count_paid      = sum(1 for r in rows if r["paid"])
     total_estimated = sum(r["estimated_amount"] or 0 for r in rows)
-    total_paid      = sum(r["actual_amount"] or 0 for r in rows if r["paid"])
+    total_paid      = sum(r["total_paid"] for r in rows)
     return {
         "count_total":     count_total,
         "count_paid":      count_paid,

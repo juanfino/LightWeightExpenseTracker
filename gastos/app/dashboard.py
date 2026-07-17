@@ -10,6 +10,7 @@ import requests as http_requests
 
 import db
 import backup as backup_module
+import fixed_matcher
 
 app = Flask(__name__)
 
@@ -235,7 +236,13 @@ def api_expenses_add():
 
     cat_id = int(category_id) if category_id else None
     expense_id = db.create_expense_full(int(user_id), cat_id, concept, amount, date_str)
-    return jsonify({"ok": True, "id": expense_id})
+
+    suggestion = None
+    matches = fixed_matcher.find_fixed_expense_matches(concept, db.get_all_fixed_expenses())
+    if len(matches) == 1:
+        suggestion = {"id": matches[0]["id"], "concept": matches[0]["concept"]}
+
+    return jsonify({"ok": True, "id": expense_id, "suggested_fixed_expense": suggestion})
 
 
 @app.route("/api/expenses/delete", methods=["POST"])
@@ -275,12 +282,13 @@ def api_keywords_delete():
 
 @app.route("/api/expenses/update", methods=["POST"])
 def api_expenses_update():
-    data           = request.get_json(silent=True) or {}
-    expense_id     = data.get("id")
-    concept        = (data.get("concept") or "").strip()
-    amount         = data.get("amount")
-    category_id    = data.get("category_id")    # may be None / null
-    subcategory_id = data.get("subcategory_id") # may be None / null
+    data             = request.get_json(silent=True) or {}
+    expense_id       = data.get("id")
+    concept          = (data.get("concept") or "").strip()
+    amount           = data.get("amount")
+    category_id      = data.get("category_id")      # may be None / null
+    subcategory_id   = data.get("subcategory_id")    # may be None / null
+    fixed_expense_id = data.get("fixed_expense_id")  # may be None / null
 
     if not expense_id or not concept or amount is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -295,9 +303,50 @@ def api_expenses_update():
     cat_id    = int(category_id)    if category_id    else None
     subcat_id = int(subcategory_id) if subcategory_id else None
     updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id)
-    if updated:
+    if not updated:
+        return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
+
+    resp = {"ok": True}
+    if fixed_expense_id:
+        # Linking forces category/subcategory to the fixed expense's own — the same choke
+        # point (db.link_expense_to_fixed) every linking flow goes through, so a recurring
+        # bill can't drift category depending on which surface registered it.
+        expense = db.get_expense_by_id(int(expense_id))
+        year, month = fixed_matcher.expense_period(expense["created_at"], BAIRES)
+        db.link_expense_to_fixed(int(expense_id), int(fixed_expense_id), year, month)
+        fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
+        resp["category_id"]    = fe["category_id"]    if fe else None
+        resp["subcategory_id"] = fe["subcategory_id"] if fe else None
+    else:
+        db.unlink_expense_from_fixed(int(expense_id))
+
+    return jsonify(resp)
+
+
+@app.route("/api/expenses/<int:expense_id>/link-fixed", methods=["POST"])
+def api_expenses_link_fixed(expense_id: int):
+    """Links (or, with a null fixed_expense_id, unlinks) an existing expense to a fixed
+    expense — used by the "suggested_fixed_expense" offer after adding an expense, and
+    reusable anywhere else the dashboard wants to attach a link without resending the
+    whole expense (concept/amount/etc)."""
+    data             = request.get_json(silent=True) or {}
+    fixed_expense_id = data.get("fixed_expense_id")
+
+    expense = db.get_expense_by_id(expense_id)
+    if not expense:
+        return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
+
+    if not fixed_expense_id:
+        db.unlink_expense_from_fixed(expense_id)
         return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
+
+    fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
+    if not fe:
+        return jsonify({"ok": False, "error": "Gasto fijo no encontrado"}), 404
+
+    year, month = fixed_matcher.expense_period(expense["created_at"], BAIRES)
+    db.link_expense_to_fixed(expense_id, int(fixed_expense_id), year, month)
+    return jsonify({"ok": True, "category_id": fe["category_id"], "subcategory_id": fe["subcategory_id"]})
 
 
 @app.route("/api/subcategories")
@@ -423,7 +472,25 @@ def api_fixed_expenses_status():
         month = int(request.args.get("month", datetime.now().month))
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
-    return jsonify(db.get_fixed_payments_for_month(year, month))
+    return jsonify(db.get_fixed_payments_for_period(year, month))
+
+
+@app.route("/api/fixed-expenses/<int:fe_id>/candidates")
+def api_fixed_expenses_candidates(fe_id: int):
+    """Candidate already-logged, unlinked expenses for the "ya lo pagué" search — the web
+    counterpart of the bot's fix:already:/fixpick: flow, sharing the same scoring
+    (fixed_matcher.find_candidate_expenses) so both surfaces agree on what counts as a match."""
+    try:
+        year  = int(request.args.get("year",  datetime.now().year))
+        month = int(request.args.get("month", datetime.now().month))
+    except ValueError:
+        return jsonify({"error": "Parámetros inválidos"}), 400
+    fe = db.get_fixed_expense_by_id(fe_id)
+    if not fe:
+        return jsonify({"error": "Gasto fijo no encontrado"}), 404
+    unlinked = db.get_unlinked_expenses_for_period(year, month)
+    candidates = fixed_matcher.find_candidate_expenses(fe, unlinked)
+    return jsonify([dict(c) for c in candidates])
 
 
 @app.route("/api/fixed-expenses/add", methods=["POST"])
@@ -473,18 +540,6 @@ def api_fixed_expenses_deactivate():
     return jsonify({"ok": True})
 
 
-@app.route("/api/fixed-expenses/mark-paid", methods=["POST"])
-def api_fixed_expenses_mark_paid():
-    data             = request.get_json(silent=True) or {}
-    fixed_expense_id = data.get("fixed_expense_id")
-    year             = data.get("year")
-    month            = data.get("month")
-    if not fixed_expense_id or not year or not month:
-        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
-    db.create_fixed_payment_without_expense(int(fixed_expense_id), int(year), int(month))
-    return jsonify({"ok": True})
-
-
 @app.route("/api/fixed-expenses/pay", methods=["POST"])
 def api_fixed_expenses_pay():
     data             = request.get_json(silent=True) or {}
@@ -515,8 +570,8 @@ def api_fixed_expenses_pay():
 
     y, m     = int(year), int(month)
     date_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
-    expense_id = db.create_expense_full(int(user_id), fe["category_id"], fe["concept"], amount, date_str, fe["subcategory_id"])
-    db.create_fixed_payment(int(fixed_expense_id), expense_id, y, m)
+    expense_id = db.create_expense_full(int(user_id), None, fe["concept"], amount, date_str)
+    db.link_expense_to_fixed(expense_id, int(fixed_expense_id), y, m)
     return jsonify({"ok": True, "expense_id": expense_id})
 
 

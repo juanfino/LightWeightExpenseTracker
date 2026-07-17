@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 1.17.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 2.0.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -19,7 +19,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 8 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
+**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 7 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — not a separate joined entity; any number of expenses may share the same fixed expense + period (e.g. a legitimate double payment). As of 2.0.0 (previously a separate `fixed_expense_payments` join table). All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
 
 **Backup:** Daily at 21:00 ART via APScheduler — sends `gastos.db` as Telegram document to all configured users. Also triggerable via `POST /admin/backup-now`.
 
@@ -40,7 +40,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **OCR receipt scanning:** send a photo; bot extracts `{comercio, monto, fecha}` via Anthropic Vision, prompts for confirmation before saving
 - **Voice expense entry:** send a voice note (e.g. "ferretería diez mil pesos"); bot transcribes with OpenAI Whisper, normalizes written numbers to digits via Claude, and prompts for confirmation before saving
 - **Argentine number formatting:** `.` = thousands separator, `,` = decimal (e.g. `$5.580,00`). `_parse_monto()` handles both notations; `100.000` → 100000, `2.500,50` → 2500.5
-- **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to mark a fixed expense paid (with or without creating a matching expense row). Automatic detection: when a plain expense is logged, the bot checks it against active fixed expenses (word-match, ≥3 chars) and offers to file it as that fixed expense's payment instead of a regular expense
+- **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to register a payment or search for one already logged. Detection runs downstream of expense creation on **every** input path (plain text, NL, voice, OCR, dashboard manual add) — not just the plain-text fast path — via a shared `fixed_matcher.py` (word-overlap ≥3 chars) so the fixed/variable split doesn't depend on how the user happened to log the expense. Linking always forces the expense's category/subcategory to the fixed expense's own, so a recurring bill can't drift category month to month. "✓ Ya lo pagué" searches already-logged, unlinked expenses for the period (concept overlap + category + amount proximity) and offers to link one instead of just flagging "paid" with no amount; explicitly declining still lets the user log the amount directly. The link (+ period) is an ordinary, editable field on the expense, alongside category/subcategory
 - **USD/ARS exchange rate tracking:** natural-language ("vendí 500 dólares a 1700", "compré 1000 dólares a 1550") via `dolar.py`, gated by a cheap keyword check (`looks_like_dolar`) before spending an LLM call; confidence-based auto-save, same as voice. Legacy `CambioDolar <usd> <cotizacion>` command still works (always records a sale). Dedicated dashboard page (`/dolares`) with history, monthly summary, and historical rate chart
 - **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 screens as of 1.15.0–1.17.0 — see **Screens** below
 - **Users:** Juampi (active), Cele (configured, not yet onboarded)
@@ -54,9 +54,9 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
-| `/history` | `history.html` | Full expense history, filterable (month/year/category/user), inline edit (concept, amount, category, subcategory), delete |
+| `/history` | `history.html` | Full expense history, filterable (month/year/category/user), inline edit (concept, amount, category, subcategory, fixed-expense link), delete |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
-| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), current month's paid/pending status with progress bar, register-payment modal |
+| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), current month's paid/pending status with progress bar, register-payment modal, "ya lo pagué" candidate search to link an already-logged expense instead |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
 | `/config` | `config.html` | System: backup status + "Backup ahora" button, restore DB from a public HTTPS URL (saves a `.bak` of current state first, then restarts) |
 
@@ -88,12 +88,13 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 ## Module Responsibilities
 
 - `main.py` — entrypoint; loads env config, initializes DB, schedules backup, starts Flask thread, starts bot polling
-- `bot.py` — Telegram handlers; holds per-`chat_id` pending-state dicts (`pending_ocr`, `pending_amount_edit`, `pending_dolar`, `pending_nl_confirm`, `pending_nl_pick`, …). Hybrid routing in `handle_message`: fast path for plain `concept amount`, else the intent layer
-- `intent.py` — natural-language intent layer via Claude tool use; returns a structured result dict (`log`/`edit`/`category`/`subcategory`/`report`/`reply`). Injects taxonomy + the user's recent expenses + ART date; performs no Telegram I/O
+- `bot.py` — Telegram handlers; holds per-`chat_id` pending-state dicts (`pending_ocr`, `pending_amount_edit`, `pending_dolar`, `pending_nl_confirm`, `pending_nl_pick`, `pending_fixed_direct`, …). Hybrid routing in `handle_message`: fast path for plain `concept amount`, else the intent layer. `_maybe_offer_fixed_link()` is the single seam every expense-creation path calls after saving to offer a fixed-expense link
+- `intent.py` — natural-language intent layer via Claude tool use; returns a structured result dict (`log`/`edit`/`category`/`subcategory`/`report`/`reply`). Injects taxonomy + the user's recent expenses + ART date; performs no Telegram I/O. `edit_expense`'s `changes` can include `fixed_expense` (link by name, or `"ninguno"` to unlink)
+- `fixed_matcher.py` — matching heuristics shared by `bot.py` and `dashboard.py` so both surfaces agree on what counts as a match: `find_fixed_expense_matches` (new expense → fixed-expense definition, word-overlap) and `find_candidate_expenses` (fixed expense → already-logged unlinked expenses for a period, scored by word overlap + category + amount proximity). Also `expense_period()`, converting an expense's own UTC timestamp to a (year, month) in a given tz
 - `sqlro.py` — read-only SQL executor (guardrails): `SELECT`/`WITH` only, single statement, `mode=ro` connection, statement timeout, row cap. Used by reports and edit-targeting
 - `parser.py` — parses free-text into `{concept, amount}`; returns `None` if no valid amount
 - `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding
-- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`. `update_expense_fields()` is the parameterized, user-scoped UPDATE used by bot edits
+- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`. `update_expense_fields()` is the parameterized, user-scoped UPDATE used by bot edits. `link_expense_to_fixed()`/`unlink_expense_from_fixed()` are the single choke point for attaching/detaching a fixed-expense link (forces category/subcategory from the fixed expense on link)
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
@@ -125,6 +126,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Whisper returns written numbers:** Whisper transcribes verbatim — "diez mil" stays as text. Claude (`audio.py`) normalizes them to digits before saving. If you bypass `audio.py` and use Whisper output directly, amounts will be `null`.
 - **Always `git pull` locally before starting a Claude Code session** — CC builds from local disk, not from GitHub.
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
+- **2.0.0 fixed-expense migration is lossy by design:** old `fixed_expense_payments` rows with no linked expense (from the old "✓ Ya lo pagué" flag-only flow) had no amount to migrate and were dropped rather than fabricated from `estimated_amount`. Check the startup logs after upgrading a DB that predates 2.0.0 for the converted/dropped counts, and re-link any dropped months by hand via the new "ya lo pagué" candidate search.
 
 ## Infrastructure Philosophy
 
