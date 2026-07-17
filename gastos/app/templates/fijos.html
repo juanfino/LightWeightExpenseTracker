@@ -252,6 +252,18 @@
   </div>
 </div>
 
+<!-- ── Modal: candidatos "ya lo pagué" ──────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-candidates">
+  <div class="modal">
+    <div class="modal-title" id="candidates-title">¿Ya lo pagaste?</div>
+    <div id="candidates-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="modal-footer">
+      <button class="btn" id="btn-candidates-none">Ninguno de estos</button>
+      <button class="btn" id="btn-candidates-cancel">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Modal: agregar / editar fijo ─────────────────────────────────────── -->
 <div class="modal-backdrop" id="modal-edit">
   <div class="modal">
@@ -365,11 +377,14 @@
     listEl.innerHTML = statusRows.map(r => {
       const catColor   = getCatColor(r.category_name, r.category_color);
       const amountHtml = r.paid
-        ? `<span class="fixed-amount paid">${fmtAmount(r.actual_amount)}</span>`
+        ? `<span class="fixed-amount paid">${fmtAmount(r.total_paid)}</span>`
         : `<span class="fixed-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
-      const payBtn = r.paid ? '' :
-        `<button class="btn btn-primary" style="font-size:13.5px;padding:8px 16px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Registrar pago</button>
-         <button class="btn" style="font-size:13.5px;padding:8px 16px;color:var(--text2)" onclick="markPaid(${r.id})">✓ Ya lo pagué</button>`;
+      // A legitimate second payment in the same period (e.g. a utility billing error) must
+      // stay reachable even once "paid" — kept as a subtler, secondary action.
+      const payBtn = r.paid
+        ? `<button class="btn" style="font-size:12px;padding:6px 12px;color:var(--text2)" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Otro pago</button>`
+        : `<button class="btn btn-primary" style="font-size:13.5px;padding:8px 16px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Registrar pago</button>
+           <button class="btn" style="font-size:13.5px;padding:8px 16px;color:var(--text2)" onclick="openAlreadyPaidModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">✓ Ya lo pagué</button>`;
       return `
         <div class="fixed-row">
           <span class="fixed-check${r.paid ? ' paid' : ''}">${r.paid ? checkSvg : ''}</span>
@@ -398,16 +413,49 @@
     document.getElementById('pay-amount').focus();
   }
 
-  async function markPaid(feId) {
-    const res  = await fetch('/api/fixed-expenses/mark-paid', {
+  // ── "Ya lo pagué" — candidate search ───────────────────────────────────────
+  let alreadyFeId = null, alreadyFeConcept = null, alreadyFeEstimated = 0;
+
+  async function openAlreadyPaidModal(feId, concept, estimated) {
+    alreadyFeId = feId; alreadyFeConcept = concept; alreadyFeEstimated = estimated;
+    const res = await fetch(`/api/fixed-expenses/${feId}/candidates?year=${selYear}&month=${selMonth}`);
+    const candidates = await res.json().catch(() => []);
+
+    if (!Array.isArray(candidates) || !candidates.length) {
+      // Nothing to search among — same as clicking "+ Registrar pago".
+      openPayModal(feId, concept, estimated);
+      return;
+    }
+
+    document.getElementById('candidates-title').textContent = `¿Alguno de estos es el pago de "${concept}"?`;
+    document.getElementById('candidates-list').innerHTML = candidates.map(c => `
+      <button class="btn" style="text-align:left;justify-content:flex-start;font-size:13.5px" onclick="pickCandidate(${c.id})">
+        ${c.concept} · ${fmtAmount(c.amount)}
+      </button>
+    `).join('');
+    document.getElementById('modal-candidates').classList.add('open');
+  }
+
+  async function pickCandidate(expenseId) {
+    const res  = await fetch(`/api/expenses/${expenseId}/link-fixed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fixed_expense_id: feId, year: selYear, month: selMonth }),
+      body: JSON.stringify({ fixed_expense_id: alreadyFeId }),
     });
     const data = await res.json();
+    document.getElementById('modal-candidates').classList.remove('open');
     if (data.ok) loadStatus();
     else alert('Error: ' + (data.error || 'desconocido'));
   }
+
+  document.getElementById('btn-candidates-none').addEventListener('click', () => {
+    document.getElementById('modal-candidates').classList.remove('open');
+    openPayModal(alreadyFeId, alreadyFeConcept, alreadyFeEstimated);
+  });
+
+  document.getElementById('btn-candidates-cancel').addEventListener('click', () => {
+    document.getElementById('modal-candidates').classList.remove('open');
+  });
 
   document.getElementById('btn-pay-cancel').addEventListener('click', () => {
     document.getElementById('modal-pay').classList.remove('open');
@@ -585,7 +633,7 @@
   }
 
   // Close modals on backdrop click
-  ['modal-pay','modal-edit'].forEach(id => {
+  ['modal-pay','modal-edit','modal-candidates'].forEach(id => {
     document.getElementById(id).addEventListener('click', function(e) {
       if (e.target === this) this.classList.remove('open');
     });

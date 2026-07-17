@@ -99,6 +99,15 @@ _TOOLS = [
                         "category": {"type": "string", "description": "Nombre de categoría (puede no existir todavía)."},
                         "subcategory": {"type": "string"},
                         "date": {"type": "string", "description": "YYYY-MM-DD (zona ART)."},
+                        "fixed_expense": {
+                            "type": "string",
+                            "description": (
+                                "Nombre de un gasto fijo EXISTENTE para vincular este gasto "
+                                "(ej. 'poné que esto es el pago del alquiler'). Usá 'ninguno' "
+                                "si el usuario pide desvincularlo. No inventes gastos fijos que "
+                                "no existen."
+                            ),
+                        },
                     },
                 },
             },
@@ -367,7 +376,7 @@ def _handle_edit(args: dict, user) -> dict:
                 clean["amount"] = amt
         except (TypeError, ValueError):
             pass
-    for key in ("concept", "category", "subcategory", "date"):
+    for key in ("concept", "category", "subcategory", "date", "fixed_expense"):
         val = changes.get(key)
         if isinstance(val, str) and val.strip():
             clean[key] = val.strip()
