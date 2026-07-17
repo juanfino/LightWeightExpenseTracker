@@ -11,7 +11,9 @@ La app se configura mediante variables de entorno:
 | `TELEGRAM_TOKEN` | Sí | Token del bot obtenido con @BotFather en Telegram |
 | `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi"}]` |
 | `ANTHROPIC_API_KEY` | No | Habilita el OCR de tickets, la extracción por voz/dólar y el modo conversacional en lenguaje natural |
+| `OPENAI_API_KEY` | No | Habilita la transcripción de mensajes de voz (Whisper) |
 | `DB_PATH` | No | Ruta a la base de datos SQLite (default: `/data/gastos.db`) |
+| `DASHBOARD_PORT` | No | Puerto del dashboard (default: `5000`) |
 
 ### Obtener el telegram_id de cada usuario
 Cada usuario debe enviarle un mensaje a @userinfobot en Telegram.
@@ -32,6 +34,14 @@ Si está configurada la `ANTHROPIC_API_KEY`, además del formato clásico podés
 
 Los gastos conversacionales se registran solos (podés editarlos con los botones); las ediciones y la creación de categorías piden confirmación. Por Telegram cada usuario solo puede editar sus propios gastos.
 
+### Por voz
+
+Si está configurada la `OPENAI_API_KEY` (además de `ANTHROPIC_API_KEY`), le podés mandar un audio al bot en vez de escribir, ej. "gasté 30 mil en la verdulería". Si el monto queda claro se registra solo (con teclado para editar); si no, pide confirmación.
+
+### Dólares (compra/venta)
+
+Con `ANTHROPIC_API_KEY` configurada, también se pueden registrar operaciones de cambio en lenguaje natural (texto o audio): `vendí 500 dólares a 1700`, `compré 1000 dólares a 1550 cada uno`. Sigue funcionando el comando clásico `CambioDolar <monto_usd> <cotizacion>` (registra una venta).
+
 ## Comandos
 
 | Comando | Descripción |
@@ -40,14 +50,18 @@ Los gastos conversacionales se registran solos (podés editarlos con los botones
 | `/semana` | Gastos de esta semana |
 | `/hoy` | Gastos de hoy |
 | `/sincat` | Gastos sin categoría |
+| `/fijos` | Estado del mes de gastos fijos, con botones para marcar pago |
 | `/editar ID monto VALOR` | Editar monto de un gasto |
 | `/editar ID categoria NOMBRE` | Editar categoría de un gasto |
 | `/recat CONCEPTO CATEGORÍA` | Reasignar gastos por concepto |
 | `/borrar ID` | Borrar un gasto |
+| `/add_keyword PALABRA CATEGORÍA` | Agregar keyword → categoría |
 | `/nueva_categoria Nombre Emoji Color` | Crear categoría |
 | `/categorias` | Listar categorías |
 | `/ayuda` | Ver todos los comandos |
 
+También se puede mandar una foto o documento de imagen de un ticket: el bot extrae comercio/monto/fecha por OCR y pide confirmación antes de guardar.
+
 ## Dashboard
 
-Accesible en `http://[IP-RASPI]:5000` desde la red local.
+Accesible en `http://[IP-RASPI]:8090` desde la red local (puerto configurado vía `DASHBOARD_PORT`; el default del código es `5000`). Pantallas: Dashboard (`/`), Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Sistema (`/config`).

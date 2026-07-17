@@ -53,7 +53,7 @@ python3 gastos/app/categorizer.py
 - `backup.py` — Sends `gastos.db` as a Telegram document to all configured users. Called by APScheduler at 21:00 ART and via `POST /admin/backup-now`.
 - `seed.py` — Populates default categories, subcategories, and keywords on first DB creation. Also runs idempotent migrations on every startup.
 
-**DB schema** (6 tables): `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. Categories have a protected "Sin categoría" that cannot be edited or deleted. `expenses` and `keywords` have an optional `subcategory_id` FK. `users.color` is assigned from a distinct palette (`_sync_users`) so users are visually separable in the dashboard. `cambios_dolar` has a `tipo` column (`venta`/`compra`, default `venta`).
+**DB schema** (8 tables): `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`. Categories have a protected "Sin categoría" that cannot be edited or deleted. `expenses` and `keywords` have an optional `subcategory_id` FK. `users.color` is assigned from a distinct palette (`_sync_users`) so users are visually separable in the dashboard. `cambios_dolar` has a `tipo` column (`venta`/`compra`, default `venta`).
 
 ## Config
 
@@ -63,8 +63,10 @@ Config is loaded exclusively from environment variables at startup — there is 
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `USERS_JSON` | Yes | JSON array `[{"telegram_id": "...", "name": "..."}]` |
-| `ANTHROPIC_API_KEY` | No | Enables OCR |
+| `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, and the natural-language intent layer |
+| `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
 | `DB_PATH` | No | Default: `/data/gastos.db` |
+| `DASHBOARD_PORT` | No | Default: `5000` |
 
 On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env`.
 
@@ -72,7 +74,7 @@ On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env
 
 The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU. **Deploy to the Pi is manual** — GitHub Actions does not auto-pull.
 
-**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:8090`.
+**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:8090` (the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up port 5000 for Frigate; the code's own default, if unset, is 5000).
 
 On the Pi, the app runs as a Docker Compose service alongside `homeassistant` and `cloudflared` (all `network_mode: host`). The canonical service definition is `docker-compose.yml` in this repo. Env vars for all services live in `~/.env`.
 
