@@ -34,8 +34,10 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
 | `USERS_JSON` | Yes | JSON array of authorized users, e.g. `[{"telegram_id":"123","name":"Juampi"}]` |
-| `ANTHROPIC_API_KEY` | No | Enables OCR of ticket photos via Claude |
+| `ANTHROPIC_API_KEY` | No | Enables OCR of ticket photos, voice/dollar extraction, and the natural-language intent layer |
+| `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
 | `DB_PATH` | No | Path to SQLite file (default: `/data/gastos.db`) |
+| `DASHBOARD_PORT` | No | Dashboard port (default: `5000`; the Pi sets this to `8090` to free up 5000 for Frigate) |
 
 Copy `.env.example` to `~/.env` on the Pi and fill in the values.
 
@@ -45,4 +47,4 @@ The SQLite database is mounted from `~/gastos-data/gastos.db` on the Pi into `/d
 
 ### Exposing the dashboard
 
-The dashboard runs on port 5000. A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:5000` on the Pi.
+The dashboard's own default port is 5000, but the Pi's `~/.env` sets `DASHBOARD_PORT=8090` (freeing port 5000 for Frigate). A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:8090` on the Pi.

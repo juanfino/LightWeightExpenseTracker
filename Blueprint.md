@@ -23,8 +23,13 @@ App de registro de gastos personales/familiares. Corre como contenedor Docker en
     └── app/
         ├── main.py                ← entrypoint: arranca bot + dashboard en paralelo
         ├── bot.py                 ← lógica del bot Telegram
+        ├── intent.py              ← capa de intención en lenguaje natural (Claude tool use)
+        ├── sqlro.py               ← ejecutor SQL read-only con guardrails (usado por reportes y edición NL)
         ├── parser.py              ← parsing de mensajes de texto
         ├── categorizer.py         ← asignación de categorías por keywords
+        ├── ocr.py                 ← extracción de datos de tickets desde fotos (Claude Vision)
+        ├── audio.py               ← transcripción de voz (Whisper) + extracción de gasto (Claude)
+        ├── dolar.py                ← parsing en lenguaje natural de operaciones de cambio USD/ARS
         ├── db.py                  ← todas las operaciones SQLite
         ├── dashboard.py           ← Flask app (rutas + API JSON)
         ├── backup.py              ← backup diario de la DB via Telegram
@@ -48,7 +53,7 @@ El Pi corre tres servicios en `~/docker-compose.yml`:
 ```
 homeassistant   → network_mode: host, datos en ~/homeassistant-data
 cloudflared     → network_mode: host, conecta el tunnel de Cloudflare
-gastos          → network_mode: host, datos en ~/gastos-data, puerto 5000
+gastos          → network_mode: host, datos en ~/gastos-data, puerto 8090 (DASHBOARD_PORT en ~/.env; el default del código es 5000, movido a 8090 para liberarlo para Frigate)
 ```
 
 Las variables de entorno de todos los servicios viven en `~/.env`.
@@ -58,7 +63,7 @@ Las variables de entorno de todos los servicios viven en `~/.env`.
 ```
 expenses.juampifinochietto.com
   → Cloudflare Tunnel
-    → localhost:5000 (Flask dashboard)
+    → localhost:8090 (Flask dashboard)
 ```
 
 Configurado manualmente en el dashboard de Cloudflare Zero Trust.
@@ -116,8 +121,10 @@ CMD ["python3", "/app/main.py"]
 |---|---|---|
 | `TELEGRAM_TOKEN` | Sí | Token del bot de @BotFather |
 | `USERS_JSON` | Sí | Array JSON de usuarios autorizados |
-| `ANTHROPIC_API_KEY` | No | Habilita OCR de tickets con Claude |
+| `ANTHROPIC_API_KEY` | No | Habilita OCR de tickets, extracción por voz/dólar y la capa de intención en lenguaje natural |
+| `OPENAI_API_KEY` | No | Habilita la transcripción de mensajes de voz (Whisper) |
 | `DB_PATH` | No | Path al SQLite (default: `/data/gastos.db`) |
+| `DASHBOARD_PORT` | No | Puerto del dashboard (default: `5000`; en el Pi se usa `8090`) |
 
 `USERS_JSON` formato: `[{"telegram_id": "123456", "name": "Juampi"}]`
 
@@ -253,16 +260,36 @@ Todo handler verifica primero `_get_authorized_user(update)`. Si el `chat_id` no
 | `/gastos` | Resumen del mes: total + breakdown por categoría |
 | `/semana` | Gastos de la semana actual (domingo–sábado, hora BA) |
 | `/hoy` | Gastos del día (hora BA) |
+| `/sincat` | Gastos sin categoría asignada |
+| `/fijos` | Estado del mes de gastos fijos con botones de pago |
+| `/editar ID monto VALOR` | Edita el monto de un gasto |
+| `/editar ID categoria NOMBRE` | Edita la categoría de un gasto |
+| `/recat CONCEPTO CATEGORÍA` | Reasigna gastos por concepto a otra categoría |
 | `/borrar [ID]` | Borra un gasto por ID |
 | `/add_keyword PALABRA CATEGORÍA` | Agrega keyword |
-| `/fijos` | Estado del mes de gastos fijos con botones de pago |
 | `/categorias` | Lista de categorías |
+| `/nueva_categoria Nombre Emoji Color` | Crea una categoría (emoji/color opcionales) |
 | `/ayuda` | Todos los comandos y formato de carga |
-| `CambioDolar <usd> <cotizacion>` | Registra operación de cambio de divisas |
+| `CambioDolar <usd> <cotizacion>` | Registra operación de cambio de divisas (venta) |
 
 ### OCR de tickets
 
 Handler `handle_photo` acepta fotos y documentos de imagen. Llama a `ocr.extract_ticket_data()` (claude-haiku-4-5-20251001) y muestra los datos extraídos para confirmación del usuario antes de guardar.
+
+### Voz (`audio.py`)
+
+Handler `handle_voice` transcribe el audio con OpenAI Whisper (`whisper-1`, `es`) y extrae `[{concept, amount, confidence}]` con Claude. Si `confidence` ≥ `AUTOSAVE_CONFIDENCE` (0.9), el gasto se guarda solo (con teclado de editar/categoría); si no, pide confirmación inline. También se usa para detectar operaciones de dólar por voz (via `dolar.py`).
+
+### Dólares en lenguaje natural (`dolar.py`)
+
+`looks_like_dolar()` es un filtro barato por keywords que evita gastar una llamada al modelo en mensajes que no son de dólares. Si matchea, `parse_dolar()` (Claude) interpreta el texto/audio y devuelve `{tipo: venta|compra, monto_usd, cotizacion, confidence}` o `None`. Mismo criterio de auto-guardado por confianza que la voz. Se activa tanto desde `handle_message` (texto) como desde `handle_voice` (audio), antes del resto del ruteo.
+
+### Capa de intención en lenguaje natural (`intent.py`)
+
+Para mensajes de texto que no son el formato clásico `concepto monto`, un heurístico por keywords (`_needs_intent`) decide si escalar a `intent.route_intent()`, que usa **tool use / function calling** de Claude (el único uso de function calling del proyecto) para clasificar el mensaje en uno de: `log` (registrar), `edit` (editar), `category`/`subcategory` (taxonomía), `report` (consulta de solo lectura) o `reply` (respuesta libre). Inyecta la taxonomía completa, los gastos recientes del usuario y la fecha ART para poder resolver nombres→ids y referencias como "el último" en una sola vuelta. Tiene memoria conversacional de corto plazo por chat (ventana de 5 min / últimos 10 mensajes, en proceso, no persistida).
+
+- **Mutaciones** (`log`, `edit`, `category`, `subcategory`): devuelven parámetros estructurados que ejecuta código parametrizado de la app; el logueo se auto-guarda (con teclado de editar), las ediciones y la creación de taxonomía piden confirmación con botones inline. Por Telegram, un usuario solo puede editar sus propios gastos — el SQL de targeting filtra por usuario y se re-chequea antes del UPDATE (`db.update_expense_fields()`).
+- **Reportes** (`report`): SQL generado por el modelo, ejecutado bajo los guardrails de `sqlro.py` — solo `SELECT`/`WITH`, una sola sentencia, conexión física read-only (`mode=ro`), timeout de statement, límite de filas.
 
 ### Gastos Fijos — detección automática
 
@@ -288,7 +315,10 @@ GET  /api/sparklines            → últimos 6 meses por categoría
 GET  /api/expenses              → listado filtrable (month, year, category_id, user_id)
 GET  /api/users                 → lista de usuarios con colores
 GET  /api/subcategories         → subcategorías (filtrable por category_id)
+GET  /api/categories            → lista de categorías
+GET  /api/gastos-por-categoria  → breakdown por categoría (para el gráfico correspondiente)
 
+POST /api/expenses/add          → crea un gasto desde el dashboard
 POST /api/expenses/delete       → {id}
 POST /api/expenses/update       → {id, concept, amount, category_id, subcategory_id}
 POST /api/expenses/<id>/subcategory → {subcategory_id}
@@ -297,6 +327,9 @@ POST /api/keywords/delete       → {id}
 PUT  /api/keywords/<id>         → {keyword, category_id, subcategory_id}
 POST /api/subcategories/add     → {name, category_id}
 POST /api/subcategories/delete  → {id}
+POST /api/categories/add        → {name, icon, color}
+POST /api/categories/update     → {id, name, icon, color}
+POST /api/categories/delete     → {id}
 
 GET  /api/fixed-expenses        → lista de gastos fijos activos
 GET  /api/fixed-expenses/status → estado del mes (pagado/pendiente)
@@ -313,6 +346,7 @@ GET  /api/cambios/cotizacion_historica
 DELETE /api/cambios/<id>
 PUT  /api/cambios/<id>
 
+GET  /api/backup-status
 POST /admin/backup-now
 POST /admin/restore-db-url      → {url} descarga DB desde URL pública HTTPS, guarda .bak y reinicia
 ```
@@ -321,12 +355,12 @@ POST /admin/restore-db-url      → {url} descarga DB desde URL pública HTTPS, 
 
 ## main.py — Secuencia de arranque
 
-1. Leer env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `DB_PATH`)
+1. Leer env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DB_PATH`) — avisa por log si falta `OPENAI_API_KEY` (voz deshabilitada)
 2. Parsear `USERS_JSON` → dict `{telegram_id_str: name}`
 3. `db.init_db(users)` — crea tablas + seed si es primera vez
 4. Configurar módulo `backup` (token, usuarios, db path)
 5. Iniciar APScheduler con job de backup a las 21:00 ART
-6. Iniciar Flask en `threading.Thread(daemon=True)` en puerto 5000
+6. Iniciar Flask en `threading.Thread(daemon=True)` en el puerto de `DASHBOARD_PORT` (default 5000)
 7. Iniciar bot Telegram con `app.run_polling()` (bloquea el hilo principal)
 
 ---
