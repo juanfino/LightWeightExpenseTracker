@@ -349,10 +349,21 @@ def get_recent_expenses_for_user(user_id: int, limit: int = 30):
         ).fetchall()
 
 
-def get_expenses_by_month(year: int, month: int):
+def get_expenses_filtered(year: int | None = None, month: int | None = None):
+    """Expenses filtered by year and/or month, each optional — omit either (or both)
+    to remove that constraint, used by the history screen's "Todos" filter."""
+    conditions = []
+    params = []
+    if year is not None:
+        conditions.append("strftime('%Y', e.created_at) = ?")
+        params.append(str(year))
+    if month is not None:
+        conditions.append("strftime('%m', e.created_at) = ?")
+        params.append(f"{month:02d}")
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     with get_conn() as conn:
         return conn.execute(
-            """
+            f"""
             SELECT e.id, e.user_id, e.category_id, e.concept, e.amount, e.raw_text, e.created_at,
                    u.name AS user_name,
                    COALESCE(c.name, 'Sin categoría') AS category_name,
@@ -365,12 +376,21 @@ def get_expenses_by_month(year: int, month: int):
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
             LEFT JOIN subcategories s ON s.id = e.subcategory_id
-            WHERE strftime('%Y', e.created_at) = ?
-              AND strftime('%m', e.created_at) = ?
+            {where}
             ORDER BY e.created_at DESC
             """,
-            (str(year), f"{month:02d}"),
+            params,
         ).fetchall()
+
+
+def get_expense_years():
+    """Distinct years with at least one expense, newest first — populates the
+    history screen's year filter so it only offers years that actually have data."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT strftime('%Y', created_at) AS year FROM expenses ORDER BY year DESC"
+        ).fetchall()
+    return [int(r["year"]) for r in rows]
 
 
 def get_expenses_by_week(week_start: str, week_end: str):
