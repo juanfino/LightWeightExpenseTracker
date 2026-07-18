@@ -289,6 +289,7 @@ def api_expenses_update():
     category_id      = data.get("category_id")      # may be None / null
     subcategory_id   = data.get("subcategory_id")    # may be None / null
     fixed_expense_id = data.get("fixed_expense_id")  # may be None / null
+    date_str         = (data.get("date") or "").strip() or None
 
     if not expense_id or not concept or amount is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -300,9 +301,15 @@ def api_expenses_update():
     except (ValueError, TypeError):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
 
+    if date_str is not None:
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"ok": False, "error": "Fecha inválida"}), 400
+
     cat_id    = int(category_id)    if category_id    else None
     subcat_id = int(subcategory_id) if subcategory_id else None
-    updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id)
+    updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id, date_str)
     if not updated:
         return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
 
@@ -548,6 +555,7 @@ def api_fixed_expenses_pay():
     year             = data.get("year")
     month            = data.get("month")
     user_id          = data.get("user_id")
+    date_str         = (data.get("date") or "").strip() or None
 
     if not fixed_expense_id or amount is None or not year or not month:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -568,8 +576,22 @@ def api_fixed_expenses_pay():
             return jsonify({"ok": False, "error": "No hay usuarios configurados"}), 400
         user_id = users[0]["id"]
 
-    y, m     = int(year), int(month)
-    date_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
+    y, m = int(year), int(month)
+
+    if date_str is not None:
+        try:
+            parsed = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"ok": False, "error": "Fecha inválida"}), 400
+        if (parsed.year, parsed.month) != (y, m):
+            return jsonify({"ok": False, "error": "La fecha debe caer dentro del período seleccionado"}), 400
+    else:
+        # No date given (e.g. an older client) — default to today if the period being
+        # viewed is the current month, otherwise the 1st of that month. We don't have
+        # enough signal to guess a day within a past period, so we don't invent one.
+        now = datetime.now(BAIRES)
+        date_str = now.strftime("%Y-%m-%d") if (now.year, now.month) == (y, m) else f"{y:04d}-{m:02d}-01"
+
     expense_id = db.create_expense_full(int(user_id), None, fe["concept"], amount, date_str)
     db.link_expense_to_fixed(expense_id, int(fixed_expense_id), y, m)
     return jsonify({"ok": True, "expense_id": expense_id})

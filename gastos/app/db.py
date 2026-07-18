@@ -506,19 +506,24 @@ def get_expenses_by_user(year: int, month: int):
 
 # ── Edición de gastos ─────────────────────────────────────────────────────────
 
-def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None, subcategory_id: int | None = None) -> bool:
+def update_expense(expense_id: int, concept: str, amount: float, category_id: int | None, subcategory_id: int | None = None, date_str: str | None = None) -> bool:
+    """`date_str` (YYYY-MM-DD, ART) is stored as 03:00 UTC — same convention as
+    create_expense_full/update_expense_fields — so ART date queries land on the right day."""
     concept = _normalize_concept(concept)
+    sets = ["concept=?", "amount=?", "category_id=?"]
+    params: list = [concept, amount, category_id]
+    if subcategory_id is not None:
+        sets.append("subcategory_id=?")
+        params.append(subcategory_id)
+    if date_str is not None:
+        sets.append("created_at=?")
+        params.append(f"{date_str} 03:00:00")
+    params.append(expense_id)
     with get_conn() as conn:
-        if subcategory_id is not None:
-            cur = conn.execute(
-                "UPDATE expenses SET concept=?, amount=?, category_id=?, subcategory_id=? WHERE id=?",
-                (concept, amount, category_id, subcategory_id, expense_id),
-            )
-        else:
-            cur = conn.execute(
-                "UPDATE expenses SET concept=?, amount=?, category_id=? WHERE id=?",
-                (concept, amount, category_id, expense_id),
-            )
+        cur = conn.execute(
+            f"UPDATE expenses SET {', '.join(sets)} WHERE id=?",
+            params,
+        )
         return cur.rowcount > 0
 
 

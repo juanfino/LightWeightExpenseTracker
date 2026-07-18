@@ -108,6 +108,22 @@ def fmt_date(dt_str: str) -> str:
         return dt_str
 
 
+def _parse_fecha_ddmmyyyy(text: str) -> str | None:
+    """'15/06/2026' → '2026-06-15' (None if not a valid DD/MM/AAAA date)."""
+    try:
+        return datetime.strptime(text.strip(), "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _fmt_fecha_ddmmyyyy(date_str: str) -> str:
+    """'2026-06-15' → '15/06/2026' (returns the input unchanged if not YYYY-MM-DD)."""
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return date_str
+
+
 # ── Teclados inline ───────────────────────────────────────────────────────────
 
 _PAGE_SIZE = 8
@@ -989,6 +1005,7 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✏️ <b>EDITAR</b>\n"
         "   <code>/editar ID monto 15000</code>\n"
         "   <code>/editar ID categoria Vehiculos</code>\n"
+        "   <code>/editar ID fecha 15/06/2026</code>\n"
         "   <code>/recat papota Entretenimiento</code>\n"
         "\n"
         "🗑️ <b>BORRAR</b>\n"
@@ -1118,7 +1135,8 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Uso:\n"
             "  <code>/editar ID monto 15000</code>\n"
-            "  <code>/editar ID categoria Vehiculos</code>",
+            "  <code>/editar ID categoria Vehiculos</code>\n"
+            "  <code>/editar ID fecha 15/06/2026</code>",
             parse_mode="HTML",
         )
         return
@@ -1181,9 +1199,22 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_text(reply, parse_mode="HTML")
 
+    elif campo == "fecha":
+        date_str = _parse_fecha_ddmmyyyy(valor)
+        if date_str is None:
+            await update.message.reply_text(
+                "❌ Fecha inválida. Formato: <code>DD/MM/AAAA</code>", parse_mode="HTML"
+            )
+            return
+        db.update_expense_fields(expense_id, user["id"], date_str=date_str)
+        await update.message.reply_text(
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — nueva fecha: <b>{valor}</b>",
+            parse_mode="HTML",
+        )
+
     else:
         await update.message.reply_text(
-            "❌ Campo inválido. Campos válidos: <code>monto</code>, <code>categoria</code>",
+            "❌ Campo inválido. Campos válidos: <code>monto</code>, <code>categoria</code>, <code>fecha</code>",
             parse_mode="HTML",
         )
 
@@ -1879,7 +1910,7 @@ def _describe_changes(expense, changes: dict) -> list[str]:
     if "concept" in changes:
         lines.append(f"📋 Concepto → {changes['concept']}")
     if "date" in changes:
-        lines.append(f"📅 Fecha → {changes['date']}")
+        lines.append(f"📅 Fecha → {_fmt_fecha_ddmmyyyy(changes['date'])}")
     cat_name = changes.get("category")
     if cat_name:
         cat = db.find_category_normalized(cat_name)
