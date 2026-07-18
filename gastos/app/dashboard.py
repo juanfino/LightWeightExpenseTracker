@@ -11,6 +11,7 @@ import requests as http_requests
 import db
 import backup as backup_module
 import fixed_matcher
+import categorizer
 
 app = Flask(__name__)
 
@@ -57,7 +58,14 @@ def index():
 @app.route("/history")
 def history():
     categories = db.get_all_categories()
-    return render_template("history.html", categories=[_row_to_dict(c) for c in categories])
+    users      = db.get_all_users()
+    years      = db.get_expense_years()
+    return render_template(
+        "history.html",
+        categories=[_row_to_dict(c) for c in categories],
+        users=[_row_to_dict(u) for u in users],
+        years=years,
+    )
 
 
 @app.route("/settings")
@@ -163,19 +171,24 @@ def api_weekly():
 
 @app.route("/api/expenses")
 def api_expenses():
-    try:
-        year        = request.args.get("year")
-        month       = request.args.get("month")
-        category_id = request.args.get("category_id")
-        user_id     = request.args.get("user_id")
-        usuario     = request.args.get("usuario", "").strip()
-    except Exception:
-        return jsonify({"error": "Parámetros inválidos"}), 400
+    year_raw       = request.args.get("year", "")
+    month_raw      = request.args.get("month", "")
+    category_id    = request.args.get("category_id")
+    subcategory_id = request.args.get("subcategory_id")
+    fixed          = request.args.get("fixed", "").strip()
+    user_id        = request.args.get("user_id")
+    usuario        = request.args.get("usuario", "").strip()
+    q              = request.args.get("q", "").strip()
 
-    if year and month:
-        rows = db.get_expenses_by_month(int(year), int(month))
-    else:
-        rows = db.get_recent_expenses(limit=200)
+    try:
+        if not year_raw and not month_raw:
+            rows = db.get_recent_expenses(limit=200)
+        else:
+            year  = int(year_raw)  if year_raw  and year_raw  != "all" else None
+            month = int(month_raw) if month_raw and month_raw != "all" else None
+            rows = db.get_expenses_filtered(year, month)
+    except ValueError:
+        return jsonify({"error": "Parámetros inválidos"}), 400
 
     result = [_row_to_dict(r) for r in rows]
 
@@ -184,10 +197,19 @@ def api_expenses():
             result = [r for r in result if r.get("category_id") is None]
         else:
             result = [r for r in result if str(r.get("category_id")) == str(category_id)]
+    if subcategory_id:
+        result = [r for r in result if str(r.get("subcategory_id")) == str(subcategory_id)]
+    if fixed == "fixed":
+        result = [r for r in result if r.get("fixed_expense_id") is not None]
+    elif fixed == "variable":
+        result = [r for r in result if r.get("fixed_expense_id") is None]
     if user_id:
         result = [r for r in result if str(r.get("user_id")) == str(user_id)]
     if usuario and usuario != "Todos":
         result = [r for r in result if r.get("user_name") == usuario]
+    if q:
+        needle = categorizer.normalize(q)
+        result = [r for r in result if needle in categorizer.normalize(r.get("concept") or "")]
 
     return jsonify(result)
 
@@ -363,7 +385,8 @@ def api_subcategories():
         rows = db.get_subcategories(int(category_id))
         return jsonify([{"id": r["id"], "name": r["name"]} for r in rows])
     rows = db.get_all_subcategories()
-    return jsonify([{"id": r["id"], "category_id": r["category_id"], "name": r["name"]} for r in rows])
+    return jsonify([{"id": r["id"], "category_id": r["category_id"], "name": r["name"],
+                      "category_name": r["category_name"]} for r in rows])
 
 
 @app.route("/api/expenses/<int:expense_id>/subcategory", methods=["POST"])

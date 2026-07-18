@@ -71,6 +71,40 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   flex-shrink: 0;
   display: inline-block;
 }
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  white-space: nowrap;
+}
+
+.filter-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.filter-chip button:hover {
+  background: var(--border2);
+  color: var(--text);
+}
 {% endblock %}
 
 {% block content %}
@@ -86,6 +120,10 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   <div class="card">
     <div class="section-title" style="margin-bottom:16px">Filtros</div>
     <div class="filters">
+      <div class="filter-group" style="flex:1 1 220px; min-width:180px">
+        <label class="filter-label" for="f-search">Buscar</label>
+        <input id="f-search" type="text" placeholder="Buscar por concepto…" style="width:100%">
+      </div>
       <div class="filter-group">
         <label class="filter-label" for="f-month">Mes</label>
         <select id="f-month">
@@ -100,7 +138,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       </div>
       <div class="filter-group">
         <label class="filter-label" for="f-year">Año</label>
-        <input id="f-year" type="number" style="width:90px" min="2020" max="2099">
+        <select id="f-year">
+          <option value="">Todos</option>
+          {% for y in years %}
+          <option value="{{ y }}">{{ y }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="filter-group">
         <label class="filter-label" for="f-category">Categoría</label>
@@ -111,8 +154,30 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
           {% endfor %}
         </select>
       </div>
-      <button class="btn btn-primary" id="btn-filter">Filtrar</button>
-      <button class="btn" id="btn-reset">Limpiar</button>
+      <div class="filter-group">
+        <label class="filter-label" for="f-subcategory">Subcategoría</label>
+        <select id="f-subcategory">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="f-fixed">Gasto fijo</label>
+        <select id="f-fixed">
+          <option value="">Todos</option>
+          <option value="fixed">Solo fijos</option>
+          <option value="variable">Solo variables</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="f-user">Usuario</label>
+        <select id="f-user">
+          <option value="">Todos</option>
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn" id="btn-reset">Limpiar filtros</button>
     </div>
   </div>
 
@@ -120,7 +185,10 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   <div class="card mt-24">
     <div class="section-header">
       <div class="section-title">Gastos</div>
-      <span id="result-count" style="font-size:12px; color:var(--muted)"></span>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        <div id="active-filters" style="display:flex; gap:6px; flex-wrap:wrap"></div>
+        <span id="result-count" style="font-size:12px; color:var(--muted)"></span>
+      </div>
     </div>
 
     <div id="table-wrap">
@@ -360,6 +428,33 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '</tr>';
   }
 
+  // ── Filter: subcategory (scoped to category, or all when none selected) ─────
+  async function loadFilterSubcategories(categoryValue) {
+    const sel = document.getElementById("f-subcategory");
+    const prevValue = sel.value;
+    sel.innerHTML = '<option value="">Todas</option>';
+    sel.disabled = false;
+
+    if (categoryValue === "null") {
+      // "Sin categoría" expenses never carry a subcategory — nothing to scope to.
+      sel.disabled = true;
+      return;
+    }
+
+    const url = categoryValue ? "/api/subcategories?category_id=" + categoryValue : "/api/subcategories";
+    const subs = await fetch(url).then(function(r) { return r.json(); }).catch(function() { return []; });
+    subs.forEach(function(s) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = categoryValue ? s.name : (s.category_name + " — " + s.name);
+      sel.appendChild(opt);
+    });
+
+    if (Array.from(sel.options).some(function(o) { return o.value === prevValue; })) {
+      sel.value = prevValue;
+    }
+  }
+
   // ── Subcategory helpers ────────────────────────────────────────────────────
   let subcatNameCache = {}; // subcategory_id → name
 
@@ -507,22 +602,87 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     tbody.innerHTML = slice.map(buildReadRow).join("");
   }
 
+  // ── Active-filter chips ────────────────────────────────────────────────────
+  function buildChips() {
+    const container = document.getElementById("active-filters");
+    const chips = [];
+
+    function addChip(label, onRemove) {
+      const chip = document.createElement("span");
+      chip.className = "filter-chip";
+      const text = document.createElement("span");
+      text.textContent = label;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "×";
+      btn.setAttribute("aria-label", "Quitar filtro: " + label);
+      btn.addEventListener("click", onRemove);
+      chip.appendChild(text);
+      chip.appendChild(btn);
+      chips.push(chip);
+    }
+
+    function selLabel(sel) { return sel.options[sel.selectedIndex].textContent.trim(); }
+
+    const monthSel = document.getElementById("f-month");
+    if (monthSel.value) addChip("Mes: " + selLabel(monthSel), function() { monthSel.value = ""; loadExpenses(); });
+
+    const yearSel = document.getElementById("f-year");
+    if (yearSel.value) addChip("Año: " + selLabel(yearSel), function() { yearSel.value = ""; loadExpenses(); });
+
+    const catSel = document.getElementById("f-category");
+    if (catSel.value) addChip("Categoría: " + selLabel(catSel), async function() {
+      catSel.value = "";
+      await loadFilterSubcategories("");
+      loadExpenses();
+    });
+
+    const subcatSel = document.getElementById("f-subcategory");
+    if (subcatSel.value) addChip("Subcategoría: " + selLabel(subcatSel), function() { subcatSel.value = ""; loadExpenses(); });
+
+    const fixedSel = document.getElementById("f-fixed");
+    if (fixedSel.value) addChip("Gasto fijo: " + selLabel(fixedSel), function() { fixedSel.value = ""; loadExpenses(); });
+
+    const userSel = document.getElementById("f-user");
+    if (userSel.value) addChip("Usuario: " + selLabel(userSel), function() { userSel.value = ""; loadExpenses(); });
+
+    const searchEl = document.getElementById("f-search");
+    if (searchEl.value.trim()) addChip('Búsqueda: "' + searchEl.value.trim() + '"', function() { searchEl.value = ""; loadExpenses(); });
+
+    container.innerHTML = "";
+    chips.forEach(function(c) { container.appendChild(c); });
+  }
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
   async function loadExpenses() {
-    const year  = document.getElementById("f-year").value;
-    const month = document.getElementById("f-month").value;
-    const catId = document.getElementById("f-category").value;
+    const month          = document.getElementById("f-month").value;
+    const year            = document.getElementById("f-year").value;
+    const categoryId       = document.getElementById("f-category").value;
+    const subcategoryId    = document.getElementById("f-subcategory").value;
+    const fixed             = document.getElementById("f-fixed").value;
+    const userId           = document.getElementById("f-user").value;
+    const q                  = document.getElementById("f-search").value.trim();
 
-    let url = "/api/expenses?";
-    if (year && month) url += "year=" + year + "&month=" + month + "&";
-    if (catId)         url += "category_id=" + catId + "&";
+    const usp = new URLSearchParams();
+    // month/year are always written explicitly (even empty = "Todos") so the URL
+    // distinguishes "explicitly all" from "no filters at all" on a fresh visit.
+    usp.set("month", month);
+    usp.set("year", year);
+    if (categoryId)    usp.set("category_id", categoryId);
+    if (subcategoryId) usp.set("subcategory_id", subcategoryId);
+    if (fixed)         usp.set("fixed", fixed);
+    if (userId)        usp.set("user_id", userId);
+    if (q)             usp.set("q", q);
+    window.history.replaceState(null, "", window.location.pathname + "?" + usp.toString());
 
-    const data = await fetch(url).then(function(r) { return r.json(); });
+    const data = await fetch("/api/expenses?" + usp.toString())
+      .then(function(r) { return r.json(); }).catch(function() { return []; });
     allExpenses = Array.isArray(data) ? data : [];
     sortExpenses();
     page = 0;
     render();
     updateSortHeaders();
+    buildChips();
   }
 
   // ── Pagination ─────────────────────────────────────────────────────────────
@@ -530,11 +690,29 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   document.getElementById("btn-next-page").addEventListener("click", function() { page++; render(); });
 
   // ── Filters ────────────────────────────────────────────────────────────────
-  document.getElementById("btn-filter").addEventListener("click", loadExpenses);
-  document.getElementById("btn-reset").addEventListener("click", function() {
-    document.getElementById("f-month").value    = "";
-    document.getElementById("f-year").value     = "";
-    document.getElementById("f-category").value = "";
+  document.getElementById("f-month").addEventListener("change", loadExpenses);
+  document.getElementById("f-year").addEventListener("change", loadExpenses);
+  document.getElementById("f-subcategory").addEventListener("change", loadExpenses);
+  document.getElementById("f-fixed").addEventListener("change", loadExpenses);
+  document.getElementById("f-user").addEventListener("change", loadExpenses);
+  document.getElementById("f-category").addEventListener("change", function() {
+    loadFilterSubcategories(this.value).then(loadExpenses);
+  });
+
+  let searchDebounceTimer = null;
+  document.getElementById("f-search").addEventListener("input", function() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(loadExpenses, 300);
+  });
+
+  document.getElementById("btn-reset").addEventListener("click", async function() {
+    document.getElementById("f-month").value       = "";
+    document.getElementById("f-year").value        = "";
+    document.getElementById("f-category").value    = "";
+    document.getElementById("f-fixed").value        = "";
+    document.getElementById("f-user").value        = "";
+    document.getElementById("f-search").value      = "";
+    await loadFilterSubcategories("");
     loadExpenses();
   });
 
@@ -657,9 +835,33 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   });
 
   // ── Init ───────────────────────────────────────────────────────────────────
-  const now = new Date();
-  document.getElementById("f-year").value  = now.getFullYear();
-  document.getElementById("f-month").value = now.getMonth() + 1;
-  loadFixedExpenses().then(loadExpenses);
+  // A fresh visit (no query string) defaults to the current month, like before.
+  // Any query string present is authoritative — including explicit "Todos" (empty
+  // month/year) — since loadExpenses() always writes both keys once a filter fires.
+  function applyFiltersFromUrl() {
+    const usp = new URLSearchParams(window.location.search);
+    if (Array.from(usp.keys()).length === 0) {
+      const now = new Date();
+      document.getElementById("f-year").value  = now.getFullYear();
+      document.getElementById("f-month").value = now.getMonth() + 1;
+      return "";
+    }
+    document.getElementById("f-month").value    = usp.get("month")       || "";
+    document.getElementById("f-year").value     = usp.get("year")        || "";
+    document.getElementById("f-category").value = usp.get("category_id") || "";
+    document.getElementById("f-fixed").value     = usp.get("fixed")       || "";
+    document.getElementById("f-user").value     = usp.get("user_id")     || "";
+    document.getElementById("f-search").value   = usp.get("q")           || "";
+    return usp.get("subcategory_id") || "";
+  }
+
+  async function init() {
+    const desiredSubcat = applyFiltersFromUrl();
+    await loadFixedExpenses();
+    await loadFilterSubcategories(document.getElementById("f-category").value);
+    if (desiredSubcat) document.getElementById("f-subcategory").value = desiredSubcat;
+    loadExpenses();
+  }
+  init();
 </script>
 {% endblock %}

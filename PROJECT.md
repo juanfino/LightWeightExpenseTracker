@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 2.1.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 2.2.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -43,7 +43,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to register a payment or search for one already logged. Detection runs downstream of expense creation on **every** input path (plain text, NL, voice, OCR, dashboard manual add) — not just the plain-text fast path — via a shared `fixed_matcher.py` (word-overlap ≥3 chars) so the fixed/variable split doesn't depend on how the user happened to log the expense. Linking always forces the expense's category/subcategory to the fixed expense's own, so a recurring bill can't drift category month to month. "✓ Ya lo pagué" searches already-logged, unlinked expenses for the period (concept overlap + category + amount proximity) and offers to link one instead of just flagging "paid" with no amount; explicitly declining still lets the user log the amount directly. The link (+ period) is an ordinary, editable field on the expense, alongside category/subcategory. The date is also editable everywhere expenses are (dashboard history row, `/editar ID fecha DD/MM/AAAA`, NL edit — `"el gasto 124 fue el 15 de junio"`); a date-only edit preserves the fixed-expense period it's linked to (period and date are independent — see 2.1.0). Registering a past-period payment (the dashboard's "+ Registrar pago"/"ya lo pagué" flow when browsing a month other than the current one) defaults the new expense's date within that period instead of today, and the picker is constrained to that month
 - **USD/ARS exchange rate tracking:** natural-language ("vendí 500 dólares a 1700", "compré 1000 dólares a 1550") via `dolar.py`, gated by a cheap keyword check (`looks_like_dolar`) before spending an LLM call; confidence-based auto-save, same as voice. Legacy `CambioDolar <usd> <cotizacion>` command still works (always records a sale). Dedicated dashboard page (`/dolares`) with history, monthly summary, and historical rate chart
 - **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 screens as of 1.15.0–1.17.0 — see **Screens** below
-- **Users:** Juampi (active), Cele (configured, not yet onboarded)
+- **Users:** Juampi and Cele, both onboarded and actively using the app
 
 ## Screens
 
@@ -54,7 +54,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
-| `/history` | `history.html` | Full expense history, filterable (month/year/category/user), inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete |
+| `/history` | `history.html` | Full expense history, filterable (concept search, month/year — each with an "all" option, category incl. uncategorized, subcategory scoped to the chosen category, fixed/variable status, user), active filters shown as removable chips, filter state reflected in the URL, inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
@@ -94,8 +94,8 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 - `fixed_matcher.py` — matching heuristics shared by `bot.py` and `dashboard.py` so both surfaces agree on what counts as a match: `find_fixed_expense_matches` (new expense → fixed-expense definition, word-overlap) and `find_candidate_expenses` (fixed expense → already-logged unlinked expenses for a period, scored by word overlap + category + amount proximity). Also `expense_period()`, converting an expense's own UTC timestamp to a (year, month) in a given tz
 - `sqlro.py` — read-only SQL executor (guardrails): `SELECT`/`WITH` only, single statement, `mode=ro` connection, statement timeout, row cap. Used by reports and edit-targeting
 - `parser.py` — parses free-text into `{concept, amount}`; returns `None` if no valid amount
-- `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding
-- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`. `update_expense_fields()` is the parameterized, user-scoped UPDATE used by bot edits. `link_expense_to_fixed()`/`unlink_expense_from_fixed()` are the single choke point for attaching/detaching a fixed-expense link (forces category/subcategory from the fixed expense on link)
+- `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding and for the history screen's concept search
+- `db.py` — all SQLite ops; `get_conn()` context manager auto-commits/rollbacks; `DB_PATH` set by `main.py`. `update_expense_fields()` is the parameterized, user-scoped UPDATE used by bot edits. `link_expense_to_fixed()`/`unlink_expense_from_fixed()` are the single choke point for attaching/detaching a fixed-expense link (forces category/subcategory from the fixed expense on link). `get_expenses_filtered(year, month)` takes either as optional, backing the history screen's "all" filter option; `get_expense_years()` lists the years that actually have data, for that same screen's year filter
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
@@ -143,7 +143,6 @@ The Pi is intended to host multiple independent projects. A single global compos
 - Clean up / review `/api/weekly` endpoint
 - Consolidate sparkline queries
 - Automate Pi deployments via Tailscale (when warranted)
-- Onboard Cele once app is sufficiently polished
 
 ## Workflow & Conventions
 
