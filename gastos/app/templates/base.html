@@ -509,7 +509,7 @@
       color: var(--text);
     }
 
-    @media (max-width: 640px) {
+    @media (max-width: 1024px) {
       .topbar-tabs   { display: none; }
       .topbar-avatar { display: none; }
       .nav-toggle    { display: flex; margin-left: auto; }
@@ -561,6 +561,9 @@
       .container { padding: 20px 14px; }
       .topbar    { padding: 0 14px; }
       .card      { padding: 16px; }
+
+      /* iOS hace zoom automático al enfocar un input con font-size < 16px */
+      input, select { font-size: 16px; }
     }
 
     {% block extra_styles %}{% endblock %}

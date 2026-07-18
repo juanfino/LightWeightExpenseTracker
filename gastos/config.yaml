@@ -1,6 +1,6 @@
 name: "Gastos Familiares"
 description: "Registro de gastos familiares via Telegram con dashboard web"
-version: "2.3.0"
+version: "2.3.1"
 slug: "gastos"
 init: false
 arch:
