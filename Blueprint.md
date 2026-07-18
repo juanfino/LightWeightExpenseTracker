@@ -1,5 +1,7 @@
 # Blueprint: Gastos Familiares
 
+> **Deprecado.** Este documento no se actualiza más y tiene contenido desactualizado (ej. todavía describe la tabla `fixed_expense_payments`, eliminada en la migración 2.0.0). La arquitectura, schema y estado del proyecto viven en [PROJECT.md](PROJECT.md) — ver [AGENTS.md](AGENTS.md) para el mapa completo de documentación.
+
 ## Contexto
 
 App de registro de gastos personales/familiares. Corre como contenedor Docker en una Raspberry Pi 4 (aarch64), desplegado via Docker Compose junto a Home Assistant y Cloudflare Tunnel. Los usuarios envían mensajes de texto por Telegram (`Supermercado 150000`) y la app registra el gasto, lo categoriza automáticamente, e identifica quién lo envió. El dashboard web muestra gráficos de gastos mensuales por categoría, semanales, por usuario, gastos fijos, y conversiones de dólares.

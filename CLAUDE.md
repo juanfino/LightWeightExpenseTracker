@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Before making any code change**, see [AGENTS.md](AGENTS.md) for the mandatory git sync/branch ritual and the documentation-update checklist that applies after every change.
+
 ## What this is
 
 A family expense tracker that records spending via Telegram and shows it in a web dashboard. Users send messages like `Supermercado 150000` to a Telegram bot; the app parses, categorizes, and stores the expense in SQLite. Runs as a Docker container on a Raspberry Pi 4 (aarch64), deployed via Docker Compose alongside Home Assistant and Cloudflare Tunnel.
