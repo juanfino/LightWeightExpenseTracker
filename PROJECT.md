@@ -1,8 +1,8 @@
 # LightWeightExpenseTracker
 
-Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
+Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 2.3.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 2.4.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -19,7 +19,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 10 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, plus (as of 2.3.0) `ipc_series`, `reports`, `expense_classifications` — see **Monthly AI report** below. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — not a separate joined entity; any number of expenses may share the same fixed expense + period (e.g. a legitimate double payment). As of 2.0.0 (previously a separate `fixed_expense_payments` join table). All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
+**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 10 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, plus `ipc_series`, `reports`, `expense_classifications`. `expenses.currency` and `fixed_expenses.currency` store `ARS` or `USD` natively (default ARS; historic rows migrate to ARS); there is no conversion and aggregates always filter one currency. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — and must share the fixed expense's currency. All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
 
 **Backup:** Daily at 21:00 ART via APScheduler — sends `gastos.db` as Telegram document to all configured users. Also triggerable via `POST /admin/backup-now`.
 

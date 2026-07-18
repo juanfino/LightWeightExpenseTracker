@@ -220,6 +220,7 @@
         <tr>
           <th>Concepto</th>
           <th>Estimado</th>
+          <th>Moneda</th>
           <th>Categoría</th>
           <th>Subcategoría</th>
           <th>Acciones</th>
@@ -280,6 +281,7 @@
       <label class="form-label">Monto estimado (opcional)</label>
       <input type="number" id="edit-amount" placeholder="Ej: 180000" min="0" step="any">
     </div>
+    <div class="form-row"><label class="form-label">Moneda</label><select id="edit-currency"><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
     <div class="form-row">
       <label class="form-label">Categoría</label>
       <select id="edit-category"></select>
@@ -328,11 +330,12 @@
   selYearEl.addEventListener('change',  () => { selYear  = +selYearEl.value;  loadStatus(); });
 
   // ── Formatting ─────────────────────────────────────────────────────────────
-  function fmtAmount(n) {
+  function fmtAmount(n, currency) {
     if (n === null || n === undefined) return "—";
     const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
-    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    const prefix = currency === 'USD' ? 'U$S ' : '$';
+    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
+    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
   // Category palette keyed by name (design tokens); DB color is only a fallback.
@@ -375,11 +378,15 @@
     }
 
     const countPaid  = statusRows.filter(r => r.paid).length;
-    const totalEst   = statusRows.reduce((s, r) => s + (r.estimated_amount || 0), 0);
-    const totalPaid  = statusRows.filter(r => r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0);
+    const totals = ['ARS', 'USD'].map(currency => ({
+      currency,
+      estimated: statusRows.filter(r => r.currency === currency).reduce((s, r) => s + (r.estimated_amount || 0), 0),
+      paid: statusRows.filter(r => r.currency === currency && r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0),
+    })).filter(t => t.estimated || t.paid);
+    const totalsText = totals.map(t => `${fmtAmount(t.paid, t.currency)} de ~${fmtAmount(t.estimated, t.currency)} estimado`).join(' · ');
     summaryEl.innerHTML =
       `<b>${countPaid} de ${statusRows.length} pagados</b>` +
-      (totalEst ? ` &nbsp;·&nbsp; ${fmtAmount(totalPaid)} de ~${fmtAmount(totalEst)} estimado` : '');
+      (totalsText ? ` &nbsp;·&nbsp; ${totalsText}` : '');
 
     const pct = statusRows.length ? Math.round(countPaid / statusRows.length * 100) : 0;
     document.getElementById('status-progress-bar').style.width = pct + '%';
@@ -387,8 +394,8 @@
     listEl.innerHTML = statusRows.map(r => {
       const catColor   = getCatColor(r.category_name, r.category_color);
       const amountHtml = r.paid
-        ? `<span class="fixed-amount paid">${fmtAmount(r.total_paid)}</span>`
-        : `<span class="fixed-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
+        ? `<span class="fixed-amount paid">${fmtAmount(r.total_paid, r.currency)}</span>`
+        : `<span class="fixed-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount, r.currency) : '—'}</span>`;
       // A legitimate second payment in the same period (e.g. a utility billing error) must
       // stay reachable even once "paid" — kept as a subtler, secondary action.
       const payBtn = r.paid
@@ -458,7 +465,7 @@
     document.getElementById('candidates-title').textContent = `¿Alguno de estos es el pago de "${concept}"?`;
     document.getElementById('candidates-list').innerHTML = candidates.map(c => `
       <button class="btn" style="text-align:left;justify-content:flex-start;font-size:13.5px" onclick="pickCandidate(${c.id})">
-        ${c.concept} · ${fmtAmount(c.amount)}
+        ${c.concept} · ${fmtAmount(c.amount, c.currency)}
       </button>
     `).join('');
     document.getElementById('modal-candidates').classList.add('open');
@@ -541,7 +548,8 @@
     tbody.innerHTML = allFixed.map(fe => `
       <tr>
         <td data-label="Concepto">${fe.concept}</td>
-        <td class="mono" data-label="Estimado">${fe.estimated_amount ? fmtAmount(fe.estimated_amount) : '—'}</td>
+        <td class="mono" data-label="Estimado">${fe.estimated_amount ? fmtAmount(fe.estimated_amount, fe.currency) : '—'}</td>
+        <td data-label="Moneda">${fe.currency}</td>
         <td data-label="Categoría"><span class="badge">${fe.category_name}</span></td>
         <td data-label="Subcategoría">${fe.subcategory_name ? `<span class="badge">${fe.subcategory_name}</span>` : '<span style="color:var(--text2)">—</span>'}</td>
         <td class="cell-actions">
@@ -606,6 +614,7 @@
     document.getElementById('edit-title').textContent   = fe ? 'Editar gasto fijo' : 'Agregar gasto fijo';
     document.getElementById('edit-concept').value       = fe ? fe.concept : '';
     document.getElementById('edit-amount').value        = (fe && fe.estimated_amount) ? fe.estimated_amount : '';
+    document.getElementById('edit-currency').value      = fe ? fe.currency : 'ARS';
     const catSel = document.getElementById('edit-category');
     catSel.value = (fe && fe.category_id) ? fe.category_id : '';
     await loadSubcategoriesForEdit(catSel.value, fe ? fe.subcategory_id : null);
@@ -624,6 +633,7 @@
     const amount    = document.getElementById('edit-amount').value;
     const catId     = document.getElementById('edit-category').value;
     const subcatId  = document.getElementById('edit-subcategory').value;
+    const currency  = document.getElementById('edit-currency').value;
     if (!concept) { alert('El concepto es obligatorio.'); return; }
 
     const url  = editFixedId ? '/api/fixed-expenses/update' : '/api/fixed-expenses/add';
@@ -632,6 +642,7 @@
       estimated_amount: amount ? parseFloat(amount) : null,
       category_id:    catId    ? parseInt(catId)    : null,
       subcategory_id: subcatId ? parseInt(subcatId) : null,
+      currency,
     };
     if (editFixedId) body.id = editFixedId;
 

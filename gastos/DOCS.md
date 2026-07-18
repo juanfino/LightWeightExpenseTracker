@@ -2,6 +2,12 @@
 
 Registro de gastos familiares via Telegram con dashboard web.
 
+## Monedas
+
+La moneda por defecto es **ARS**. Para registrar un gasto en dólares escribí, por ejemplo, `Netflix 15 USD` o `Hotel 200 dólares`; el bot también lo reconoce por voz. En el dashboard podés elegir ARS/USD al agregar o editar un gasto, y el Historial permite filtrarlos. Los totales siempre se muestran separados: la app no convierte dólares ni los suma con pesos.
+
+Los gastos fijos también tienen moneda y un pago hereda la de su fijo. Un gasto vinculado a un fijo no puede cambiar de moneda hasta desvincularse. El OCR parte de ARS: antes de confirmar el ticket se puede elegir USD.
+
 ## Configuración
 
 La app se configura mediante variables de entorno:
@@ -52,6 +58,7 @@ Con `ANTHROPIC_API_KEY` configurada, también se pueden registrar operaciones de
 | `/sincat` | Gastos sin categoría |
 | `/fijos` | Estado del mes de gastos fijos, con botones para marcar pago |
 | `/editar ID monto VALOR` | Editar monto de un gasto |
+| `/editar ID moneda ARS\|USD` | Editar moneda (salvo gastos vinculados a un fijo) |
 | `/editar ID categoria NOMBRE` | Editar categoría de un gasto |
 | `/recat CONCEPTO CATEGORÍA` | Reasignar gastos por concepto |
 | `/borrar ID` | Borrar un gasto |

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.0
+- Gastos y gastos fijos ahora guardan su moneda nativa (`ARS` o `USD`); la migración automática conserva todos los registros históricos como ARS. No hay cotización automática ni se suman monedas distintas.
+- Telegram mantiene ARS por defecto y reconoce `USD`, `US$`, `U$S` o “dólares” en texto, voz y lenguaje natural. La moneda se puede corregir con el teclado inline o `/editar ID moneda USD`; OCR empieza en ARS y permite pasarlo a USD antes de confirmar.
+- Dashboard: selector ARS/USD para gráficos y totales, total secundario de la otra moneda, filtro y edición de moneda en Historial, y selector de moneda para altas manuales y gastos fijos.
+- Los pagos de gastos fijos heredan obligatoriamente la moneda del fijo; la detección, candidatos y vínculo sólo consideran la misma moneda. No se puede cambiar la moneda de un gasto vinculado ni de un fijo con pagos vinculados.
+- El resumen mensual y el IPC continúan analizando ARS; los gastos USD quedan en una sección nativa separada sin conversión. Prompts SQL/NL y fingerprint incorporan moneda.
+
 ## 2.3.1
 - Se corrigen tres problemas de layout en mobile detectados probando la app en un iPhone real: (1) cualquier `input`/`select` con menos de 16px de `font-size` dispara el zoom automático de iOS Safari al enfocarlo, dejando la página con scroll horizontal hasta hacer zoom-out a mano — se sube a 16px en el breakpoint mobile (`base.html`); (2) entre ~640px y ~1024px de ancho (tablets en vertical, celulares grandes en horizontal) la barra de navegación superior no entraba completa pero tampoco bajaba a menú hamburguesa, dejando "Categorías" y "Sistema" directamente inaccesibles (clippeados por `overflow-x: hidden` sin scroll ni wrap) — se sube el breakpoint del hamburguesa de 640px a 1024px; (3) en la tarjeta "Fijos del mes" del dashboard, el nombre de un gasto fijo no pagado desaparecía en mobile porque el monto estimado + los botones "+ Registrar"/"✓ Ya pagué" no dejaban ancho disponible para el `<span>` del concepto — se replica el mismo patrón de wrap que ya usaba `/fijos` (monto y botones bajan a su propia línea en mobile)
 

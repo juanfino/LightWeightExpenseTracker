@@ -61,6 +61,7 @@ _TOOLS = [
                         "el punto es separador de miles y la coma es decimal."
                     ),
                 },
+                "currency": {"type": "string", "enum": ["ARS", "USD"], "description": "ARS por defecto; USD solo si el usuario lo aclaró explícitamente."},
                 "date": {"type": "string", "description": "Fecha del gasto YYYY-MM-DD (zona ART). Omitir si es hoy."},
                 "category": {"type": "string", "description": "Nombre de una categoría EXISTENTE si el usuario la menciona explícitamente. Omitir para que el sistema la infiera."},
                 "subcategory": {"type": "string", "description": "Nombre de una subcategoría EXISTENTE si corresponde."},
@@ -94,7 +95,8 @@ _TOOLS = [
                     "type": "object",
                     "description": "Solo los campos que el usuario pidió cambiar.",
                     "properties": {
-                        "amount": {"type": "number", "description": "Nuevo monto en pesos."},
+                        "amount": {"type": "number", "description": "Nuevo monto en la moneda nativa del gasto."},
+                        "currency": {"type": "string", "enum": ["ARS", "USD"], "description": "Nueva moneda; no cambiar si el gasto está vinculado a un fijo."},
                         "concept": {"type": "string"},
                         "category": {"type": "string", "description": "Nombre de categoría (puede no existir todavía)."},
                         "subcategory": {"type": "string"},
@@ -156,7 +158,7 @@ _TOOLS = [
 
 _SCHEMA_DOC = (
     "Esquema SQLite (solo lectura):\n"
-    "  expenses(id, user_id, category_id, subcategory_id, concept TEXT, amount REAL, raw_text TEXT, created_at TEXT)\n"
+    "  expenses(id, user_id, category_id, subcategory_id, concept TEXT, amount REAL, currency TEXT, raw_text TEXT, created_at TEXT)\n"
     "  users(id, telegram_id, name, color)\n"
     "  categories(id, name, color, icon)\n"
     "  subcategories(id, category_id, name)\n"
@@ -164,7 +166,7 @@ _SCHEMA_DOC = (
     "  - created_at está en UTC ('YYYY-MM-DD HH:MM:SS'). Para razonar por día/semana en hora argentina "
     "usá datetime(created_at, '-3 hours').\n"
     "  - category_id y subcategory_id pueden ser NULL (gasto sin categorizar).\n"
-    "  - amount está en pesos."
+    "  - currency es ARS o USD; amount está en su moneda nativa. Nunca sumes ni compares directamente monedas distintas: filtrá por currency o agrupá por currency."
 )
 
 
@@ -188,7 +190,7 @@ def _build_system_prompt(user) -> str:
     for e in recent:
         local = _to_art(e["created_at"])
         recent_lines.append(
-            f"  - id={e['id']} | {local} | {e['concept']} | ${e['amount']:.0f} | "
+            f"  - id={e['id']} | {local} | {e['concept']} | {e['currency']} {e['amount']:.0f} | "
             f"{e['category_name']}" + (f" / {e['subcategory_name']}" if e["subcategory_name"] else "")
         )
     recent_block = "\n".join(recent_lines) or "  (sin gastos recientes)"
@@ -202,6 +204,8 @@ def _build_system_prompt(user) -> str:
         "'marzo', 'el trimestre', etc.\n"
         "Formato numérico argentino: el punto es separador de miles y la coma es decimal. "
         "'lucas'/'luca' = miles, 'palo'/'palos' = millones.\n\n"
+        "Monedas: ARS es el valor por defecto. Si el mensaje dice USD, US$, U$S o dólares, usá USD. "
+        "En reportes SQL, NUNCA sumes monedas mezcladas: filtrá por currency o GROUP BY currency.\n\n"
         f"El usuario que escribe es: id={user['id']}, nombre={user['name']}.\n\n"
         "Categorías:\n" + cat_lines + "\n\n"
         "Subcategorías:\n" + sub_lines + "\n\n"
@@ -358,6 +362,7 @@ def _handle_log(args: dict) -> dict:
         "kind": "log",
         "concept": concept,
         "amount": amount,
+        "currency": db.normalize_currency(args.get("currency")),
         "date": (args.get("date") or "").strip() or None,
         "category": (args.get("category") or "").strip() or None,
         "subcategory": (args.get("subcategory") or "").strip() or None,
@@ -375,6 +380,11 @@ def _handle_edit(args: dict, user) -> dict:
             if amt > 0:
                 clean["amount"] = amt
         except (TypeError, ValueError):
+            pass
+    if changes.get("currency") is not None:
+        try:
+            clean["currency"] = db.normalize_currency(changes["currency"])
+        except ValueError:
             pass
     for key in ("concept", "category", "subcategory", "date", "fixed_expense"):
         val = changes.get(key)

@@ -65,16 +65,17 @@ NL_HISTORY_MAX_MESSAGES = 10
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
 
-def fmt_amount(amount: float) -> str:
+def fmt_amount(amount: float, currency: str = "ARS") -> str:
     """2500.5 → '$2.500,50'  |  150000.0 → '$150.000'"""
+    prefix = "U$S " if currency == "USD" else "$"
     if amount == int(amount):
         # whole number: use dot as thousands separator
-        return "$" + f"{int(amount):,}".replace(",", ".")
+        return prefix + f"{int(amount):,}".replace(",", ".")
     # has decimals: format with 2 decimal places, swap separators
     formatted = f"{amount:,.2f}"          # "2,500.50"
     int_part, dec_part = formatted.split(".")
     int_part = int_part.replace(",", ".")  # "2.500"
-    return f"${int_part},{dec_part}"       # "$2.500,50"
+    return f"{prefix}{int_part},{dec_part}"
 
 
 def fmt_usd(amount: float) -> str:
@@ -85,6 +86,12 @@ def fmt_usd(amount: float) -> str:
     int_part, dec_part = formatted.split(".")
     int_part = int_part.replace(",", ".")
     return f"U$S {int_part},{dec_part}"
+
+
+def _separate_totals(rows) -> str:
+    totals = {currency: sum(r["amount"] for r in rows if r["currency"] == currency)
+              for currency in ("ARS", "USD")}
+    return " · ".join(fmt_amount(totals[c], c) for c in ("ARS", "USD") if totals[c]) or "$0"
 
 
 def _parse_cambio_token(token: str) -> float | None:
@@ -161,6 +168,7 @@ def _build_category_keyboard(expense_id: int, page: int = 0) -> InlineKeyboardMa
 
     rows.append([
         InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}"),
+        InlineKeyboardButton("💱 Moneda", callback_data=f"ec:{expense_id}"),
         InlineKeyboardButton("🔗 Gasto fijo",   callback_data=f"fl:{expense_id}"),
     ])
     return InlineKeyboardMarkup(rows)
@@ -169,14 +177,24 @@ def _build_category_keyboard(expense_id: int, page: int = 0) -> InlineKeyboardMa
 def _build_edit_only_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("✏️ Editar monto", callback_data=f"ea:{expense_id}"),
+        InlineKeyboardButton("💱 Moneda", callback_data=f"ec:{expense_id}"),
         InlineKeyboardButton("🔗 Gasto fijo",   callback_data=f"fl:{expense_id}"),
+    ]])
+
+
+def _build_currency_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("$ ARS", callback_data=f"ecset:{expense_id}:ARS"),
+        InlineKeyboardButton("U$S USD", callback_data=f"ecset:{expense_id}:USD"),
     ]])
 
 
 def _build_fixed_link_keyboard(expense_id: int) -> InlineKeyboardMarkup:
     """Picker to attach/detach an existing expense to a fixed expense — same interaction
     language as the category picker, but single-page since fixed-expense lists are short."""
-    fixed_expenses = db.get_all_fixed_expenses()
+    expense = db.get_expense_by_id(expense_id)
+    fixed_expenses = [fe for fe in db.get_all_fixed_expenses()
+                      if expense and fe["currency"] == expense["currency"]]
     rows = []
     for i in range(0, len(fixed_expenses), 2):
         row = [
@@ -244,13 +262,13 @@ def _expense_period(expense) -> tuple[int, int]:
     return fixed_matcher.expense_period(expense["created_at"], BAIRES)
 
 
-async def _maybe_offer_fixed_link(chat_id: int, bot, expense_id: int, concept: str) -> None:
+async def _maybe_offer_fixed_link(chat_id: int, bot, expense_id: int, concept: str, currency: str = "ARS") -> None:
     """Runs after ANY expense is saved, on every input path (plain text, NL, voice, OCR) —
     the single downstream seam that offers linking a newly logged expense to a matching
     fixed expense. Never links on its own; always asks. No-op if nothing matches, so most
     expenses see no extra message."""
     fixed_expenses = db.get_all_fixed_expenses()
-    matches = fixed_matcher.find_fixed_expense_matches(concept, fixed_expenses)
+    matches = fixed_matcher.find_fixed_expense_matches(concept, fixed_expenses, currency)
     if not matches:
         return
 
@@ -334,6 +352,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    data["currency"] = "ARS"  # OCR is deliberately ARS-first; the confirmation can correct it.
     pending_ocr[chat_id] = data
 
     fecha_str = data["fecha"].strftime("%d/%m/%Y")
@@ -347,10 +366,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📅 Fecha: {fecha_str}{fecha_note}\n\n"
         "¿Guardamos?",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Sí, guardar", callback_data="ocr:confirm"),
-            InlineKeyboardButton("❌ Cancelar",    callback_data="ocr:cancel"),
-        ]]),
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Sí, guardar", callback_data="ocr:confirm"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="ocr:cancel"),
+            ],
+            [
+                InlineKeyboardButton("$ ARS", callback_data="ocr:currency:ARS"),
+                InlineKeyboardButton("U$S USD", callback_data="ocr:currency:USD"),
+            ],
+        ]),
     )
 
 
@@ -381,7 +406,7 @@ async def _send_next_voice_confirmation(chat_id: int, bot) -> None:
         text=(
             f"{counter}"
             f"📋 Concepto: {item['concept']}\n"
-            f"💰 Monto: {fmt_amount(item['amount'])}"
+            f"💰 Monto: {fmt_amount(item['amount'], item.get('currency', 'ARS'))}"
             f"{cat_line}\n\n"
             "¿Guardamos?"
         ),
@@ -406,6 +431,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
             subcategory_id=item["subcategory_id"],
             concept=item["concept"],
             amount=item["amount"],
+            currency=item.get("currency", "ARS"),
             raw_text=f"[VOZ] {item['transcription']}",
         )
     except Exception as e:
@@ -418,7 +444,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
         text=(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {item['concept']}\n"
-            f"💰 {fmt_amount(item['amount'])}\n"
+            f"💰 {fmt_amount(item['amount'], item.get('currency', 'ARS'))}\n"
             f"{_cat_line(cat_icon, cat_name, item['subcategory_id'])}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>"
@@ -426,7 +452,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
         parse_mode="HTML",
         reply_markup=keyboard,
     )
-    await _maybe_offer_fixed_link(chat_id, bot, expense_id, item["concept"])
+    await _maybe_offer_fixed_link(chat_id, bot, expense_id, item["concept"], item.get("currency", "ARS"))
 
 
 async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes,
@@ -501,6 +527,7 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
         item = {
             "concept": expense["concept"],
             "amount": expense["amount"],
+            "currency": expense.get("currency", "ARS"),
             "category_id": category_id,
             "subcategory_id": subcategory_id,
             "transcription": transcription,
@@ -602,7 +629,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         now = datetime.now(BAIRES)
         date_str = now.strftime("%Y-%m-%d")
-        expense_id = db.create_expense_full(user["id"], None, fdata["concept"], amount, date_str)
+        expense_id = db.create_expense_full(
+            user["id"], None, fdata["concept"], amount, date_str,
+            currency=fdata.get("currency", "ARS"),
+        )
         db.link_expense_to_fixed(expense_id, fdata["fixed_expense_id"], now.year, now.month)
         expense = db.get_expense_by_id(expense_id)
         cat = db.get_category_by_id(expense["category_id"]) if expense["category_id"] else None
@@ -611,7 +641,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>Gasto fijo registrado</b>\n"
             f"📋 {fdata['concept']}\n"
-            f"💰 {fmt_amount(amount)}\n"
+            f"💰 {fmt_amount(amount, fdata.get('currency', 'ARS'))}\n"
             f"{_cat_line(cat_icon, cat_name, expense['subcategory_id'])}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
@@ -642,7 +672,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>Gasto actualizado</b>\n"
             f"📋 {expense['concept']}\n"
-            f"💰 {fmt_amount(amount)}\n"
+            f"💰 {fmt_amount(amount, expense['currency'])}\n"
             f"{cat_icon} {cat_name}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
@@ -667,9 +697,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_id=user["id"],
                     category_id=category_id,
                     subcategory_id=subcategory_id,
-                    concept=concept,
-                    amount=data["monto"],
-                    raw_text=f"[OCR] {concept} {data['monto']}",
+                concept=concept,
+                amount=data["monto"],
+                currency=data.get("currency", "ARS"),
+                raw_text=f"[OCR] {concept} {data['monto']}",
                 )
             except Exception as e:
                 logger.error("Error guardando gasto OCR: %s", e)
@@ -678,13 +709,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ <b>Gasto registrado</b>\n"
                 f"📋 {concept}\n"
-                f"💰 {fmt_amount(data['monto'])}\n"
+                f"💰 {fmt_amount(data['monto'], data.get('currency', 'ARS'))}\n"
                 f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
                 f"👤 {user['name']}\n"
                 f"<code>#ID{expense_id}</code>",
                 parse_mode="HTML",
             )
-            await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept)
+            await _maybe_offer_fixed_link(
+                chat_id, context.bot, expense_id, concept, data.get("currency", "ARS")
+            )
         elif response in ("no", "n", "cancelar"):
             del pending_ocr[chat_id]
             await update.message.reply_text("❌ Carga cancelada.")
@@ -742,6 +775,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             subcategory_id=subcategory_id,
             concept=parsed["concept"],
             amount=parsed["amount"],
+            currency=parsed.get("currency", "ARS"),
             raw_text=text,
         )
     except Exception as e:
@@ -757,7 +791,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ <b>Gasto registrado</b>\n"
         f"📋 {parsed['concept']}\n"
-        f"💰 {fmt_amount(parsed['amount'])}\n"
+        f"💰 {fmt_amount(parsed['amount'], parsed.get('currency', 'ARS'))}\n"
         f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
         f"👤 {user['name']}\n"
         f"<code>#ID{expense_id}</code>",
@@ -765,7 +799,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
-    await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, parsed["concept"])
+    await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, parsed["concept"], parsed.get("currency", "ARS"))
 
 
 async def cmd_gastos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -775,16 +809,18 @@ async def cmd_gastos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from datetime import datetime
     now = datetime.now()
-    summary = db.get_expenses_summary_by_category(now.year, now.month)
+    summary = db.get_expenses_summary_by_category(now.year, now.month, currency="ARS")
+    summary_usd = db.get_expenses_summary_by_category(now.year, now.month, currency="USD")
 
-    if not summary:
+    if not summary and not summary_usd:
         await update.message.reply_text("📭 No hay gastos registrados este mes.")
         return
 
     total = sum(r["total"] for r in summary)
     month_name = now.strftime("%B %Y").capitalize()
 
-    lines = [f"📊 <b>Gastos de {month_name}</b>\n", f"💰 Total: <b>{fmt_amount(total)}</b>\n"]
+    usd_total = sum(r["total"] for r in summary_usd)
+    lines = [f"📊 <b>Gastos de {month_name}</b>\n", f"💰 Total: <b>{fmt_amount(total)}" + (f" · {fmt_amount(usd_total, 'USD')}" if usd_total else "") + "</b>\n"]
     for r in summary:
         lines.append(f"{r['icon']} {r['name']}: {fmt_amount(r['total'])} ({r['pct']}%)")
 
@@ -807,13 +843,12 @@ async def cmd_semana(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 No hay gastos esta semana.")
         return
 
-    total = sum(r["amount"] for r in expenses)
-    lines = [f"📅 <b>Gastos de la semana</b> — {fmt_amount(total)}\n"]
+    lines = [f"📅 <b>Gastos de la semana</b> — {_separate_totals(expenses)}\n"]
     for r in expenses:
         date_part = fmt_date(r["created_at"])[:5]  # dd/mm
         lines.append(
             f"{r['category_icon']} {date_part}  {r['concept']}  "
-            f"<b>{fmt_amount(r['amount'])}</b>  {r['user_name']}"
+            f"<b>{fmt_amount(r['amount'], r['currency'])}</b>  {r['user_name']}"
             f"  <code>#ID{r['id']}</code>"
         )
 
@@ -831,12 +866,11 @@ async def cmd_hoy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 No hay gastos hoy.")
         return
 
-    total = sum(r["amount"] for r in expenses)
-    lines = [f"🗓 <b>Gastos de hoy</b> — {fmt_amount(total)}\n"]
+    lines = [f"🗓 <b>Gastos de hoy</b> — {_separate_totals(expenses)}\n"]
     for r in expenses:
         lines.append(
             f"{r['category_icon']} {r['concept']}  "
-            f"<b>{fmt_amount(r['amount'])}</b>  {r['user_name']}"
+            f"<b>{fmt_amount(r['amount'], r['currency'])}</b>  {r['user_name']}"
             f"  <code>#ID{r['id']}</code>"
         )
 
@@ -949,7 +983,7 @@ async def cmd_fijos(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for r in rows:
         if r["paid"]:
-            lines.append(f"✅ {r['concept']} — {fmt_amount(r['total_paid'])}")
+            lines.append(f"✅ {r['concept']} — {fmt_amount(r['total_paid'], r['currency'])}")
             # Secondary, less prominent action: a legitimate second payment in the same
             # period (e.g. a utility billing error) must stay reachable even once "paid".
             buttons.append([InlineKeyboardButton(
@@ -957,7 +991,7 @@ async def cmd_fijos(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data=f"fix:direct_pay:{r['id']}",
             )])
         else:
-            est = f"~{fmt_amount(r['estimated_amount'])}" if r["estimated_amount"] else "sin estimado"
+            est = f"~{fmt_amount(r['estimated_amount'], r['currency'])}" if r["estimated_amount"] else "sin estimado"
             lines.append(f"⬜ {r['concept']} — {est}")
             buttons.append([InlineKeyboardButton(
                 f"Registrar pago: {r['concept']}",
@@ -1115,7 +1149,7 @@ async def cmd_sincat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_part = fmt_date(r["created_at"])[:5]  # DD/MM
         lines.append(
             f"<code>#{r['id']}</code>  {r['concept']}  "
-            f"<b>{fmt_amount(r['amount'])}</b>  <i>({date_part})</i>"
+            f"<b>{fmt_amount(r['amount'], r['currency'])}</b>  <i>({date_part})</i>"
         )
     lines.append(
         "\nUsá <code>/editar ID categoria NOMBRE</code> para corregirlos\n"
@@ -1135,6 +1169,7 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Uso:\n"
             "  <code>/editar ID monto 15000</code>\n"
+            "  <code>/editar ID moneda USD</code>\n"
             "  <code>/editar ID categoria Vehiculos</code>\n"
             "  <code>/editar ID fecha 15/06/2026</code>",
             parse_mode="HTML",
@@ -1168,7 +1203,8 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         db.update_expense_amount(expense_id, user["id"], amount)
         await update.message.reply_text(
-            f"✅ Gasto <code>#{expense_id}</code> actualizado — nuevo monto: <b>{fmt_amount(amount)}</b>",
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — nuevo monto: "
+            f"<b>{fmt_amount(amount, expense['currency'])}</b>",
             parse_mode="HTML",
         )
 
@@ -1212,9 +1248,21 @@ async def cmd_editar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
+    elif campo in ("moneda", "currency"):
+        currency = valor.upper()
+        if currency not in db.SUPPORTED_CURRENCIES:
+            await update.message.reply_text("❌ Moneda inválida. Usá <code>ARS</code> o <code>USD</code>.", parse_mode="HTML")
+            return
+        if not db.update_expense_fields(expense_id, user["id"], currency=currency):
+            await update.message.reply_text("🔒 No se puede cambiar la moneda de un gasto vinculado a un fijo.", parse_mode="HTML")
+            return
+        await update.message.reply_text(
+            f"✅ Gasto <code>#{expense_id}</code> actualizado — moneda: <b>{currency}</b>", parse_mode="HTML"
+        )
+
     else:
         await update.message.reply_text(
-            "❌ Campo inválido. Campos válidos: <code>monto</code>, <code>categoria</code>, <code>fecha</code>",
+            "❌ Campo inválido. Campos válidos: <code>monto</code>, <code>moneda</code>, <code>categoria</code>, <code>fecha</code>",
             parse_mode="HTML",
         )
 
@@ -1273,6 +1321,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cb = query.data
 
+    if cb.startswith("ocr:currency:"):
+        data = pending_ocr.get(chat_id)
+        if not data:
+            await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
+            return
+        data["currency"] = cb.rsplit(":", 1)[1]
+        await query.answer(f"Moneda: {data['currency']}")
+        return
+
     if cb == "ocr:confirm":
         if chat_id not in pending_ocr:
             await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
@@ -1292,6 +1349,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_id=subcategory_id,
                 concept=concept,
                 amount=ocr_data["monto"],
+                currency=ocr_data.get("currency", "ARS"),
                 raw_text=f"[OCR] {concept} {ocr_data['monto']}",
             )
         except Exception as e:
@@ -1302,14 +1360,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {concept}\n"
-            f"💰 {fmt_amount(ocr_data['monto'])}\n"
+            f"💰 {fmt_amount(ocr_data['monto'], ocr_data.get('currency', 'ARS'))}\n"
             f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
             reply_markup=keyboard,
         )
-        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept)
+        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept, ocr_data.get("currency", "ARS"))
         return
 
     elif cb == "ocr:cancel":
@@ -1333,6 +1391,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_id=item["subcategory_id"],
                 concept=item["concept"],
                 amount=item["amount"],
+                currency=item.get("currency", "ARS"),
                 raw_text=f"[VOZ] {item['transcription']}",
             )
         except Exception as e:
@@ -1343,14 +1402,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {item['concept']}\n"
-            f"💰 {fmt_amount(item['amount'])}\n"
+            f"💰 {fmt_amount(item['amount'], item.get('currency', 'ARS'))}\n"
             f"{_cat_line(cat_icon, cat_name, item['subcategory_id'])}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
             parse_mode="HTML",
             reply_markup=keyboard,
         )
-        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, item["concept"])
+        await _maybe_offer_fixed_link(
+            chat_id, context.bot, expense_id, item["concept"], item.get("currency", "ARS")
+        )
         if state["queue"]:
             await _send_next_voice_confirmation(chat_id, context.bot)
         else:
@@ -1446,7 +1507,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"✅ <b>{cat_icon} {cat_name}</b> asignada\n"
                 f"📋 {expense['concept']}\n"
-                f"💰 {fmt_amount(expense['amount'])}\n\n"
+                f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n\n"
                 f"¿Querés agregar una subcategoría?",
                 parse_mode="HTML",
                 reply_markup=_build_subcategory_keyboard(expense_id, subcats),
@@ -1455,7 +1516,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"✅ <b>Gasto registrado</b>\n"
                 f"📋 {expense['concept']}\n"
-                f"💰 {fmt_amount(expense['amount'])}\n"
+                f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n"
                 f"{cat_icon} {cat_name}\n"
                 f"👤 {user['name']}\n"
                 f"<code>#ID{expense_id}</code>",
@@ -1487,7 +1548,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {expense['concept']}\n"
-            f"💰 {fmt_amount(expense['amount'])}\n"
+            f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n"
             f"{_cat_line(cat_icon, cat_name, subcat_id)}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>",
@@ -1538,8 +1599,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         unlinked = db.get_unlinked_expenses_for_period(now.year, now.month)
         candidates = fixed_matcher.find_candidate_expenses(fe, unlinked)
         if not candidates:
-            pending_fixed_direct[chat_id] = {"fixed_expense_id": fixed_expense_id, "concept": fe["concept"]}
-            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe["estimated_amount"] else ""
+            pending_fixed_direct[chat_id] = {"fixed_expense_id": fixed_expense_id, "concept": fe["concept"], "currency": fe["currency"]}
+            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'], fe['currency'])})" if fe["estimated_amount"] else ""
             await query.message.reply_text(
                 f"🔍 No encontré ningún gasto sin vincular que coincida con <b>{fe['concept']}</b>.\n"
                 f"💰 ¿Cuánto pagaste?{est_str}\nEnviá el monto:",
@@ -1548,7 +1609,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         buttons = [
             [InlineKeyboardButton(
-                f"{(exp['concept'] or '')[:24]} · {fmt_amount(exp['amount'])}",
+                f"{(exp['concept'] or '')[:24]} · {fmt_amount(exp['amount'], exp['currency'])}",
                 callback_data=f"fixpick:{fixed_expense_id}:{exp['id']}",
             )]
             for exp in candidates
@@ -1565,8 +1626,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fe_id = int(fe_id_str)
         fe = db.get_fixed_expense_by_id(fe_id)
         if target == "none":
-            pending_fixed_direct[chat_id] = {"fixed_expense_id": fe_id, "concept": fe["concept"] if fe else ""}
-            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe and fe["estimated_amount"] else ""
+            pending_fixed_direct[chat_id] = {"fixed_expense_id": fe_id, "concept": fe["concept"] if fe else "", "currency": fe["currency"] if fe else "ARS"}
+            est_str = f" (estimado: {fmt_amount(fe['estimated_amount'], fe['currency'])})" if fe and fe["estimated_amount"] else ""
             await query.edit_message_text(
                 f"💰 ¿Cuánto pagaste por <b>{fe['concept'] if fe else 'este gasto fijo'}</b>?{est_str}\nEnviá el monto:",
                 parse_mode="HTML",
@@ -1621,11 +1682,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_fixed_direct[chat_id] = {
             "fixed_expense_id": fixed_expense_id,
             "concept":          fe["concept"],
+            "currency":         fe["currency"],
         }
-        est_str = f" (estimado: {fmt_amount(fe['estimated_amount'])})" if fe["estimated_amount"] else ""
+        est_str = f" (estimado: {fmt_amount(fe['estimated_amount'], fe['currency'])})" if fe["estimated_amount"] else ""
         await query.message.reply_text(
             f"💰 ¿Cuánto pagaste por <b>{fe['concept']}</b>?{est_str}\nEnviá el monto:",
             parse_mode="HTML",
+        )
+
+    elif cb.startswith("ec:"):
+        expense_id = int(cb.split(":")[1])
+        expense = db.get_expense_by_id(expense_id)
+        if not expense or expense["user_id"] != user["id"]:
+            await query.edit_message_text("🤔 No encontré ese gasto (o no es tuyo).")
+            return
+        if expense["fixed_expense_id"] is not None:
+            await query.edit_message_text("🔒 Este gasto está vinculado a un fijo; su moneda se hereda del fijo.")
+            return
+        await query.message.reply_text("💱 Elegí la moneda:", reply_markup=_build_currency_keyboard(expense_id))
+
+    elif cb.startswith("ecset:"):
+        _, expense_id_str, currency = cb.split(":")
+        expense_id = int(expense_id_str)
+        if not db.update_expense_fields(expense_id, user["id"], currency=currency):
+            await query.edit_message_text("🔒 No pude cambiar la moneda: el gasto puede estar vinculado a un fijo.")
+            return
+        expense = db.get_expense_by_id(expense_id)
+        await query.edit_message_text(
+            f"✅ Moneda actualizada: <b>{expense['currency']}</b> — {fmt_amount(expense['amount'], expense['currency'])}",
+            parse_mode="HTML",
+            reply_markup=_build_edit_only_keyboard(expense_id),
         )
 
     elif cb.startswith("ea:"):
@@ -1753,7 +1839,7 @@ def _nl_summarize_result(kind: str, result: dict) -> str:
     asistente en el historial — da continuidad sin tener que reconstruir el
     flujo completo de confirmación en cada acceso."""
     if kind == "log":
-        return f"Registré {result['concept']} por {fmt_amount(result['amount'])}."
+        return f"Registré {result['concept']} por {fmt_amount(result['amount'], result.get('currency', 'ARS'))}."
     if kind == "edit":
         n = len(result.get("candidate_ids") or [])
         if n == 1:
@@ -1825,17 +1911,18 @@ async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
     teclado de editar/categoría — nada queda irreversible)."""
     concept = result["concept"]
     amount = result["amount"]
+    currency = result.get("currency", "ARS")
     date_str = result.get("date")
     category_id, subcategory_id = _resolve_log_category(concept, result.get("category"), result.get("subcategory"))
     try:
         if date_str:
             expense_id = db.create_expense_full(
-                user["id"], category_id, concept, amount, date_str, subcategory_id=subcategory_id
+                user["id"], category_id, concept, amount, date_str, subcategory_id=subcategory_id, currency=currency
             )
         else:
             expense_id = db.create_expense(
                 user_id=user["id"], category_id=category_id, subcategory_id=subcategory_id,
-                concept=concept, amount=amount, raw_text=f"[NL] {text}",
+                concept=concept, amount=amount, currency=currency, raw_text=f"[NL] {text}",
             )
     except Exception as e:
         logger.error("Error guardando gasto NL: %s", e)
@@ -1851,7 +1938,7 @@ async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
         text=(
             f"✅ <b>Gasto registrado</b>\n"
             f"📋 {concept}\n"
-            f"💰 {fmt_amount(amount)}\n"
+            f"💰 {fmt_amount(amount, currency)}\n"
             f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
             f"👤 {user['name']}\n"
             f"<code>#ID{expense_id}</code>"
@@ -1859,7 +1946,7 @@ async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
         parse_mode="HTML",
         reply_markup=keyboard,
     )
-    await _maybe_offer_fixed_link(chat_id, bot, expense_id, concept)
+    await _maybe_offer_fixed_link(chat_id, bot, expense_id, concept, currency)
 
 
 async def _nl_start_edit(chat_id: int, bot, user, result: dict) -> None:
@@ -1887,7 +1974,7 @@ async def _nl_start_edit(chat_id: int, bot, user, result: dict) -> None:
     for e in owned[:10]:
         concept_short = (e["concept"] or "")[:24]
         buttons.append([InlineKeyboardButton(
-            f"#{e['id']} · {concept_short} · {fmt_amount(e['amount'])}",
+            f"#{e['id']} · {concept_short} · {fmt_amount(e['amount'], e['currency'])}",
             callback_data=f"nl:pick:{e['id']}",
         )])
     buttons.append([InlineKeyboardButton("❌ Cancelar", callback_data="nl:cancel")])
@@ -1906,7 +1993,10 @@ def _describe_changes(expense, changes: dict) -> list[str]:
     """Líneas de preview de una edición propuesta."""
     lines = []
     if "amount" in changes:
-        lines.append(f"💰 Monto → {fmt_amount(changes['amount'])}")
+        target_currency = changes.get("currency", expense["currency"])
+        lines.append(f"💰 Monto → {fmt_amount(changes['amount'], target_currency)}")
+    if "currency" in changes:
+        lines.append(f"💱 Moneda → {changes['currency']}")
     if "concept" in changes:
         lines.append(f"📋 Concepto → {changes['concept']}")
     if "date" in changes:
@@ -1938,7 +2028,8 @@ async def _nl_prepare_edit_confirm(chat_id: int, bot, user, expense, changes: di
     pending_nl_confirm[chat_id] = {"kind": "edit", "expense_id": expense["id"], "changes": changes}
     body = (
         f"✏️ <b>Voy a editar este gasto</b>\n"
-        f"<code>#ID{expense['id']}</code> — {expense['concept']} ({fmt_amount(expense['amount'])})\n\n"
+        f"<code>#ID{expense['id']}</code> — {expense['concept']} "
+        f"({fmt_amount(expense['amount'], expense['currency'])})\n\n"
         + "\n".join(change_lines)
         + "\n\n¿Confirmás?"
     )
@@ -2011,6 +2102,11 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
         fields["concept"] = changes["concept"]
     if "date" in changes:
         fields["date_str"] = changes["date"]
+    if "currency" in changes:
+        if expense["fixed_expense_id"] is not None:
+            await query.edit_message_text("🔒 No se puede cambiar la moneda de un gasto vinculado a un fijo.")
+            return
+        fields["currency"] = changes["currency"]
 
     target_cat_id = expense["category_id"]
     cat_name = changes.get("category")
@@ -2044,9 +2140,15 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
             fe = _find_fixed_expense(fe_name)
             if fe:
                 current = db.get_expense_by_id(expense_id)
+                if current["currency"] != fe["currency"]:
+                    await query.edit_message_text(
+                        "🔒 No se puede vincular: el gasto y el fijo tienen distinta moneda."
+                    )
+                    return
                 year, month = _expense_period(current)
-                db.link_expense_to_fixed(expense_id, fe["id"], year, month)
-                changed_anything = True
+                changed_anything = db.link_expense_to_fixed(
+                    expense_id, fe["id"], year, month
+                ) or changed_anything
 
     if not changed_anything:
         await query.edit_message_text("⚠️ No pude editar el gasto.")
@@ -2059,7 +2161,7 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
     await query.edit_message_text(
         f"✅ <b>Gasto actualizado</b>\n"
         f"📋 {updated['concept']}\n"
-        f"💰 {fmt_amount(updated['amount'])}\n"
+        f"💰 {fmt_amount(updated['amount'], updated['currency'])}\n"
         f"{_cat_line(cat_icon, cat_name_d, updated['subcategory_id'])}\n"
         f"👤 {user['name']}\n"
         f"<code>#ID{expense_id}</code>",

@@ -34,11 +34,12 @@ def concept_words(text: str) -> set[str]:
     return {w for w in re.sub(r"[^\w\s]", "", (text or "").lower()).split() if len(w) >= _MIN_WORD_LEN}
 
 
-def find_fixed_expense_matches(concept: str, fixed_expenses) -> list:
+def find_fixed_expense_matches(concept: str, fixed_expenses, currency: str = "ARS") -> list:
     """Fixed expenses whose concept shares a word (3+ chars) with a newly logged expense's
     concept. Used to offer linking a brand-new expense right after it's saved."""
     words = concept_words(concept)
-    return [fe for fe in fixed_expenses if words & concept_words(fe["concept"])]
+    return [fe for fe in fixed_expenses
+            if fe.get("currency", "ARS") == currency and words & concept_words(fe["concept"])]
 
 
 def find_candidate_expenses(fixed_expense, expenses, limit: int = 5) -> list:
@@ -52,6 +53,8 @@ def find_candidate_expenses(fixed_expense, expenses, limit: int = 5) -> list:
 
     scored = []
     for exp in expenses:
+        if exp.get("currency", "ARS") != fixed_expense.get("currency", "ARS"):
+            continue
         score = 0.0
         shared = fe_words & concept_words(exp["concept"])
         score += 2 * len(shared)

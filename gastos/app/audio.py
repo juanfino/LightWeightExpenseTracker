@@ -8,13 +8,14 @@ import openai
 logger = logging.getLogger(__name__)
 
 _MODEL = "claude-haiku-4-5-20251001"
-_WHISPER_PROMPT = "Gastos en pesos argentinos: 10000, 148900, 5000."
+_WHISPER_PROMPT = "Gastos en pesos argentinos o dólares: 10000, 148900, 5000, 15 USD."
 
 _EXTRACT_PROMPT = (
     "Analizá esta transcripción de un mensaje de voz sobre uno o varios gastos. "
     "Identificá cada gasto mencionado y convertí los números escritos en español a dígitos "
     "(ej: 'diez mil' → 10000, 'quinientos' → 500, 'tres mil' → 3000). "
-    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita', 'mangos'). "
+    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita', 'mangos') y "
+    "detectá USD cuando diga 'dólares', 'USD', 'US$' o 'U$S'; si no se aclara, usá ARS. "
     "El usuario puede mencionar varios gastos en una sola oración, "
     "ej: 'gasté mil en la verdulería, tres mil en la ferretería y quinientos en nafta'. "
     "Si un gasto mencionado no tiene monto claro, incluilo igual con amount null. "
@@ -24,7 +25,7 @@ _EXTRACT_PROMPT = (
     "la transcripción es ambigua, confusa o el monto es dudoso.\n"
     "Respondé ÚNICAMENTE con un array JSON válido sin explicaciones ni bloques de código:\n"
     '[{"concept": "<nombre del comercio o concepto, capitalizado>", '
-    '"amount": <monto como número float, o null si no se detecta>, '
+    '"amount": <monto como número float, o null si no se detecta>, "currency": "ARS" o "USD", '
     '"confidence": <número entre 0 y 1>}, ...]'
 )
 
@@ -102,6 +103,7 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
         {
             "concept": (item.get("concept") or "").strip() or "Desconocido",
             "amount": _parse_amount(item.get("amount")),
+            "currency": "USD" if str(item.get("currency", "ARS")).upper() == "USD" else "ARS",
             "confidence": _parse_confidence(item.get("confidence")),
         }
         for item in data

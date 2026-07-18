@@ -50,8 +50,11 @@ def _month_label(year: int, month: int) -> str:
 
 
 def build_dossier(year: int, month: int) -> dict:
-    period_rows = db.get_expenses_for_period_art(year, month)
-    history_rows = db.get_expenses_excluding_period(year, month)
+    # El análisis principal e IPC sólo tienen sentido para ARS. USD queda en una
+    # sección nativa separada, sin convertir ni mezclar con los pesos.
+    period_rows = db.get_expenses_for_period_art(year, month, "ARS")
+    history_rows = db.get_expenses_excluding_period(year, month, "ARS")
+    usd_rows = db.get_expenses_for_period_art(year, month, "USD")
     months_with_data = db.get_months_with_data()
 
     monthly_totals = _monthly_totals(history_rows)
@@ -73,11 +76,13 @@ def build_dossier(year: int, month: int) -> dict:
             "months_available": len(months_with_data),
         },
         "inflation_unavailable": db.get_ipc_value(year, month) is None,
+        "usd_expenses": _build_base(usd_rows),
         "variable_expenses": [
             {
                 "expense_id": r["id"],
                 "concept": r["concept"],
                 "amount": r["amount"],
+                "currency": "ARS",
                 "category": r["category_name"] or "Sin categoría",
                 "date": r["created_at"],
             }
@@ -265,11 +270,10 @@ def _build_outliers(year: int, month: int, period_rows: list[dict], history_rows
     }
 
 
-def _build_fixed_expenses(year: int, month: int) -> dict:
-    payments = db.get_fixed_payments_for_period(year, month)
+def _build_fixed_expenses(year: int, month: int, currency: str = "ARS") -> dict:
+    payments = [p for p in db.get_fixed_payments_for_period(year, month) if p["currency"] == currency]
     prev_y, prev_m = _prev_period(year, month)
-    prev_payments = {p["id"]: p for p in db.get_fixed_payments_for_period(prev_y, prev_m)}
-    summary = db.get_fixed_expense_monthly_summary(year, month)
+    prev_payments = {p["id"]: p for p in db.get_fixed_payments_for_period(prev_y, prev_m) if p["currency"] == currency}
 
     items = []
     unpaid = []
@@ -278,6 +282,7 @@ def _build_fixed_expenses(year: int, month: int) -> dict:
             "id": p["id"],
             "concept": p["concept"],
             "estimated_amount": p["estimated_amount"],
+            "currency": currency,
             "paid": p["paid"],
             "total_paid": p["total_paid"],
             "category": p["category_name"],
@@ -294,10 +299,10 @@ def _build_fixed_expenses(year: int, month: int) -> dict:
     return {
         "items": items,
         "unpaid": unpaid,
-        "count_total": summary["count_total"],
-        "count_paid": summary["count_paid"],
-        "total_estimated": summary["total_estimated"],
-        "total_paid": summary["total_paid"],
+        "count_total": len(items),
+        "count_paid": sum(1 for p in items if p["paid"]),
+        "total_estimated": sum(p["estimated_amount"] or 0 for p in items),
+        "total_paid": sum(p["total_paid"] or 0 for p in items),
     }
 
 
