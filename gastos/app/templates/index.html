@@ -331,12 +331,29 @@
 .fijos-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border-soft);
 }
 
 .fijos-row:last-child { border-bottom: none; }
+
+.fijos-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  /* Monto + botones bajan a su propia línea para no aplastar el concepto */
+  .fijos-row-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
 
 .fijos-check {
   width: 18px;
@@ -1491,8 +1508,10 @@
           <span class="fijos-check${r.paid ? ' paid' : ''}">${r.paid ? checkSvg : ''}</span>
           <span class="fijos-row-dot" style="background:${catColor}"></span>
           <span class="fijos-row-concept">${r.concept}</span>
-          ${amountHtml}
-          ${payBtn}
+          <span class="fijos-row-actions">
+            ${amountHtml}
+            ${payBtn}
+          </span>
         </div>
       `;
     }).join('');
