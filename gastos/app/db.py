@@ -90,6 +90,39 @@ CREATE TABLE IF NOT EXISTS cambios_dolar (
     usuario    TEXT    NOT NULL,
     tipo       TEXT    NOT NULL DEFAULT 'venta'
 );
+
+CREATE TABLE IF NOT EXISTS ipc_series (
+    year         INTEGER NOT NULL,
+    month        INTEGER NOT NULL,
+    value        REAL    NOT NULL,
+    is_estimated INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    PRIMARY KEY (year, month)
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    year           INTEGER NOT NULL,
+    month          INTEGER NOT NULL,
+    generated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+    model          TEXT,
+    prompt_version TEXT,
+    dossier_json   TEXT    NOT NULL,
+    output_json    TEXT,
+    fingerprint    TEXT    NOT NULL,
+    llm_ok         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS expense_classifications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id  INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    expense_id INTEGER NOT NULL REFERENCES expenses(id),
+    concept    TEXT    NOT NULL,
+    amount     REAL    NOT NULL,
+    label      TEXT    NOT NULL CHECK(label IN ('recurring','exceptional')),
+    confidence REAL,
+    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+);
 """
 
 
@@ -1370,6 +1403,259 @@ def delete_cambio(cambio_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM cambios_dolar WHERE id = ?", (cambio_id,))
         return cur.rowcount > 0
+
+
+# ── Resúmenes mensuales (IA) ────────────────────────────────────────────────
+
+def get_expenses_for_period_art(year: int, month: int) -> list[dict]:
+    """All expenses whose ART-adjusted date falls in (year, month) — the cash-basis
+    period the monthly report is built on. Uses date(datetime(created_at, '-3 hours'))
+    rather than raw UTC strftime (unlike some older dashboard queries), so a late-night
+    ART expense that crosses the UTC month boundary lands in the correct month."""
+    period = f"{year:04d}-{month:02d}"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.user_id, e.category_id, e.subcategory_id, e.concept, e.amount,
+                   e.created_at, e.fixed_expense_id,
+                   u.name AS user_name,
+                   c.name AS category_name,
+                   s.name AS subcategory_name
+            FROM expenses e
+            JOIN users u ON u.id = e.user_id
+            LEFT JOIN categories c ON c.id = e.category_id
+            LEFT JOIN subcategories s ON s.id = e.subcategory_id
+            WHERE strftime('%Y-%m', datetime(e.created_at, '-3 hours')) = ?
+            ORDER BY e.created_at
+            """,
+            (period,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_expenses_excluding_period(year: int, month: int) -> list[dict]:
+    """All expenses outside the given ART period — the historical population used to
+    compute per-category outlier stats and recurrence evidence in dossier.py."""
+    period = f"{year:04d}-{month:02d}"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.category_id, e.subcategory_id, e.concept, e.amount,
+                   e.created_at, e.fixed_expense_id,
+                   c.name AS category_name
+            FROM expenses e
+            LEFT JOIN categories c ON c.id = e.category_id
+            WHERE strftime('%Y-%m', datetime(e.created_at, '-3 hours')) != ?
+            ORDER BY e.created_at
+            """,
+            (period,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_first_expense_date() -> str | None:
+    """Date (ART) of the earliest expense ever recorded — a hard fact the report uses
+    to calibrate how much confidence a short history should carry."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT MIN(date(datetime(created_at, '-3 hours'))) AS d FROM expenses"
+        ).fetchone()
+    return row["d"] if row else None
+
+
+def get_months_with_data() -> list[str]:
+    """Distinct 'YYYY-MM' periods (ART) with at least one expense, ascending. Backs
+    both the report's "months available" hard fact and the /resumenes period selector."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT strftime('%Y-%m', datetime(created_at, '-3 hours')) AS ym
+            FROM expenses
+            ORDER BY ym
+            """
+        ).fetchall()
+    return [r["ym"] for r in rows]
+
+
+def get_cambios_resumen_mes_by_tipo(year: int, month: int) -> dict:
+    """Dollar operations for the month split by tipo (venta/compra) — always both keys
+    present (zeroed if that side had no operations), per the report's "both sides,
+    always" requirement."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT tipo,
+                   COUNT(*)                     AS cnt,
+                   COALESCE(SUM(monto_usd), 0)  AS total_usd,
+                   COALESCE(SUM(monto_ars), 0)  AS total_ars,
+                   COALESCE(AVG(cotizacion), 0) AS cotizacion_promedio,
+                   COALESCE(MIN(cotizacion), 0) AS cotizacion_min,
+                   COALESCE(MAX(cotizacion), 0) AS cotizacion_max
+            FROM cambios_dolar
+            WHERE strftime('%Y', fecha) = ? AND strftime('%m', fecha) = ?
+            GROUP BY tipo
+            """,
+            (str(year), f"{month:02d}"),
+        ).fetchall()
+    by_tipo = {r["tipo"]: dict(r) for r in rows}
+    empty = {"cnt": 0, "total_usd": 0.0, "total_ars": 0.0,
+             "cotizacion_promedio": 0.0, "cotizacion_min": 0.0, "cotizacion_max": 0.0}
+    return {tipo: by_tipo.get(tipo, dict(empty)) for tipo in ("venta", "compra")}
+
+
+def get_cambios_for_period(year: int, month: int) -> list[dict]:
+    """Raw dollar-operation rows for the month — the report fingerprint's dollar-ops
+    input (id, fecha, monto_usd, cotizacion, tipo only; no derived totals)."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, fecha, monto_usd, cotizacion, tipo FROM cambios_dolar"
+            " WHERE strftime('%Y', fecha) = ? AND strftime('%m', fecha) = ?"
+            " ORDER BY id",
+            (str(year), f"{month:02d}"),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Índice de precios (IPC) ──────────────────────────────────────────────────
+
+def get_ipc_series() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT year, month, value, is_estimated, updated_at FROM ipc_series"
+            " ORDER BY year, month"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_ipc_value(year: int, month: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT year, month, value, is_estimated, updated_at FROM ipc_series"
+            " WHERE year = ? AND month = ?",
+            (year, month),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_ipc_value(year: int, month: int, value: float, is_estimated: bool) -> None:
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO ipc_series (year, month, value, is_estimated, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT(year, month) DO UPDATE SET value=excluded.value,"
+            " is_estimated=excluded.is_estimated, updated_at=excluded.updated_at",
+            (year, month, value, 1 if is_estimated else 0, now_utc),
+        )
+
+
+# ── Reportes mensuales ───────────────────────────────────────────────────────
+
+def create_report(year: int, month: int, model: str | None, prompt_version: str | None,
+                   dossier_json: str, output_json: str | None, fingerprint: str,
+                   llm_ok: bool) -> int:
+    """Append-only insert — a regeneration is always a new row, never an overwrite."""
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO reports (year, month, generated_at, model, prompt_version,"
+            " dossier_json, output_json, fingerprint, llm_ok)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (year, month, now_utc, model, prompt_version, dossier_json, output_json,
+             fingerprint, 1 if llm_ok else 0),
+        )
+        return cur.lastrowid
+
+
+def get_latest_report(year: int, month: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM reports WHERE year = ? AND month = ?"
+            " ORDER BY generated_at DESC, id DESC LIMIT 1",
+            (year, month),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_report_overall() -> dict | None:
+    """Most recent report across every period — backs /resumenes with no month given."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM reports ORDER BY year DESC, month DESC, generated_at DESC, id DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_report_history(year: int, month: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, generated_at, model, llm_ok FROM reports"
+            " WHERE year = ? AND month = ? ORDER BY generated_at DESC",
+            (year, month),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_classifications(report_id: int, rows: list[dict]) -> None:
+    """rows: [{expense_id, concept, amount, label, confidence}]."""
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT INTO expense_classifications"
+            " (report_id, expense_id, concept, amount, label, confidence, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (report_id, r["expense_id"], r["concept"], r["amount"], r["label"],
+                 r.get("confidence"), now_utc)
+                for r in rows
+            ],
+        )
+
+
+def get_classifications_for_report(report_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT expense_id, concept, amount, label, confidence"
+            " FROM expense_classifications WHERE report_id = ?",
+            (report_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_recent_classifications_before(year: int, month: int, lookback_months: int = 6) -> list[dict]:
+    """Latest classification per prior period within lookback_months, for the
+    cross-month-consistency context injected into the next classification call.
+    Only the latest report per period is used (reports are append-only; latest wins)."""
+    periods: list[tuple[int, int]] = []
+    y, m = year, month
+    for _ in range(lookback_months):
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+        periods.append((y, m))
+
+    result: list[dict] = []
+    with get_conn() as conn:
+        for py, pm in periods:
+            report_row = conn.execute(
+                "SELECT id FROM reports WHERE year = ? AND month = ?"
+                " ORDER BY generated_at DESC, id DESC LIMIT 1",
+                (py, pm),
+            ).fetchone()
+            if not report_row:
+                continue
+            rows = conn.execute(
+                "SELECT expense_id, concept, amount, label, confidence"
+                " FROM expense_classifications WHERE report_id = ?",
+                (report_row["id"],),
+            ).fetchall()
+            for r in rows:
+                d = dict(r)
+                d["year"] = py
+                d["month"] = pm
+                result.append(d)
+    return result
 
 
 def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float, tipo: str | None = None) -> bool:

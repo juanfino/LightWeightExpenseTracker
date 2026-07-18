@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 from datetime import datetime, timezone, timedelta
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 
 import requests as http_requests
 
@@ -12,6 +12,7 @@ import db
 import backup as backup_module
 import fixed_matcher
 import categorizer
+import report
 
 app = Flask(__name__)
 
@@ -759,6 +760,59 @@ def api_cambios_update(cambio_id: int):
     return jsonify({"ok": False, "error": "Cambio no encontrado"}), 404
 
 
+@app.route("/resumenes")
+def resumenes_page():
+    latest = report.get_latest_report_overall()
+    if latest:
+        year, month = latest["year"], latest["month"]
+    else:
+        now = datetime.now(BAIRES)
+        year, month = now.year, now.month
+    return render_template("resumenes.html", year=year, month=month)
+
+
+@app.route("/resumenes/<period>")
+def resumenes_page_period(period: str):
+    try:
+        year, month = _parse_period(period)
+    except ValueError:
+        return redirect("/resumenes")
+    return render_template("resumenes.html", year=year, month=month)
+
+
+def _parse_period(period: str) -> tuple[int, int]:
+    year_str, month_str = period.split("-", 1)
+    year, month = int(year_str), int(month_str)
+    if not (1 <= month <= 12):
+        raise ValueError("Mes inválido")
+    return year, month
+
+
+def _serialize_report(r: dict | None) -> dict | None:
+    if r is None:
+        return None
+    d = dict(r)
+    d["generated_at"] = _to_baires_str(d["generated_at"])
+    return d
+
+
+@app.route("/api/resumenes/available-months")
+def api_resumenes_available_months():
+    return jsonify(db.get_months_with_data())
+
+
+@app.route("/api/resumenes/<int:year>/<int:month>")
+def api_resumen_get(year: int, month: int):
+    return jsonify({"report": _serialize_report(report.get_report(year, month))})
+
+
+@app.route("/api/resumenes/<int:year>/<int:month>/generate", methods=["POST"])
+def api_resumen_generate(year: int, month: int):
+    return jsonify({"report": _serialize_report(report.generate_report(year, month))})
+
+
 def run_dashboard():
     port = int(os.environ.get("DASHBOARD_PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    # threaded=True so a ~40-60s report generation request doesn't block other
+    # dashboard tabs/users for the duration.
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)

@@ -302,8 +302,14 @@
                      "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   const now = new Date();
-  let selYear  = now.getFullYear();
-  let selMonth = now.getMonth() + 1;
+  // A "resumen" question ("no pagaste X este período") deep-links here with
+  // ?year=&month= so the user lands on the period that needs attention, not
+  // whatever month happens to be current.
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlYear    = parseInt(urlParams.get('year'), 10);
+  const urlMonth   = parseInt(urlParams.get('month'), 10);
+  let selYear  = !isNaN(urlYear) ? urlYear : now.getFullYear();
+  let selMonth = (!isNaN(urlMonth) && urlMonth >= 1 && urlMonth <= 12) ? urlMonth : now.getMonth() + 1;
 
   // ── Selectors ──────────────────────────────────────────────────────────────
   const selMonthEl = document.getElementById('sel-month');
