@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 2.0.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 2.1.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -40,7 +40,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **OCR receipt scanning:** send a photo; bot extracts `{comercio, monto, fecha}` via Anthropic Vision, prompts for confirmation before saving
 - **Voice expense entry:** send a voice note (e.g. "ferretería diez mil pesos"); bot transcribes with OpenAI Whisper, normalizes written numbers to digits via Claude, and prompts for confirmation before saving
 - **Argentine number formatting:** `.` = thousands separator, `,` = decimal (e.g. `$5.580,00`). `_parse_monto()` handles both notations; `100.000` → 100000, `2.500,50` → 2500.5
-- **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to register a payment or search for one already logged. Detection runs downstream of expense creation on **every** input path (plain text, NL, voice, OCR, dashboard manual add) — not just the plain-text fast path — via a shared `fixed_matcher.py` (word-overlap ≥3 chars) so the fixed/variable split doesn't depend on how the user happened to log the expense. Linking always forces the expense's category/subcategory to the fixed expense's own, so a recurring bill can't drift category month to month. "✓ Ya lo pagué" searches already-logged, unlinked expenses for the period (concept overlap + category + amount proximity) and offers to link one instead of just flagging "paid" with no amount; explicitly declining still lets the user log the amount directly. The link (+ period) is an ordinary, editable field on the expense, alongside category/subcategory
+- **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to register a payment or search for one already logged. Detection runs downstream of expense creation on **every** input path (plain text, NL, voice, OCR, dashboard manual add) — not just the plain-text fast path — via a shared `fixed_matcher.py` (word-overlap ≥3 chars) so the fixed/variable split doesn't depend on how the user happened to log the expense. Linking always forces the expense's category/subcategory to the fixed expense's own, so a recurring bill can't drift category month to month. "✓ Ya lo pagué" searches already-logged, unlinked expenses for the period (concept overlap + category + amount proximity) and offers to link one instead of just flagging "paid" with no amount; explicitly declining still lets the user log the amount directly. The link (+ period) is an ordinary, editable field on the expense, alongside category/subcategory. The date is also editable everywhere expenses are (dashboard history row, `/editar ID fecha DD/MM/AAAA`, NL edit — `"el gasto 124 fue el 15 de junio"`); a date-only edit preserves the fixed-expense period it's linked to (period and date are independent — see 2.1.0). Registering a past-period payment (the dashboard's "+ Registrar pago"/"ya lo pagué" flow when browsing a month other than the current one) defaults the new expense's date within that period instead of today, and the picker is constrained to that month
 - **USD/ARS exchange rate tracking:** natural-language ("vendí 500 dólares a 1700", "compré 1000 dólares a 1550") via `dolar.py`, gated by a cheap keyword check (`looks_like_dolar`) before spending an LLM call; confidence-based auto-save, same as voice. Legacy `CambioDolar <usd> <cotizacion>` command still works (always records a sale). Dedicated dashboard page (`/dolares`) with history, monthly summary, and historical rate chart
 - **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 screens as of 1.15.0–1.17.0 — see **Screens** below
 - **Users:** Juampi (active), Cele (configured, not yet onboarded)
@@ -54,9 +54,9 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
-| `/history` | `history.html` | Full expense history, filterable (month/year/category/user), inline edit (concept, amount, category, subcategory, fixed-expense link), delete |
+| `/history` | `history.html` | Full expense history, filterable (month/year/category/user), inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
-| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), current month's paid/pending status with progress bar, register-payment modal, "ya lo pagué" candidate search to link an already-logged expense instead |
+| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
 | `/config` | `config.html` | System: backup status + "Backup ahora" button, restore DB from a public HTTPS URL (saves a `.bak` of current state first, then restarts) |
 
@@ -74,6 +74,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 | `/fijos` | This month's fixed-expense status, with pay buttons |
 | `/editar ID monto VALOR` | Edit an expense's amount |
 | `/editar ID categoria NOMBRE` | Edit an expense's category |
+| `/editar ID fecha DD/MM/AAAA` | Edit an expense's date |
 | `/recat CONCEPTO CATEGORÍA` | Bulk-reassign expenses matching a concept to a category |
 | `/borrar ID` | Delete an expense |
 | `/add_keyword PALABRA CATEGORÍA` | Add a keyword → category mapping |
@@ -127,6 +128,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Always `git pull` locally before starting a Claude Code session** — CC builds from local disk, not from GitHub.
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
 - **2.0.0 fixed-expense migration is lossy by design:** old `fixed_expense_payments` rows with no linked expense (from the old "✓ Ya lo pagué" flag-only flow) had no amount to migrate and were dropped rather than fabricated from `estimated_amount`. Check the startup logs after upgrading a DB that predates 2.0.0 for the converted/dropped counts, and re-link any dropped months by hand via the new "ya lo pagué" candidate search.
+- **Date-only writes are always stored at `03:00:00` UTC** (`create_expense_full`, `update_expense`, `update_expense_fields`, the fixed-expense "pay" flow) — that's exactly midnight ART, chosen so the stored UTC date and the ART-displayed date are always the same calendar day, at every month/year boundary, regardless of whether a query adjusts for the `-3h` offset or reads `created_at` raw (the codebase does both, inconsistently, elsewhere). Don't "improve" this by storing a different time-of-day without re-verifying that invariant.
 
 ## Infrastructure Philosophy
 

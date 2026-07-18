@@ -242,6 +242,10 @@
       <input type="number" id="pay-amount" placeholder="Ej: 150000" min="1" step="any">
     </div>
     <div class="form-row">
+      <label class="form-label">Fecha</label>
+      <input type="date" id="pay-date">
+    </div>
+    <div class="form-row">
       <label class="form-label">Usuario</label>
       <select id="pay-user"></select>
     </div>
@@ -405,10 +409,28 @@
   // ── Pay modal ──────────────────────────────────────────────────────────────
   let payFixedId = null;
 
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
   function openPayModal(feId, concept, estimated) {
     payFixedId = feId;
     document.getElementById('pay-title').textContent  = `Registrar pago: ${concept}`;
     document.getElementById('pay-amount').value       = estimated || '';
+
+    // Default date: today if we're looking at the current month, otherwise the 1st of
+    // the period being viewed — a past period's payment must not be born dated today,
+    // but we don't have enough signal to guess a day within it either.
+    const today = new Date();
+    const isCurrentPeriod = (selYear === today.getFullYear()) && (selMonth === today.getMonth() + 1);
+    const dateEl  = document.getElementById('pay-date');
+    dateEl.value  = isCurrentPeriod
+      ? `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`
+      : `${selYear}-${pad2(selMonth)}-01`;
+    // Constrain to the period being viewed so the expense's own date can't drift from
+    // the fixed-expense period it's being filed under.
+    const lastDay = new Date(selYear, selMonth, 0).getDate();
+    dateEl.min = `${selYear}-${pad2(selMonth)}-01`;
+    dateEl.max = `${selYear}-${pad2(selMonth)}-${pad2(lastDay)}`;
+
     document.getElementById('modal-pay').classList.add('open');
     document.getElementById('pay-amount').focus();
   }
@@ -463,12 +485,14 @@
 
   document.getElementById('btn-pay-save').addEventListener('click', async () => {
     const amount  = parseFloat(document.getElementById('pay-amount').value);
+    const date    = document.getElementById('pay-date').value;
     const userId  = document.getElementById('pay-user').value;
     if (!amount || amount <= 0) { alert('Ingresá un monto válido.'); return; }
+    if (!date) { alert('Ingresá una fecha válida.'); return; }
     const res = await fetch('/api/fixed-expenses/pay', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fixed_expense_id: payFixedId, amount, year: selYear, month: selMonth, user_id: userId }),
+      body: JSON.stringify({ fixed_expense_id: payFixedId, amount, date, year: selYear, month: selMonth, user_id: userId }),
     });
     const data = await res.json();
     if (data.ok) {

@@ -339,9 +339,11 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const safeConceptAttr = r.concept.replace(/"/g, "&quot;");
     const catDisabled = r.fixed_expense_id ? " disabled" : "";
 
+    const dateOnly = (r.created_at || "").split(" ")[0];
+
     return '<tr id="row-' + r.id + '" style="background:color-mix(in oklab, var(--accent) 8%, transparent)">'
       + '<td class="mono" data-label="ID" style="color:var(--muted)">#' + r.id + '</td>'
-      + '<td class="mono" data-label="Fecha" style="color:var(--muted); white-space:nowrap; font-size:12px">' + fmtDate(r.created_at) + '</td>'
+      + '<td data-label="Fecha"><input id="ei-date-' + r.id + '" type="date" value="' + dateOnly + '" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono);font-size:12px"></td>'
       + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:0;box-sizing:border-box"></td>'
       + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
       + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
@@ -422,11 +424,13 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const catEl     = document.getElementById("ei-cat-"     + id);
     const subcatEl  = document.getElementById("ei-subcat-"  + id);
     const amountEl  = document.getElementById("ei-amount-"  + id);
+    const dateEl    = document.getElementById("ei-date-"    + id);
     const fixedEl   = document.getElementById("ei-fixed-"   + id);
     const errEl     = document.getElementById("ei-err-"     + id);
 
     const concept  = conceptEl.value.trim();
     const amount   = parseFloat(amountEl.value);
+    const date     = dateEl.value;
     const catId    = catEl.value    ? parseInt(catEl.value)    : null;
     const subcatId = subcatEl.value ? parseInt(subcatEl.value) : null;
     const fixedId  = fixedEl.value  ? parseInt(fixedEl.value)  : null;
@@ -435,11 +439,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     if (!concept) { showEditError(errEl, "El concepto no puede estar vacío."); return; }
     if (isNaN(amount) || amount <= 0) { showEditError(errEl, "Monto inválido."); return; }
+    if (!date) { showEditError(errEl, "Fecha inválida."); return; }
 
     const res = await fetch("/api/expenses/update", {
       method:  "POST",
       headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({id, concept, amount, category_id: catId, subcategory_id: subcatId, fixed_expense_id: fixedId}),
+      body:    JSON.stringify({id, concept, amount, date, category_id: catId, subcategory_id: subcatId, fixed_expense_id: fixedId}),
     });
 
     const data = await res.json().catch(function() { return {}; });
@@ -461,6 +466,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       allExpenses[idx] = Object.assign({}, allExpenses[idx], {
         concept:          concept,
         amount:           amount,
+        created_at:       date + " 00:00:00",
         category_id:      finalCatId,
         category_name:    cat ? cat.name  : "Sin categoría",
         category_icon:    cat ? cat.icon  : "❓",
