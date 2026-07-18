@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 2.2.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 2.3.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -19,7 +19,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 7 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — not a separate joined entity; any number of expenses may share the same fixed expense + period (e.g. a legitimate double payment). As of 2.0.0 (previously a separate `fixed_expense_payments` join table). All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
+**Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 10 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, plus (as of 2.3.0) `ipc_series`, `reports`, `expense_classifications` — see **Monthly AI report** below. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — not a separate joined entity; any number of expenses may share the same fixed expense + period (e.g. a legitimate double payment). As of 2.0.0 (previously a separate `fixed_expense_payments` join table). All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
 
 **Backup:** Daily at 21:00 ART via APScheduler — sends `gastos.db` as Telegram document to all configured users. Also triggerable via `POST /admin/backup-now`.
 
@@ -27,7 +27,8 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 - Python, Flask, SQLite
 - `python-telegram-bot` v20 (async, long polling)
-- Anthropic API (`claude-haiku-4-5-20251001`) for OCR receipt scanning, voice/dollar extraction, and the natural-language intent layer (tool use / function calling)
+- Anthropic API (`claude-haiku-4-5-20251001`) for OCR receipt scanning, voice/dollar extraction, and the natural-language intent layer (tool use / function calling); `claude-opus-4-8` (configurable, separate model tier) for the monthly report's classification and narration calls (structured JSON outputs, no tool use)
+- The national open-data time-series API at `apis.datos.gob.ar` (IPC Nacional series) — free, unauthenticated, no API key. The app's first external dependency outside Anthropic/OpenAI; see **Monthly AI report** below for its failure mode
 - Docker (Alpine base), multi-arch (`linux/arm64`, `linux/amd64`)
 - GitHub Actions → `ghcr.io/juanfino/lightweightexpensetracker` (public registry, auto-build on merge to `main`)
 - Deploys are **manual**: `docker compose pull gastos && docker compose up -d gastos` on the Pi
@@ -42,22 +43,36 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Argentine number formatting:** `.` = thousands separator, `,` = decimal (e.g. `$5.580,00`). `_parse_monto()` handles both notations; `100.000` → 100000, `2.500,50` → 2500.5
 - **Gastos Fijos:** recurring fixed expense tracking; `/fijos` shows the month's payment status with inline buttons to register a payment or search for one already logged. Detection runs downstream of expense creation on **every** input path (plain text, NL, voice, OCR, dashboard manual add) — not just the plain-text fast path — via a shared `fixed_matcher.py` (word-overlap ≥3 chars) so the fixed/variable split doesn't depend on how the user happened to log the expense. Linking always forces the expense's category/subcategory to the fixed expense's own, so a recurring bill can't drift category month to month. "✓ Ya lo pagué" searches already-logged, unlinked expenses for the period (concept overlap + category + amount proximity) and offers to link one instead of just flagging "paid" with no amount; explicitly declining still lets the user log the amount directly. The link (+ period) is an ordinary, editable field on the expense, alongside category/subcategory. The date is also editable everywhere expenses are (dashboard history row, `/editar ID fecha DD/MM/AAAA`, NL edit — `"el gasto 124 fue el 15 de junio"`); a date-only edit preserves the fixed-expense period it's linked to (period and date are independent — see 2.1.0). Registering a past-period payment (the dashboard's "+ Registrar pago"/"ya lo pagué" flow when browsing a month other than the current one) defaults the new expense's date within that period instead of today, and the picker is constrained to that month
 - **USD/ARS exchange rate tracking:** natural-language ("vendí 500 dólares a 1700", "compré 1000 dólares a 1550") via `dolar.py`, gated by a cheap keyword check (`looks_like_dolar`) before spending an LLM call; confidence-based auto-save, same as voice. Legacy `CambioDolar <usd> <cotizacion>` command still works (always records a sale). Dedicated dashboard page (`/dolares`) with history, monthly summary, and historical rate chart
-- **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 screens as of 1.15.0–1.17.0 — see **Screens** below
+- **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 original screens as of 1.15.0–1.17.0 — see **Screens** below
+- **Monthly AI-generated report** (2.3.0): `/resumenes` — see dedicated section below
 - **Users:** Juampi and Cele, both onboarded and actively using the app
+
+## Monthly AI report
+
+A retrospective on demand, not a schedule (scheduling/Telegram delivery are a follow-up). The governing rule: the model never does arithmetic. Every number is computed by `dossier.py` from SQL aggregation; the model only narrates and makes one bounded judgment call.
+
+- **`dossier.py`** builds a deterministic snapshot for a period (cash-basis: grouped by the expense's own ART-adjusted date, not `fixed_expense_year`/`month` — that field is for the fixed-expense view specifically): totals, category breakdown, contrasts vs. prior month/3-mo avg/6-mo avg/same month last year (each individually present or absent depending on history depth, nominal **and** real), delta attribution by category, statistical outliers (per-category mean + 2·stdev, with the month's total shown with and without them), fixed-expense status (including which are unpaid/unlinked this period), dollars (both sides always, plus what fraction of spending was covered by pesos obtained selling dollars), registration coverage (explicitly worded as "who logged it," not spending share — see the gotcha below), taxonomy health, per-concept recurrence evidence, and hard facts (first-ever expense date, months of history available) that both LLM calls use to calibrate confidence.
+- **`inflation.py`** caches the IPC Nacional index (INDEC, via the `apis.datos.gob.ar` series API, series `148.3_INIVELNAL_DICI_M_26`) in `ipc_series`, used to deflate nominal contrasts to real terms. INDEC publishes a month's index around mid-the-following-month, so the most recent month is usually missing — `refresh()` estimates *only that one* month by projecting the average month-over-month ratio of the last 3 published months, and overwrites the estimate with the real value once it's published. Never estimates more than one month out. If the API is unreachable, the report degrades to nominal-only and says so in the dossier — it never blocks report generation.
+- **`report_ai.py`** makes exactly two Claude calls, both against `REPORT_ANTHROPIC_MODEL` (default `claude-opus-4-8` — a stronger/pricier tier than the Haiku used elsewhere, deliberately: this runs a handful of times a year and quality matters far more than cost) using adaptive thinking + structured JSON outputs (`output_config.format`, no tool use): (1) classifies each of the month's *variable* (non-fixed) expenses as "recurring" or "exceptional," given the dossier's recurrence evidence plus how the same concepts were classified in recent prior reports (for cross-month consistency); (2) narrates over the dossier plus the now-computed fixed/recurring/exceptional partition — headline, short summary, findings (each required to cite a concrete dossier figure; no recommendations section, since the app has no budgets to advise against), and questions (tagged by type — `uncategorized` / `unlinked_fixed` / `other` — so the dashboard, not the model, builds the actual link).
+- **`report.py`** orchestrates dossier → classify → analyze → persist, and computes the fingerprint (SHA256 of the period's *local* facts only — its expenses' id/amount/category/subcategory/user/date/fixed-link and dollar operations — deliberately excluding derived values like averages, so re-fingerprinting an unchanged period always reproduces the same hash even months later). The fingerprint isn't consumed yet — it's computed now so a drift badge landing in a follow-up PR has a baseline for every report generated from 2.3.0 on.
+- **Persistence is append-only.** `reports` never gets an UPDATE — every generation or regeneration is a new row; the latest (by `generated_at`) is what's displayed, but the full history stays queryable. `expense_classifications` rows are tied to the `reports.id` that produced them, for audit and for building the cross-month-consistency context on the next classification call.
+- **Degrades gracefully.** If either LLM call fails (bad key, network, malformed output despite the schema), the report is still persisted with `llm_ok=0` — the dossier's fixed sections (all the numbers) render regardless; only the narrative layer is missing, and the page says so explicitly rather than showing a blank state.
+- **`/resumenes`** (dashboard.py) shows the most recent report with a month selector; `/resumenes/YYYY-MM` is the deep link. A period with no report shows a Generate button (synchronous — the two LLM calls take roughly 40-60s combined; `dashboard.py`'s Flask app runs with `threaded=True` specifically so this doesn't block other dashboard requests). Regenerate is deliberately understated (small text button, not primary) so it doesn't invite re-rolling until the report says something more pleasant.
 
 ## Screens
 
 **Telegram** is the primary input surface — no separate "screens," just chat plus inline keyboards (category picker, edit/confirm buttons, fixed-expense payment buttons, OCR/voice confirmation, NL edit candidate picker).
 
-**Web dashboard** (Flask, 6 pages, `templates/*.html`, shared `base.html` shell with mobile nav):
+**Web dashboard** (Flask, 7 pages, `templates/*.html`, shared `base.html` shell with mobile nav):
 
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
 | `/history` | `history.html` | Full expense history, filterable (concept search, month/year — each with an "all" option, category incl. uncategorized, subcategory scoped to the chosen category, fixed/variable status, user), active filters shown as removable chips, filter state reflected in the URL, inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
-| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead |
+| `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead. As of 2.3.0, accepts `?year=&month=` to open a specific period directly (used by the monthly report's "unlinked fixed expense" question links) |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
+| `/resumenes` | `resumenes.html` | Monthly AI-generated report (2.3.0) — see dedicated section above. Most recent report with a month selector; `/resumenes/YYYY-MM` deep link; Generate button when a period has none; understated Regenerate always available |
 | `/config` | `config.html` | System: backup status + "Backup ahora" button, restore DB from a public HTTPS URL (saves a `.bak` of current state first, then restarts) |
 
 All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark).
@@ -102,6 +117,10 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 - `dolar.py` — natural-language USD buy/sell parsing (`looks_like_dolar` gate + `parse_dolar`); confidence-based auto-save
 - `backup.py` — sends DB file as Telegram document; called by scheduler and admin endpoint
 - `seed.py` — idempotent `seed(conn)` run on every startup; handles schema migrations and default data
+- `dossier.py` — deterministic aggregation for the monthly report (2.3.0); no LLM involved. `build_dossier(year, month)` reads via `db.py` (ART-adjusted cash-basis queries) plus `inflation.py`, returns the full structured snapshot — totals, contrasts, delta attribution, outliers, fixed-expense status, dollars, registration coverage, taxonomy, recurrence evidence, hard facts
+- `inflation.py` — IPC Nacional fetch/cache/estimate/deflate (2.3.0); `refresh()` hits `apis.datos.gob.ar`, `deflate()` converts a nominal amount between two periods' prices, returning `None` (not a silent nominal fallback) when an index is missing
+- `report_ai.py` — the two Claude calls behind the monthly report (2.3.0): `classify_expenses()` (recurring/exceptional per variable expense) and `analyze()` (narration). Structured JSON outputs, adaptive thinking, `REPORT_ANTHROPIC_MODEL` (default `claude-opus-4-8`) — separate model config from the Haiku extraction calls elsewhere. No DB/Telegram/Flask I/O
+- `report.py` — orchestrates dossier → classify → analyze → persist for the monthly report (2.3.0); computes the append-only-friendly `fingerprint()` (period-local facts only, no derived values). Degrades to a dossier-only report (`llm_ok=0`) if either LLM call fails rather than losing the generation entirely
 
 ## Config
 
@@ -111,7 +130,8 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "..."}]` |
-| `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, and the natural-language intent layer |
+| `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, the natural-language intent layer, and the monthly report (2.3.0) |
+| `REPORT_ANTHROPIC_MODEL` | No | Default: `claude-opus-4-8`. Model used for the monthly report's two LLM calls (2.3.0) — separate from the Haiku model used elsewhere, since this runs a handful of times a year and quality matters more than cost |
 | `OPENAI_API_KEY` | No | Enables voice message expense entry |
 | `DB_PATH` | No | Default: `/data/gastos.db` |
 | `DASHBOARD_PORT` | No | Default: `5000`. The Pi sets `8090` to free up 5000 for Frigate |
@@ -129,6 +149,8 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
 - **2.0.0 fixed-expense migration is lossy by design:** old `fixed_expense_payments` rows with no linked expense (from the old "✓ Ya lo pagué" flag-only flow) had no amount to migrate and were dropped rather than fabricated from `estimated_amount`. Check the startup logs after upgrading a DB that predates 2.0.0 for the converted/dropped counts, and re-link any dropped months by hand via the new "ya lo pagué" candidate search.
 - **Date-only writes are always stored at `03:00:00` UTC** (`create_expense_full`, `update_expense`, `update_expense_fields`, the fixed-expense "pay" flow) — that's exactly midnight ART, chosen so the stored UTC date and the ART-displayed date are always the same calendar day, at every month/year boundary, regardless of whether a query adjusts for the `-3h` offset or reads `created_at` raw (the codebase does both, inconsistently, elsewhere). Don't "improve" this by storing a different time-of-day without re-verifying that invariant.
+- **The IPC time-series API is unauthenticated and has no SLA.** `inflation.refresh()` catches every failure and leaves the cache as-is — report generation never blocks on it, and the dossier explicitly flags `inflation_unavailable` so the model doesn't narrate un-deflated numbers as if they were real. If real IPC data looks stale on the dashboard, check `apis.datos.gob.ar` directly before assuming a code bug.
+- **`fixed_expense_year`/`month` vs. cash-basis reporting are two different partitions, on purpose.** The monthly report groups by the expense's own ART date (`dossier.py`, `db.get_expenses_for_period_art`), not by the fixed-expense period fields — otherwise fixed + variable wouldn't sum to the report's own total. Don't switch the report's queries to the `fixed_expense_year`/`month` columns to "simplify" — that's a different, deliberately separate concept (see the 2.1.0 changelog entry on why the two are independent).
 
 ## Infrastructure Philosophy
 

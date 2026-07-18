@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+{% block title %}Resúmenes — Gastos Familiares{% endblock %}
+{% block nav_resumenes %}active{% endblock %}
+
+{% block extra_styles %}
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.month-nav select {
+  min-width: 100px;
+}
+
+.header-meta {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+.btn-quiet {
+  font-size: 12px;
+  padding: 6px 12px;
+  color: var(--text3);
+  border-color: var(--border-soft);
+}
+
+.btn-quiet:hover { color: var(--text2); }
+
+.hero-total {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-trend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.trend-up   { color: var(--red); font-weight: 700; }
+.trend-down { color: var(--green); font-weight: 700; }
+
+.headline {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.summary {
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+
+.findings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.finding-card {
+  background: var(--surface2);
+  border-radius: 14px;
+  padding: 16px 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.kinds-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 100px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  background: var(--track);
+}
+
+.kinds-bar > div { height: 100%; }
+.kind-fixed       { background: var(--amber); }
+.kind-recurring   { background: var(--green); }
+.kind-exceptional { background: var(--red); }
+
+.kinds-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .kinds-grid { grid-template-columns: 1fr; }
+}
+
+.kind-card .kind-dot {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  margin-right: 7px;
+}
+
+.questions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.question-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--surface2);
+  font-size: 13.5px;
+  transition: background 0.15s;
+}
+
+.question-link:hover { background: var(--bg3); }
+
+.empty-state {
+  text-align: center;
+  padding: 64px 24px;
+}
+
+.empty-state .btn-primary { margin-top: 16px; }
+
+.gen-status {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text2);
+  font-size: 13.5px;
+}
+
+.dossier-only-note {
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--text2);
+  margin-bottom: 20px;
+}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <!-- Page header -->
+  <div class="page-header" style="align-items:flex-start;flex-wrap:wrap;gap:16px">
+    <div>
+      <div class="page-title">Resúmenes</div>
+      <div class="header-meta" id="report-meta">—</div>
+    </div>
+    <div class="hero-controls" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="month-nav">
+        <select id="sel-month"></select>
+        <select id="sel-year"></select>
+      </div>
+      <button class="btn btn-quiet" id="btn-regenerate" style="display:none">Regenerar</button>
+    </div>
+  </div>
+
+  <div id="report-root">
+    <div class="gen-status">Cargando…</div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const MONTHS_ES = ["","Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  let selYear  = {{ year }};
+  let selMonth = {{ month }};
+
+  const selMonthEl = document.getElementById('sel-month');
+  const selYearEl  = document.getElementById('sel-year');
+  const root       = document.getElementById('report-root');
+  const metaEl     = document.getElementById('report-meta');
+  const regenBtn   = document.getElementById('btn-regenerate');
+
+  MONTHS_ES.slice(1).forEach((name, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1; opt.textContent = name;
+    if (i + 1 === selMonth) opt.selected = true;
+    selMonthEl.appendChild(opt);
+  });
+  for (let y = selYear - 2; y <= selYear + 1; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    if (y === selYear) opt.selected = true;
+    selYearEl.appendChild(opt);
+  }
+
+  function fmtAmount(n) {
+    if (n === null || n === undefined) return "—";
+    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
+    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function fmtPct(n) {
+    if (n === null || n === undefined) return "—";
+    const sign = n > 0 ? "+" : "";
+    return sign + n.toFixed(1) + "%";
+  }
+
+  function navigate() {
+    const url = `/resumenes/${selYear}-${String(selMonth).padStart(2, "0")}`;
+    window.history.replaceState(null, "", url);
+    loadReport();
+  }
+
+  selMonthEl.addEventListener('change', () => { selMonth = +selMonthEl.value; navigate(); });
+  selYearEl.addEventListener('change',  () => { selYear  = +selYearEl.value;  navigate(); });
+
+  regenBtn.addEventListener('click', () => generateReport());
+
+  async function loadReport() {
+    root.innerHTML = '<div class="gen-status">Cargando…</div>';
+    regenBtn.style.display = "none";
+    const res = await fetch(`/api/resumenes/${selYear}/${selMonth}`);
+    const data = await res.json();
+    render(data.report);
+  }
+
+  async function generateReport() {
+    root.innerHTML = '<div class="gen-status">Generando resumen — esto puede tardar hasta un minuto…</div>';
+    regenBtn.style.display = "none";
+    try {
+      const res = await fetch(`/api/resumenes/${selYear}/${selMonth}/generate`, {method: "POST"});
+      const data = await res.json();
+      render(data.report);
+    } catch (e) {
+      root.innerHTML = '<div class="gen-status">No se pudo generar el resumen. Probá de nuevo.</div>';
+    }
+  }
+
+  function render(report) {
+    if (!report) {
+      metaEl.textContent = "—";
+      root.innerHTML = `
+        <div class="card empty-state">
+          <div class="section-title">Todavía no hay un resumen para ${MONTHS_ES[selMonth]} ${selYear}</div>
+          <div class="summary" style="margin-top:8px">Se genera en dos pasos con IA y tarda medio minuto aproximadamente.</div>
+          <button class="btn btn-primary" id="btn-generate">Generar resumen</button>
+        </div>`;
+      document.getElementById('btn-generate').addEventListener('click', () => generateReport());
+      return;
+    }
+
+    regenBtn.style.display = "inline-flex";
+    metaEl.textContent = `Versión generada el ${report.generated_at} con ${report.model || "?"}`
+      + (report.llm_ok ? "" : " — análisis narrativo no disponible");
+
+    const d = report.dossier;
+    const out = report.output;
+    const partition = d.partition || {available: false};
+
+    const parts = [];
+
+    if (!report.llm_ok) {
+      parts.push(`<div class="dossier-only-note">El análisis narrativo no se pudo generar esta vez (falló la llamada al modelo). Los datos numéricos de abajo sí están completos y son correctos.</div>`);
+    }
+
+    parts.push(renderHero(d));
+    if (out) parts.push(renderNarrative(out));
+    parts.push(renderKinds(partition, d));
+    parts.push(renderDollars(d.dollars));
+    parts.push(renderCoverage(d.registration_coverage));
+    if (out && out.questions && out.questions.length) parts.push(renderQuestions(out.questions));
+
+    root.innerHTML = parts.join("");
+  }
+
+  function renderHero(d) {
+    const prev = d.contrasts.prev_month;
+    let trend = "";
+    if (prev.available) {
+      const cls = prev.nominal_delta >= 0 ? "trend-up" : "trend-down";
+      trend += `<span class="${cls}">${fmtPct(prev.nominal_delta_pct)} nominal vs. mes anterior</span>`;
+      if (prev.real_delta_pct !== undefined) {
+        const clsR = prev.real_delta >= 0 ? "trend-up" : "trend-down";
+        trend += `<span class="${clsR}">${fmtPct(prev.real_delta_pct)} real vs. mes anterior</span>`;
+      } else {
+        trend += `<span>real no disponible (sin índice IPC)</span>`;
+      }
+    } else {
+      trend = `<span>Sin mes anterior para comparar todavía</span>`;
+    }
+    return `
+      <div class="card">
+        <div class="card-title">Total del mes</div>
+        <div class="hero-total">${fmtAmount(d.base.total)}</div>
+        <div class="hero-trend">${trend}</div>
+        <div class="card-sub" style="margin-top:8px">${d.base.count} gastos · promedio diario ${fmtAmount(d.base.daily_avg)}</div>
+      </div>`;
+  }
+
+  function renderNarrative(out) {
+    const findings = (out.findings || []).map(f => `<div class="finding-card">${escapeHtml(f.text)}</div>`).join("");
+    return `
+      <div class="card mt-24">
+        <div class="headline">${escapeHtml(out.headline || "")}</div>
+        <div class="summary">${escapeHtml(out.summary || "")}</div>
+        ${findings ? `<div class="findings-grid mt-24">${findings}</div>` : ""}
+      </div>`;
+  }
+
+  function renderKinds(partition, d) {
+    const fixed = partition.fixed_total || 0;
+    const recurring = partition.available ? partition.recurring_total : 0;
+    const exceptional = partition.available ? partition.exceptional_total : 0;
+    const total = fixed + recurring + exceptional || 1;
+    const note = partition.available ? "" :
+      `<div class="dossier-only-note">La clasificación recurrente / excepcional no está disponible para este resumen.</div>`;
+    return `
+      <div class="card mt-24">
+        <div class="section-title" style="margin-bottom:16px">Las tres clases de gasto</div>
+        ${note}
+        <div class="kinds-bar">
+          <div class="kind-fixed" style="width:${fixed/total*100}%"></div>
+          <div class="kind-recurring" style="width:${recurring/total*100}%"></div>
+          <div class="kind-exceptional" style="width:${exceptional/total*100}%"></div>
+        </div>
+        <div class="kinds-grid">
+          <div class="kind-card">
+            <div class="stat-label"><span class="kind-dot" style="background:var(--amber)"></span>Fijo — evento</div>
+            <div class="stat-value">${fmtAmount(fixed)}</div>
+          </div>
+          <div class="kind-card">
+            <div class="stat-label"><span class="kind-dot" style="background:var(--green)"></span>Recurrente — comportamiento</div>
+            <div class="stat-value">${partition.available ? fmtAmount(recurring) : "—"}</div>
+          </div>
+          <div class="kind-card">
+            <div class="stat-label"><span class="kind-dot" style="background:var(--red)"></span>Excepcional — ruido</div>
+            <div class="stat-value">${partition.available ? fmtAmount(exceptional) : "—"}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderDollars(dollars) {
+    const cov = dollars.coverage_ratio;
+    const covText = cov === null || cov === undefined ? "sin gastos este mes" : (cov * 100).toFixed(0) + "% del gasto del mes";
+    return `
+      <div class="card mt-24">
+        <div class="section-title" style="margin-bottom:16px">Dólares</div>
+        <div class="grid-2">
+          <div>
+            <div class="stat-label">Venta (obtención de pesos)</div>
+            <div class="stat-value">${fmtAmount(dollars.venta.total_ars)}</div>
+            <div class="card-sub">USD ${dollars.venta.total_usd.toLocaleString("es-AR")} · cotización ${dollars.venta.cotizacion_min.toFixed(0)}–${dollars.venta.cotizacion_max.toFixed(0)}</div>
+          </div>
+          <div>
+            <div class="stat-label">Compra</div>
+            <div class="stat-value">${fmtAmount(dollars.compra.total_ars)}</div>
+            <div class="card-sub">USD ${dollars.compra.total_usd.toLocaleString("es-AR")} · cotización ${dollars.compra.cotizacion_min.toFixed(0)}–${dollars.compra.cotizacion_max.toFixed(0)}</div>
+          </div>
+        </div>
+        <div class="card-sub mt-8">Cobertura: ${covText} vino de pesos obtenidos vendiendo dólares.</div>
+      </div>`;
+  }
+
+  function renderCoverage(coverage) {
+    const rows = coverage.map(c =>
+      `<div class="stat-cell"><div class="stat-label">${escapeHtml(c.user)}</div><div class="stat-value">${c.count}</div><div class="card-sub">${fmtAmount(c.total)}</div></div>`
+    ).join("");
+    return `
+      <div class="card mt-24">
+        <div class="section-title" style="margin-bottom:8px">Quién registró</div>
+        <div class="card-sub" style="margin-bottom:16px">Cuenta quién cargó cada gasto en la app, no quién lo pagó — no es un reparto de gastos.</div>
+        <div class="stat-strip" style="border:none">${rows}</div>
+      </div>`;
+  }
+
+  function renderQuestions(questions) {
+    const items = questions.map(q => {
+      let href = "#";
+      if (q.type === "uncategorized") {
+        href = `/history?category_id=null&year=${selYear}&month=${selMonth}`;
+      } else if (q.type === "unlinked_fixed" && q.fixed_expense_id) {
+        href = `/fijos?year=${selYear}&month=${selMonth}`;
+      }
+      return `<a class="question-link" href="${href}">${escapeHtml(q.text)}<i class="ti ti-chevron-right"></i></a>`;
+    }).join("");
+    return `
+      <div class="card mt-24">
+        <div class="section-title" style="margin-bottom:16px">Para resolver</div>
+        <div class="questions-list">${items}</div>
+      </div>`;
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s || "";
+    return div.innerHTML;
+  }
+
+  loadReport();
+</script>
+{% endblock %}
