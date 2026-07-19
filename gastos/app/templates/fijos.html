@@ -174,6 +174,38 @@
   width: 100%;
 }
 
+.input-prefix-group {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border2);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg2);
+}
+
+.input-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text2);
+  background: var(--surface2);
+  border-right: 1px solid var(--border2);
+  white-space: nowrap;
+}
+
+.input-prefix-group input {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+}
+
+.input-prefix-group input:focus { border: none; }
+.input-prefix-group:focus-within { border-color: var(--accent); }
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;
@@ -240,7 +272,10 @@
     <div class="modal-title" id="pay-title">Registrar pago</div>
     <div class="form-row">
       <label class="form-label">Monto pagado</label>
-      <input type="number" id="pay-amount" placeholder="Ej: 150000" min="1" step="any">
+      <div class="input-prefix-group">
+        <span class="input-prefix" id="pay-currency-prefix">$</span>
+        <input type="number" id="pay-amount" placeholder="Ej: 150000" min="1" step="any">
+      </div>
     </div>
     <div class="form-row">
       <label class="form-label">Fecha</label>
@@ -399,9 +434,9 @@
       // A legitimate second payment in the same period (e.g. a utility billing error) must
       // stay reachable even once "paid" — kept as a subtler, secondary action.
       const payBtn = r.paid
-        ? `<button class="btn" style="font-size:12px;padding:6px 12px;color:var(--text2)" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Otro pago</button>`
-        : `<button class="btn btn-primary" style="font-size:13.5px;padding:8px 16px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">+ Registrar pago</button>
-           <button class="btn" style="font-size:13.5px;padding:8px 16px;color:var(--text2)" onclick="openAlreadyPaidModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0})">✓ Ya lo pagué</button>`;
+        ? `<button class="btn" style="font-size:12px;padding:6px 12px;color:var(--text2)" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0}, '${r.currency}')">+ Otro pago</button>`
+        : `<button class="btn btn-primary" style="font-size:13.5px;padding:8px 16px" onclick="openPayModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0}, '${r.currency}')">+ Registrar pago</button>
+           <button class="btn" style="font-size:13.5px;padding:8px 16px;color:var(--text2)" onclick="openAlreadyPaidModal(${r.id}, '${r.concept.replace(/'/g,"\\'")}', ${r.estimated_amount || 0}, '${r.currency}')">✓ Ya lo pagué</button>`;
       return `
         <div class="fixed-row">
           <span class="fixed-check${r.paid ? ' paid' : ''}">${r.paid ? checkSvg : ''}</span>
@@ -424,10 +459,11 @@
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
-  function openPayModal(feId, concept, estimated) {
+  function openPayModal(feId, concept, estimated, currency) {
     payFixedId = feId;
     document.getElementById('pay-title').textContent  = `Registrar pago: ${concept}`;
     document.getElementById('pay-amount').value       = estimated || '';
+    document.getElementById('pay-currency-prefix').textContent = currency === 'USD' ? 'U$S' : '$';
 
     // Default date: today if we're looking at the current month, otherwise the 1st of
     // the period being viewed — a past period's payment must not be born dated today,
@@ -449,16 +485,16 @@
   }
 
   // ── "Ya lo pagué" — candidate search ───────────────────────────────────────
-  let alreadyFeId = null, alreadyFeConcept = null, alreadyFeEstimated = 0;
+  let alreadyFeId = null, alreadyFeConcept = null, alreadyFeEstimated = 0, alreadyFeCurrency = 'ARS';
 
-  async function openAlreadyPaidModal(feId, concept, estimated) {
-    alreadyFeId = feId; alreadyFeConcept = concept; alreadyFeEstimated = estimated;
+  async function openAlreadyPaidModal(feId, concept, estimated, currency) {
+    alreadyFeId = feId; alreadyFeConcept = concept; alreadyFeEstimated = estimated; alreadyFeCurrency = currency;
     const res = await fetch(`/api/fixed-expenses/${feId}/candidates?year=${selYear}&month=${selMonth}`);
     const candidates = await res.json().catch(() => []);
 
     if (!Array.isArray(candidates) || !candidates.length) {
       // Nothing to search among — same as clicking "+ Registrar pago".
-      openPayModal(feId, concept, estimated);
+      openPayModal(feId, concept, estimated, currency);
       return;
     }
 
@@ -485,7 +521,7 @@
 
   document.getElementById('btn-candidates-none').addEventListener('click', () => {
     document.getElementById('modal-candidates').classList.remove('open');
-    openPayModal(alreadyFeId, alreadyFeConcept, alreadyFeEstimated);
+    openPayModal(alreadyFeId, alreadyFeConcept, alreadyFeEstimated, alreadyFeCurrency);
   });
 
   document.getElementById('btn-candidates-cancel').addEventListener('click', () => {
