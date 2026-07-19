@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1
+- En desktop, los campos de fecha ahora abren el datepicker nativo al hacer click en cualquier parte del input (antes había que acertarle al ícono del calendario); el fix es un único listener delegado en `base.html` que cubre los 4 campos de fecha del sitio, incluida la fila de edición inline del Historial.
+- El modal "Registrar pago" de un gasto fijo ahora muestra la moneda (`$`/`U$S`) como prefijo del campo "Monto pagado", para que quede claro en qué moneda se está cargando el pago sin poder editarla ahí.
+- En "Agregar gasto" (Historial), Moneda y Monto pasan a compartir una misma línea, con el select de Moneda angosto a la izquierda.
+
 ## 2.4.0
 - Gastos y gastos fijos ahora guardan su moneda nativa (`ARS` o `USD`); la migración automática conserva todos los registros históricos como ARS. No hay cotización automática ni se suman monedas distintas.
 - Telegram mantiene ARS por defecto y reconoce `USD`, `US$`, `U$S` o “dólares” en texto, voz y lenguaje natural. La moneda se puede corregir con el teclado inline o `/editar ID moneda USD`; OCR empieza en ARS y permite pasarlo a USD antes de confirmar.

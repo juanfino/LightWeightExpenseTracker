@@ -248,12 +248,20 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         <input id="add-concept" type="text" placeholder="Ej: Supermercado" style="width:100%">
       </div>
 
-      <div class="filter-group">
-        <label class="filter-label" for="add-amount">Monto</label>
-        <input id="add-amount" type="number" placeholder="0" min="0.01" step="0.01"
-               style="width:100%; font-family:var(--font-mono)">
+      <div style="display:flex; gap:10px; align-items:flex-end">
+        <div class="filter-group" style="flex:0 0 auto">
+          <label class="filter-label" for="add-currency">Moneda</label>
+          <select id="add-currency" style="width:auto; padding:9px 8px; font-size:13px">
+            <option value="ARS">ARS</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+        <div class="filter-group" style="flex:1">
+          <label class="filter-label" for="add-amount">Monto</label>
+          <input id="add-amount" type="number" placeholder="0" min="0.01" step="0.01"
+                 style="width:100%; font-family:var(--font-mono)">
+        </div>
       </div>
-      <div class="filter-group"><label class="filter-label" for="add-currency">Moneda</label><select id="add-currency"><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
 
       <div class="filter-group">
         <label class="filter-label" for="add-category">Categoría</label>

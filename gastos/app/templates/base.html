@@ -653,6 +653,16 @@
       });
     });
 
+    // En desktop, el navegador solo abre el datepicker nativo si el click cae justo
+    // sobre el ícono de calendario; delegado en document para cubrir también los
+    // inputs de fecha creados dinámicamente (ej: fila de edición inline en Historial).
+    document.addEventListener('click', function(e) {
+      const el = e.target.closest('input[type="date"]');
+      if (el && typeof el.showPicker === 'function') {
+        try { el.showPicker(); } catch (err) {}
+      }
+    });
+
   </script>
 </body>
 </html>
