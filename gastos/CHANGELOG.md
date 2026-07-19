@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.4.2
+- En Historial, la columna "Moneda" desaparece y el monto se muestra combinado con su prefijo (`$100` / `U$S 100`), igual que en Gastos Fijos. La fila de edición inline mantiene el mismo comportamiento (moneda no editable si el gasto está vinculado a un fijo), ahora en una sola celda junto al monto.
+
 ## 2.4.1
 - En desktop, los campos de fecha ahora abren el datepicker nativo al hacer click en cualquier parte del input (antes había que acertarle al ícono del calendario); el fix es un único listener delegado en `base.html` que cubre los 4 campos de fecha del sitio, incluida la fila de edición inline del Historial.
 - El modal "Registrar pago" de un gasto fijo ahora muestra la moneda (`$`/`U$S`) como prefijo del campo "Monto pagado", para que quede claro en qué moneda se está cargando el pago sin poder editarla ahí.
