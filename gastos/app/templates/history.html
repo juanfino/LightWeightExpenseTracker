@@ -203,7 +203,6 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
             <th class="hide-mobile">Subcategoría</th>
             <th class="hide-mobile">Gasto fijo</th>
             <th class="sortable" data-sort="amount">Monto</th>
-            <th>Moneda</th>
             <th class="sortable" data-sort="user_name">Usuario</th>
             <th></th>
           </tr>
@@ -397,7 +396,6 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td class="hide-mobile" data-label="Subcategoría">' + subcatHtml + '</td>'
       + '<td class="hide-mobile" data-label="Gasto fijo">' + fixedHtml + '</td>'
       + '<td class="mono" data-label="Monto" style="font-weight:600">' + fmtAmount(r.amount, r.currency) + '</td>'
-      + '<td data-label="Moneda" style="color:var(--muted)">' + r.currency + '</td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px">'
       +   '<button class="btn" style="padding:4px 10px;font-size:12px" onclick="enterEditMode(' + r.id + ')">Editar</button>'
@@ -429,8 +427,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
       + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
       + '<td class="hide-mobile" data-label="Gasto fijo"><select id="ei-fixed-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Ninguno —</option>' + fixedOptions + '</select></td>'
-      + '<td data-label="Monto"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"></td>'
-      + '<td data-label="Moneda"><select id="ei-currency-' + r.id + '"' + catDisabled + '><option value="ARS"' + (r.currency === 'ARS' ? ' selected' : '') + '>ARS</option><option value="USD"' + (r.currency === 'USD' ? ' selected' : '') + '>USD</option></select></td>'
+      + '<td data-label="Monto"><div style="display:flex;gap:4px;align-items:center"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"><select id="ei-currency-' + r.id + '"' + catDisabled + ' style="flex:0 0 auto;padding:9px 4px"><option value="ARS"' + (r.currency === 'ARS' ? ' selected' : '') + '>ARS</option><option value="USD"' + (r.currency === 'USD' ? ' selected' : '') + '>USD</option></select></div></td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap">'
@@ -613,7 +610,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const tbody = document.getElementById("expense-body");
     if (slice.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">Sin resultados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
       return;
     }
     tbody.innerHTML = slice.map(buildReadRow).join("");
