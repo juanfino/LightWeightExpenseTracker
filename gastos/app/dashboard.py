@@ -47,6 +47,12 @@ def _row_to_dict(row) -> dict:
     return d
 
 
+def _currency_arg() -> str:
+    """Validate dashboard currency input; ARS remains the default surface."""
+    body = request.get_json(silent=True) or {}
+    return db.normalize_currency(request.args.get("currency") or body.get("currency") or "ARS")
+
+
 # ── Páginas ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -93,14 +99,23 @@ def api_summary():
     now = datetime.now()
     year, month = now.year, now.month
 
-    by_category = db.get_expenses_summary_by_category(year, month)
-    by_week     = db.get_expenses_by_week_of_month(year, month)
-    by_user_rows = db.get_expenses_by_user(year, month)
+    try:
+        currency = _currency_arg()
+    except ValueError:
+        return jsonify({"error": "Moneda inválida"}), 400
+    by_category = db.get_expenses_summary_by_category(year, month, currency=currency)
+    by_week     = db.get_expenses_by_week_of_month(year, month, currency=currency)
+    by_user_rows = db.get_expenses_by_user(year, month, currency=currency)
 
     total = sum(r["total"] for r in by_category)
+    other_currency = "USD" if currency == "ARS" else "ARS"
+    other_total = sum(r["total"] for r in db.get_expenses_summary_by_category(year, month, currency=other_currency))
 
     return jsonify({
         "month":       _month_label(year, month),
+        "currency":    currency,
+        "other_currency": other_currency,
+        "other_total": other_total,
         "total":       total,
         "by_category": by_category,
         "by_week":     by_week,
@@ -118,18 +133,27 @@ def api_monthly():
 
     usuario   = request.args.get("usuario", "").strip()
     user_name = usuario if usuario and usuario != "Todos" else None
+    try:
+        currency = _currency_arg()
+    except ValueError:
+        return jsonify({"error": "Moneda inválida"}), 400
 
     prev_y, prev_m = (year - 1, 12) if month == 1 else (year, month - 1)
 
-    by_category      = db.get_expenses_summary_by_category(year, month, user_name)
-    by_week          = db.get_expenses_by_week_of_month(year, month, user_name)
-    by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month, user_name)
-    by_week_prev     = db.get_expenses_by_week_of_month(prev_y, prev_m, user_name)
-    by_user_rows     = db.get_expenses_by_user(year, month)
+    by_category      = db.get_expenses_summary_by_category(year, month, user_name, currency)
+    by_week          = db.get_expenses_by_week_of_month(year, month, user_name, currency)
+    by_week_by_user  = db.get_expenses_by_week_of_month_by_user(year, month, user_name, currency)
+    by_week_prev     = db.get_expenses_by_week_of_month(prev_y, prev_m, user_name, currency)
+    by_user_rows     = db.get_expenses_by_user(year, month, currency)
     total = sum(r["total"] for r in by_category)
+    other_currency = "USD" if currency == "ARS" else "ARS"
+    other_total = sum(r["total"] for r in db.get_expenses_summary_by_category(year, month, user_name, other_currency))
 
     return jsonify({
         "month":           _month_label(year, month),
+        "currency":        currency,
+        "other_currency":  other_currency,
+        "other_total":     other_total,
         "total":           total,
         "by_category":     by_category,
         "by_week":         by_week,
@@ -148,12 +172,18 @@ def api_users():
 def api_annual(year: int):
     if year < 2020 or year > 2099:
         return jsonify({"error": "Año inválido"}), 400
-    return jsonify(db.get_annual_data(year))
+    try:
+        return jsonify(db.get_annual_data(year, _currency_arg()))
+    except ValueError:
+        return jsonify({"error": "Moneda inválida"}), 400
 
 
 @app.route("/api/sparklines")
 def api_sparklines():
-    return jsonify(db.get_monthly_totals(6))
+    try:
+        return jsonify(db.get_monthly_totals(6, _currency_arg()))
+    except ValueError:
+        return jsonify({"error": "Moneda inválida"}), 400
 
 
 @app.route("/api/weekly")
@@ -180,6 +210,7 @@ def api_expenses():
     user_id        = request.args.get("user_id")
     usuario        = request.args.get("usuario", "").strip()
     q              = request.args.get("q", "").strip()
+    currency       = request.args.get("currency", "").upper().strip()
 
     try:
         if not year_raw and not month_raw:
@@ -211,6 +242,10 @@ def api_expenses():
     if q:
         needle = categorizer.normalize(q)
         result = [r for r in result if needle in categorizer.normalize(r.get("concept") or "")]
+    if currency:
+        if currency not in db.SUPPORTED_CURRENCIES:
+            return jsonify({"error": "Moneda inválida"}), 400
+        result = [r for r in result if r.get("currency") == currency]
 
     return jsonify(result)
 
@@ -225,7 +260,10 @@ def api_gastos_por_categoria():
         now = datetime.now()
         year, month = now.year, now.month
     user_name = usuario if usuario and usuario != "Todos" else None
-    return jsonify(db.get_gastos_por_categoria(year, month, user_name))
+    try:
+        return jsonify(db.get_gastos_por_categoria(year, month, user_name, _currency_arg()))
+    except ValueError:
+        return jsonify({"error": "Moneda inválida"}), 400
 
 
 @app.route("/api/categories")
@@ -241,6 +279,7 @@ def api_expenses_add():
     category_id = data.get("category_id")
     user_id     = data.get("user_id")
     date_str    = (data.get("date") or "").strip()
+    currency    = (data.get("currency") or "ARS").upper()
 
     if not concept or amount is None or not user_id or not date_str:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -258,10 +297,13 @@ def api_expenses_add():
         return jsonify({"ok": False, "error": "Fecha inválida"}), 400
 
     cat_id = int(category_id) if category_id else None
-    expense_id = db.create_expense_full(int(user_id), cat_id, concept, amount, date_str)
+    try:
+        expense_id = db.create_expense_full(int(user_id), cat_id, concept, amount, date_str, currency=currency)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Moneda inválida"}), 400
 
     suggestion = None
-    matches = fixed_matcher.find_fixed_expense_matches(concept, db.get_all_fixed_expenses())
+    matches = fixed_matcher.find_fixed_expense_matches(concept, db.get_all_fixed_expenses(), currency)
     if len(matches) == 1:
         suggestion = {"id": matches[0]["id"], "concept": matches[0]["concept"]}
 
@@ -313,6 +355,7 @@ def api_expenses_update():
     subcategory_id   = data.get("subcategory_id")    # may be None / null
     fixed_expense_id = data.get("fixed_expense_id")  # may be None / null
     date_str         = (data.get("date") or "").strip() or None
+    currency         = (data.get("currency") or "ARS").upper()
 
     if not expense_id or not concept or amount is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -332,7 +375,22 @@ def api_expenses_update():
 
     cat_id    = int(category_id)    if category_id    else None
     subcat_id = int(subcategory_id) if subcategory_id else None
-    updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id, date_str)
+    existing = db.get_expense_by_id(int(expense_id))
+    if not existing:
+        return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
+    if existing["fixed_expense_id"] is not None and currency != existing["currency"]:
+        return jsonify({"ok": False, "error": "No se puede cambiar la moneda de un gasto vinculado a un fijo"}), 409
+    target_fixed = None
+    if fixed_expense_id:
+        target_fixed = db.get_fixed_expense_by_id(int(fixed_expense_id))
+        if not target_fixed:
+            return jsonify({"ok": False, "error": "Gasto fijo no encontrado"}), 404
+        if currency != target_fixed["currency"]:
+            return jsonify({"ok": False, "error": "La moneda debe coincidir con el gasto fijo"}), 409
+    try:
+        updated = db.update_expense(int(expense_id), concept, amount, cat_id, subcat_id, date_str, currency)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Moneda inválida"}), 400
     if not updated:
         return jsonify({"ok": False, "error": "Gasto no encontrado"}), 404
 
@@ -344,9 +402,8 @@ def api_expenses_update():
         expense = db.get_expense_by_id(int(expense_id))
         year, month = fixed_matcher.expense_period(expense["created_at"], BAIRES)
         db.link_expense_to_fixed(int(expense_id), int(fixed_expense_id), year, month)
-        fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
-        resp["category_id"]    = fe["category_id"]    if fe else None
-        resp["subcategory_id"] = fe["subcategory_id"] if fe else None
+        resp["category_id"]    = target_fixed["category_id"]
+        resp["subcategory_id"] = target_fixed["subcategory_id"]
     else:
         db.unlink_expense_from_fixed(int(expense_id))
 
@@ -373,6 +430,8 @@ def api_expenses_link_fixed(expense_id: int):
     fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
     if not fe:
         return jsonify({"ok": False, "error": "Gasto fijo no encontrado"}), 404
+    if expense["currency"] != fe["currency"]:
+        return jsonify({"ok": False, "error": "La moneda debe coincidir con el gasto fijo"}), 409
 
     year, month = fixed_matcher.expense_period(expense["created_at"], BAIRES)
     db.link_expense_to_fixed(expense_id, int(fixed_expense_id), year, month)
@@ -530,6 +589,7 @@ def api_fixed_expenses_add():
     concept          = (data.get("concept") or "").strip()
     estimated_amount = data.get("estimated_amount")
     category_id      = data.get("category_id")
+    currency         = data.get("currency") or "ARS"
     if not concept:
         return jsonify({"ok": False, "error": "El concepto es obligatorio"}), 400
     try:
@@ -538,7 +598,10 @@ def api_fixed_expenses_add():
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
     cat_id    = int(category_id) if category_id else None
     subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
-    fe_id     = db.create_fixed_expense(concept, estimated_amount, cat_id, subcat_id)
+    try:
+        fe_id = db.create_fixed_expense(concept, estimated_amount, cat_id, subcat_id, currency)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Moneda inválida"}), 400
     return jsonify({"ok": True, "id": fe_id})
 
 
@@ -549,6 +612,7 @@ def api_fixed_expenses_update():
     concept          = (data.get("concept") or "").strip()
     estimated_amount = data.get("estimated_amount")
     category_id      = data.get("category_id")
+    currency         = data.get("currency")
     if not fe_id or not concept:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
     try:
@@ -557,7 +621,12 @@ def api_fixed_expenses_update():
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
     cat_id    = int(category_id) if category_id else None
     subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
-    db.update_fixed_expense(int(fe_id), concept, estimated_amount, cat_id, subcat_id)
+    try:
+        updated = db.update_fixed_expense(int(fe_id), concept, estimated_amount, cat_id, subcat_id, currency)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Moneda inválida"}), 400
+    if not updated:
+        return jsonify({"ok": False, "error": "No se puede cambiar la moneda de un fijo con pagos vinculados"}), 409
     return jsonify({"ok": True})
 
 
@@ -616,7 +685,9 @@ def api_fixed_expenses_pay():
         now = datetime.now(BAIRES)
         date_str = now.strftime("%Y-%m-%d") if (now.year, now.month) == (y, m) else f"{y:04d}-{m:02d}-01"
 
-    expense_id = db.create_expense_full(int(user_id), None, fe["concept"], amount, date_str)
+    expense_id = db.create_expense_full(
+        int(user_id), None, fe["concept"], amount, date_str, currency=fe["currency"]
+    )
     db.link_expense_to_fixed(expense_id, int(fixed_expense_id), y, m)
     return jsonify({"ok": True, "expense_id": expense_id})
 

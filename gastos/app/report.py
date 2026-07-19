@@ -19,7 +19,7 @@ import report_ai
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_VERSION = "1"
+_PROMPT_VERSION = "2"
 _CLASSIFICATION_LOOKBACK_MONTHS = 6
 
 
@@ -62,6 +62,7 @@ def generate_report(year: int, month: int) -> dict:
                 "expense_id": c["expense_id"],
                 "concept": by_id[c["expense_id"]]["concept"],
                 "amount": by_id[c["expense_id"]]["amount"],
+                "currency": by_id[c["expense_id"]].get("currency", "ARS"),
                 "label": c["label"],
                 "confidence": c.get("confidence"),
             }
@@ -121,6 +122,7 @@ def fingerprint(year: int, month: int) -> str:
             {
                 "id": e["id"],
                 "amount": e["amount"],
+                "currency": e["currency"],
                 "category_id": e["category_id"],
                 "subcategory_id": e["subcategory_id"],
                 "user_id": e["user_id"],

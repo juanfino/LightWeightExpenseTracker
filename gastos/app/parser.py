@@ -10,6 +10,11 @@ _NUMBER_RE = re.compile(
     r"\b(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\b"
 )
 
+_USD_RE = re.compile(
+    r"(?:(?<!\w)(?:usd|u\$s|us\$)(?!\w)|\bd[oó]lares?\b)",
+    re.IGNORECASE,
+)
+
 
 def _normalize_amount(raw: str) -> float | None:
     """
@@ -88,6 +93,10 @@ def parse_message(text: str) -> dict | None:
     Retorna None si no se puede extraer un monto válido.
     """
     text = text.strip()
+    currency = "USD" if _USD_RE.search(text) else "ARS"
+    # Currency words are annotations, not part of the concept. Removing them also
+    # lets both "Netflix USD 15" and "Netflix 15 dólares" hit the fast path.
+    text = _USD_RE.sub("", text).strip()
     matches = list(_NUMBER_RE.finditer(text))
     if not matches:
         return None
@@ -101,7 +110,7 @@ def parse_message(text: str) -> dict | None:
             # number at end but no text before → try first match as amount
             pass
         elif concept:
-            return {"concept": concept.title(), "amount": amount}
+            return {"concept": concept.title(), "amount": amount, "currency": currency}
 
     # Try first token as amount (amount + concept format)
     first = matches[0]
@@ -109,7 +118,7 @@ def parse_message(text: str) -> dict | None:
     if amount is not None:
         concept = text[first.end() :].strip()
         if concept:
-            return {"concept": concept.title(), "amount": amount}
+            return {"concept": concept.title(), "amount": amount, "currency": currency}
 
     # Single token that is a number → no concept, reject
     return None
@@ -119,17 +128,21 @@ def parse_message(text: str) -> dict | None:
 
 if __name__ == "__main__":
     cases = [
-        ("Supermercado 150000",   {"concept": "Supermercado",      "amount": 150000.0}),
-        ("150000 nafta",          {"concept": "Nafta",             "amount": 150000.0}),
-        ("Cena cumpleaños 5000",  {"concept": "Cena Cumpleaños",   "amount": 5000.0}),
-        ("YPF 100.000",           {"concept": "Ypf",               "amount": 100000.0}),
-        ("YPF 100,000",           {"concept": "Ypf",               "amount": 100000.0}),
-        ("farmacia 2500.50",      {"concept": "Farmacia",          "amount": 2500.5}),
-        ("farmacia 2500,50",      {"concept": "Farmacia",          "amount": 2500.5}),
-        ("super 2.500,50",        {"concept": "Super",             "amount": 2500.5}),
-        ("Doméstica 35000",        {"concept": "Doméstica",         "amount": 35000.0}),
-        ("Domestica 35000",        {"concept": "Domestica",         "amount": 35000.0}),
-        ("Domestica 35.000",       {"concept": "Domestica",         "amount": 35000.0}),
+        ("Supermercado 150000",   {"concept": "Supermercado",      "amount": 150000.0, "currency": "ARS"}),
+        ("150000 nafta",          {"concept": "Nafta",             "amount": 150000.0, "currency": "ARS"}),
+        ("Cena cumpleaños 5000",  {"concept": "Cena Cumpleaños",   "amount": 5000.0, "currency": "ARS"}),
+        ("YPF 100.000",           {"concept": "Ypf",               "amount": 100000.0, "currency": "ARS"}),
+        ("YPF 100,000",           {"concept": "Ypf",               "amount": 100000.0, "currency": "ARS"}),
+        ("farmacia 2500.50",      {"concept": "Farmacia",          "amount": 2500.5, "currency": "ARS"}),
+        ("farmacia 2500,50",      {"concept": "Farmacia",          "amount": 2500.5, "currency": "ARS"}),
+        ("super 2.500,50",        {"concept": "Super",             "amount": 2500.5, "currency": "ARS"}),
+        ("Netflix 15 USD",        {"concept": "Netflix",           "amount": 15.0, "currency": "USD"}),
+        ("Netflix US$ 15",        {"concept": "Netflix",           "amount": 15.0, "currency": "USD"}),
+        ("Netflix 15 U$S",        {"concept": "Netflix",           "amount": 15.0, "currency": "USD"}),
+        ("Hotel 200 dólares",     {"concept": "Hotel",             "amount": 200.0, "currency": "USD"}),
+        ("Doméstica 35000",       {"concept": "Doméstica",         "amount": 35000.0, "currency": "ARS"}),
+        ("Domestica 35000",       {"concept": "Domestica",         "amount": 35000.0, "currency": "ARS"}),
+        ("Domestica 35.000",      {"concept": "Domestica",         "amount": 35000.0, "currency": "ARS"}),
         ("solo texto",            None),
         ("123456",                None),
     ]

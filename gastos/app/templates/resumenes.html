@@ -276,6 +276,7 @@
     parts.push(renderHero(d));
     if (out) parts.push(renderNarrative(out));
     parts.push(renderKinds(partition, d));
+    parts.push(renderUsdExpenses(d.usd_expenses));
     parts.push(renderDollars(d.dollars));
     parts.push(renderCoverage(d.registration_coverage));
     if (out && out.questions && out.questions.length) parts.push(renderQuestions(out.questions));
@@ -370,6 +371,16 @@
         </div>
         <div class="card-sub mt-8">Cobertura: ${covText} vino de pesos obtenidos vendiendo dólares.</div>
       </div>`;
+  }
+
+  function renderUsdExpenses(base) {
+    if (!base || !base.count) return '';
+    const rows = (base.by_category || []).map(r =>
+      `<div class="card-sub">${escapeHtml(r.category)}: <b>U$S ${Number(r.total).toLocaleString('es-AR')}</b></div>`
+    ).join('');
+    return `<div class="card mt-24"><div class="section-title" style="margin-bottom:12px">Gastos en USD</div>
+      <div class="stat-value">U$S ${Number(base.total).toLocaleString('es-AR')}</div>
+      <div class="card-sub" style="margin-bottom:10px">${base.count} gastos. Se muestran sin convertir a pesos ni aplicar IPC.</div>${rows}</div>`;
   }
 
   function renderCoverage(coverage) {

@@ -574,6 +574,7 @@
         <button id="next-month" title="Siguiente">&#8594;</button>
       </div>
       <div class="hero-total" id="header-total">cargando…</div>
+      <div class="hero-trend" id="header-secondary"></div>
       <div class="hero-trend" id="header-trend"></div>
     </div>
     <div class="hero-controls">
@@ -583,6 +584,7 @@
           <option value="">Todos</option>
         </select>
       </div>
+      <div class="user-filter"><span>Moneda:</span><select id="currency-select"><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
       <div class="view-toggle">
         <button class="view-btn active" id="btn-view-monthly">Mensual</button>
         <button class="view-btn" id="btn-view-annual">Anual</button>
@@ -746,6 +748,7 @@
   let currentMonth  = {{ month }};
   let currentView   = 'monthly';
   let activeUser    = '';
+  let activeCurrency = 'ARS';
   let expandedCat   = null;
 
   window.userColors = {};
@@ -821,11 +824,12 @@
   }
 
   // ── Number formatting ──────────────────────────────────────────────────────
-  function fmtAmount(n) {
+  function fmtAmount(n, currency) {
     if (n === null || n === undefined) return "—";
     const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
-    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    const prefix = (currency || activeCurrency) === 'USD' ? 'U$S ' : '$';
+    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
+    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
   function formatARS(n) {
@@ -903,6 +907,7 @@
     activeUser = this.value;
     loadAll();
   });
+  document.getElementById('currency-select').addEventListener('change', function() { activeCurrency = this.value; loadAll(); });
 
   // ── Main dispatcher ────────────────────────────────────────────────────────
   async function loadAll() {
@@ -919,8 +924,8 @@
     const mes     = `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
 
     const [summary, expenses] = await Promise.all([
-      fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}`).then(r => r.json()),
-      fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}`).then(r => r.json()),
+      fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`).then(r => r.json()),
+      fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`).then(r => r.json()),
     ]);
 
     loadFijosWidget(currentYear, currentMonth);
@@ -936,6 +941,8 @@
 
   function renderCards(summary, expenses) {
     const total = summary.total || 0;
+    document.getElementById("header-secondary").textContent = summary.other_total
+      ? `También: ${fmtAmount(summary.other_total, summary.other_currency)}` : '';
     // Big hero total with the decimal part dimmed.
     const totalStr = fmtAmount(total);
     const [intPart, decPart] = totalStr.split(",");
@@ -989,7 +996,7 @@
 
   // ── Últimos 6 meses (feeds renderMonths) ────────────────────────────────────
   async function loadSparklines() {
-    const data = await fetch('/api/sparklines').then(r => r.json()).catch(() => []);
+    const data = await fetch('/api/sparklines?currency=' + activeCurrency).then(r => r.json()).catch(() => []);
     renderMonths(data);
   }
 
@@ -1213,9 +1220,10 @@
   async function loadAnnual() {
     document.getElementById("month-label").textContent = String(currentYear);
     document.getElementById("header-total").textContent = "vista anual";
+    document.getElementById("header-secondary").textContent = "";
     document.getElementById("header-trend").innerHTML = "";
 
-    const data = await fetch(`/api/annual/${currentYear}`).then(r => r.json());
+    const data = await fetch(`/api/annual/${currentYear}?currency=${activeCurrency}`).then(r => r.json());
     renderAnnualKPIs(data);
     renderAnnualBar(data);
     renderAnnualLine(data);
@@ -1378,7 +1386,7 @@
   async function loadGastosPorCategoria(mes, usuario) {
     try {
       const data = await fetch(
-        `/api/gastos-por-categoria?mes=${mes}&usuario=${encodeURIComponent(usuario)}`
+        `/api/gastos-por-categoria?mes=${mes}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`
       ).then(r => r.json());
       renderGastosPorCategoria(data);
     } catch(e) {
@@ -1481,14 +1489,17 @@
     widget.style.display = '';
     const countPaid  = rows.filter(r => r.paid).length;
     const total      = rows.length;
-    const totalEst   = rows.reduce((s, r) => s + (r.estimated_amount || 0), 0);
-    const totalPaid  = rows.filter(r => r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0);
+    const totals = ['ARS', 'USD'].map(currency => ({
+      currency,
+      estimated: rows.filter(r => r.currency === currency).reduce((s, r) => s + (r.estimated_amount || 0), 0),
+      paid: rows.filter(r => r.currency === currency && r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0),
+    })).filter(t => t.estimated || t.paid);
     const pct        = total > 0 ? Math.round(countPaid / total * 100) : 0;
 
     document.getElementById('fijos-progress-bar').style.width = pct + '%';
 
     let summary = `${countPaid} de ${total} pagados`;
-    if (totalEst) summary += ` &nbsp;·&nbsp; ${fmtAmount(totalPaid)} de ~${fmtAmount(totalEst)} estimado`;
+    if (totals.length) summary += ' &nbsp;·&nbsp; ' + totals.map(t => `${fmtAmount(t.paid, t.currency)} de ~${fmtAmount(t.estimated, t.currency)} estimado`).join(' · ');
     document.getElementById('fijos-progress-summary').innerHTML = summary;
 
     const checkSvg = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
@@ -1496,8 +1507,8 @@
     document.getElementById('fijos-list').innerHTML = rows.map(r => {
       const catColor  = getCatColor(r.category_name, r.category_color);
       const amountHtml = r.paid
-        ? `<span class="fijos-row-amount paid">${fmtAmount(r.actual_amount)}</span>`
-        : `<span class="fijos-row-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount) : '—'}</span>`;
+        ? `<span class="fijos-row-amount paid">${fmtAmount(r.actual_amount, r.currency)}</span>`
+        : `<span class="fijos-row-amount unpaid">${r.estimated_amount ? '~' + fmtAmount(r.estimated_amount, r.currency) : '—'}</span>`;
       const payBtn = r.paid ? '' :
         `<button class="btn btn-primary" style="font-size:11px;padding:4px 9px"
            onclick="openDashPayModal(${r.id},'${r.concept.replace(/'/g,"\\'")}',${r.estimated_amount || 0},${year},${month})">+ Registrar</button>
