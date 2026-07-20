@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.5.2
+- En el Dashboard, el total en la moneda secundaria ya no lleva el prefijo "También:", queda solo el monto.
+
 ## 2.5.1
 - En el Dashboard, el total en la moneda secundaria (ej. "También: U\$S...") ahora se ve mucho más grande y destacado en color de acento, en vez de compartir el tamaño chico del texto de tendencia.
 - El menú "Historial" pasa a llamarse "Movimientos" para no confundirse con "Fijos".
