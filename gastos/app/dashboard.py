@@ -277,6 +277,7 @@ def api_expenses_add():
     concept     = (data.get("concept") or "").strip()
     amount      = data.get("amount")
     category_id = data.get("category_id")
+    subcategory_id = data.get("subcategory_id")
     user_id     = data.get("user_id")
     date_str    = (data.get("date") or "").strip()
     currency    = (data.get("currency") or "ARS").upper()
@@ -296,9 +297,23 @@ def api_expenses_add():
     except ValueError:
         return jsonify({"ok": False, "error": "Fecha inválida"}), 400
 
-    cat_id = int(category_id) if category_id else None
     try:
-        expense_id = db.create_expense_full(int(user_id), cat_id, concept, amount, date_str, currency=currency)
+        cat_id = int(category_id) if category_id else None
+        subcat_id = int(subcategory_id) if subcategory_id else None
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Categoría o subcategoría inválida"}), 400
+
+    if cat_id and not db.get_category_by_id(cat_id):
+        return jsonify({"ok": False, "error": "Categoría no encontrada"}), 404
+    if subcat_id:
+        subcat = db.get_subcategory_by_id(subcat_id)
+        if not subcat or subcat["category_id"] != cat_id:
+            return jsonify({"ok": False, "error": "La subcategoría no pertenece a la categoría seleccionada"}), 400
+    try:
+        expense_id = db.create_expense_full(
+            int(user_id), cat_id, concept, amount, date_str,
+            subcategory_id=subcat_id, currency=currency,
+        )
     except ValueError:
         return jsonify({"ok": False, "error": "Moneda inválida"}), 400
 
@@ -465,7 +480,15 @@ def api_subcategories_add():
     name        = (data.get("name") or "").strip()
     if not category_id or not name:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
-    new_id = db.add_subcategory(int(category_id), name)
+    try:
+        category_id = int(category_id)
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Categoría inválida"}), 400
+    if not db.get_category_by_id(category_id):
+        return jsonify({"ok": False, "error": "Categoría no encontrada"}), 404
+    if db.find_subcategory_normalized(category_id, name):
+        return jsonify({"ok": False, "error": f"Ya existe una subcategoría llamada '{name}'"}), 409
+    new_id = db.add_subcategory(category_id, name)
     return jsonify({"ok": True, "id": new_id})
 
 
@@ -507,6 +530,8 @@ def api_categories_add():
     color = (data.get("color") or "#6366f1").strip()
     if not name:
         return jsonify({"ok": False, "error": "El nombre es obligatorio"}), 400
+    if db.find_category_normalized(name):
+        return jsonify({"ok": False, "error": f"Ya existe una categoría llamada '{name}'"}), 409
     cat_id = db.create_category(name, icon, color)
     if cat_id is None:
         return jsonify({"ok": False, "error": f"Ya existe una categoría llamada '{name}'"}), 409

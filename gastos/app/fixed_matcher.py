@@ -19,6 +19,19 @@ from datetime import datetime, timezone
 _MIN_WORD_LEN = 3
 
 
+def _field(record, key: str, default=None):
+    """Read a mapping-like value from both dicts and sqlite3.Row objects.
+
+    SQLite rows implement ``record[key]`` but not ``dict.get``. DB query results are
+    passed directly into this module in several dashboard flows, so treating every
+    record as a dict makes matching crash only when real fixed expenses exist.
+    """
+    try:
+        return record[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def expense_period(created_at_utc: str, tz) -> tuple[int, int]:
     """(year, month) an expense's own date falls in, converted to `tz` — a fixed-expense
     link defaults to the month of the expense's own date, not "today" (an OCR receipt dated
@@ -39,7 +52,7 @@ def find_fixed_expense_matches(concept: str, fixed_expenses, currency: str = "AR
     concept. Used to offer linking a brand-new expense right after it's saved."""
     words = concept_words(concept)
     return [fe for fe in fixed_expenses
-            if fe.get("currency", "ARS") == currency and words & concept_words(fe["concept"])]
+            if _field(fe, "currency", "ARS") == currency and words & concept_words(fe["concept"])]
 
 
 def find_candidate_expenses(fixed_expense, expenses, limit: int = 5) -> list:
@@ -53,7 +66,7 @@ def find_candidate_expenses(fixed_expense, expenses, limit: int = 5) -> list:
 
     scored = []
     for exp in expenses:
-        if exp.get("currency", "ARS") != fixed_expense.get("currency", "ARS"):
+        if _field(exp, "currency", "ARS") != _field(fixed_expense, "currency", "ARS"):
             continue
         score = 0.0
         shared = fe_words & concept_words(exp["concept"])

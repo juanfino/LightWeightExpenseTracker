@@ -72,3 +72,5 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 ## Dashboard
 
 Accesible en `http://[IP-RASPI]:8090` desde la red local (puerto configurado vía `DASHBOARD_PORT`; el default del código es `5000`). Pantallas: Dashboard (`/`), Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Sistema (`/config`).
+
+Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
