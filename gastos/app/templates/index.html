@@ -952,7 +952,7 @@
   function renderCards(summary, expenses) {
     const total = summary.total || 0;
     document.getElementById("header-secondary").textContent = summary.other_total
-      ? `También: ${fmtAmount(summary.other_total, summary.other_currency)}` : '';
+      ? fmtAmount(summary.other_total, summary.other_currency) : '';
     // Big hero total with the decimal part dimmed.
     const totalStr = fmtAmount(total);
     const [intPart, decPart] = totalStr.split(",");
