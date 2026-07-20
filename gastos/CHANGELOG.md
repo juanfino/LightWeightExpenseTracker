@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.1
+- En el Dashboard, el total en la moneda secundaria (ej. "También: U\$S...") ahora se ve mucho más grande y destacado en color de acento, en vez de compartir el tamaño chico del texto de tendencia.
+- El menú "Historial" pasa a llamarse "Movimientos" para no confundirse con "Fijos".
+
 ## 2.5.0
 - El modal "Agregar gasto" de Historial incorpora un selector de subcategoría dependiente de la categoría elegida.
 - Los selectores de categoría y subcategoría permiten crear una opción nueva en el momento, sin salir del gasto ni perder los datos ya cargados; la opción creada queda seleccionada automáticamente.
