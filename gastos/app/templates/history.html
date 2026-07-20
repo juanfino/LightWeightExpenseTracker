@@ -105,6 +105,21 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   background: var(--border2);
   color: var(--text);
 }
+
+.inline-create {
+  display: none;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+
+.inline-create.open { display: flex; }
+.inline-create input { flex: 1; min-width: 0; }
+.inline-create .btn { flex: 0 0 auto; padding: 8px 11px; }
 {% endblock %}
 
 {% block content %}
@@ -238,7 +253,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 <!-- Add expense modal -->
 <div id="add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
      align-items:center; justify-content:center; z-index:100;">
-  <div class="card" style="max-width:440px; width:90%">
+  <div class="card" style="max-width:440px; width:90%; max-height:90vh; overflow-y:auto">
     <div class="section-title" style="margin-bottom:20px">Agregar gasto</div>
     <div style="display:flex; flex-direction:column; gap:14px">
 
@@ -267,6 +282,23 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         <select id="add-category" style="width:100%">
           <option value="">Sin categoría</option>
         </select>
+        <div class="inline-create" id="add-category-create">
+          <input id="add-category-name" type="text" placeholder="Nombre de la categoría" maxlength="60">
+          <button class="btn btn-primary" type="button" id="add-category-save">Crear</button>
+          <button class="btn" type="button" id="add-category-cancel" aria-label="Cancelar nueva categoría">×</button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="add-subcategory">Subcategoría</label>
+        <select id="add-subcategory" style="width:100%" disabled>
+          <option value="">— Sin subcategoría —</option>
+        </select>
+        <div class="inline-create" id="add-subcategory-create">
+          <input id="add-subcategory-name" type="text" placeholder="Nombre de la subcategoría" maxlength="60">
+          <button class="btn btn-primary" type="button" id="add-subcategory-save">Crear</button>
+          <button class="btn" type="button" id="add-subcategory-cancel" aria-label="Cancelar nueva subcategoría">×</button>
+        </div>
       </div>
 
       <div class="filter-group">
@@ -763,6 +795,60 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   });
 
   // ── Add expense modal ──────────────────────────────────────────────────────
+  const NEW_CATEGORY_VALUE = "__new_category__";
+  const NEW_SUBCATEGORY_VALUE = "__new_subcategory__";
+
+  function setAddError(message) {
+    const errEl = document.getElementById("add-error");
+    errEl.textContent = message;
+    errEl.style.display = "inline";
+  }
+
+  function closeInlineCreator(kind, fallbackValue) {
+    document.getElementById("add-" + kind + "-create").classList.remove("open");
+    document.getElementById("add-" + kind + "-name").value = "";
+    const selectEl = document.getElementById("add-" + kind);
+    if (selectEl.value.indexOf("__new_") === 0) selectEl.value = fallbackValue || "";
+  }
+
+  function populateAddCategories(list, selectedId) {
+    const catSel = document.getElementById("add-category");
+    catSel.innerHTML = '<option value="">Sin categoría</option>';
+    list.filter(function(c) { return c.name !== "Sin categoría"; }).forEach(function(c) {
+      const opt = document.createElement("option");
+      opt.value = c.id;
+      opt.textContent = c.icon + " " + c.name;
+      if (selectedId && c.id === selectedId) opt.selected = true;
+      catSel.appendChild(opt);
+    });
+    const createOpt = document.createElement("option");
+    createOpt.value = NEW_CATEGORY_VALUE;
+    createOpt.textContent = "＋ Crear nueva categoría…";
+    catSel.appendChild(createOpt);
+  }
+
+  async function loadAddSubcategories(categoryId, selectedId) {
+    const subcatSel = document.getElementById("add-subcategory");
+    subcatSel.innerHTML = '<option value="">— Sin subcategoría —</option>';
+    subcatSel.disabled = !categoryId;
+    closeInlineCreator("subcategory", "");
+    if (!categoryId) return;
+
+    const subs = await fetch("/api/subcategories?category_id=" + categoryId)
+      .then(function(r) { return r.json(); }).catch(function() { return []; });
+    subs.forEach(function(s) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      if (selectedId && s.id === selectedId) opt.selected = true;
+      subcatSel.appendChild(opt);
+    });
+    const createOpt = document.createElement("option");
+    createOpt.value = NEW_SUBCATEGORY_VALUE;
+    createOpt.textContent = "＋ Crear nueva subcategoría…";
+    subcatSel.appendChild(createOpt);
+  }
+
   async function openAddModal() {
     const errEl = document.getElementById("add-error");
     errEl.style.display = "none";
@@ -775,7 +861,6 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     document.getElementById("add-date").value =
       today.getFullYear() + "-" + pad(today.getMonth() + 1) + "-" + pad(today.getDate());
 
-    const catSel  = document.getElementById("add-category");
     const userSel = document.getElementById("add-user");
 
     const [cats, users] = await Promise.all([
@@ -783,13 +868,11 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       fetch("/api/users").then(function(r) { return r.json(); }),
     ]);
 
-    catSel.innerHTML = '<option value="">Sin categoría</option>';
-    cats.forEach(function(c) {
-      const opt = document.createElement("option");
-      opt.value       = c.id;
-      opt.textContent = c.icon + " " + c.name;
-      catSel.appendChild(opt);
-    });
+    categories.splice(0, categories.length);
+    cats.forEach(function(c) { categories.push(c); });
+    populateAddCategories(cats, null);
+    closeInlineCreator("category", "");
+    await loadAddSubcategories(null, null);
 
     userSel.innerHTML = "";
     users.forEach(function(u) {
@@ -805,6 +888,76 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
   document.getElementById("btn-add-expense").addEventListener("click", openAddModal);
 
+  document.getElementById("add-category").addEventListener("change", async function() {
+    const isCreating = this.value === NEW_CATEGORY_VALUE;
+    document.getElementById("add-category-create").classList.toggle("open", isCreating);
+    if (isCreating) {
+      await loadAddSubcategories(null, null);
+      document.getElementById("add-category-name").focus();
+      return;
+    }
+    closeInlineCreator("category", this.value);
+    await loadAddSubcategories(this.value ? parseInt(this.value) : null, null);
+  });
+
+  document.getElementById("add-subcategory").addEventListener("change", function() {
+    const isCreating = this.value === NEW_SUBCATEGORY_VALUE;
+    document.getElementById("add-subcategory-create").classList.toggle("open", isCreating);
+    if (isCreating) document.getElementById("add-subcategory-name").focus();
+    else closeInlineCreator("subcategory", this.value);
+  });
+
+  document.getElementById("add-category-save").addEventListener("click", async function() {
+    const name = document.getElementById("add-category-name").value.trim();
+    if (!name) { setAddError("Escribí el nombre de la nueva categoría."); return; }
+    const res = await fetch("/api/categories/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name: name, icon: "💰", color: "#f0a030"}),
+    });
+    const data = await res.json().catch(function() { return {}; });
+    if (!data.ok) { setAddError(data.error || "No se pudo crear la categoría."); return; }
+
+    const category = {id: data.id, name: name, icon: "💰", color: "#f0a030"};
+    categories.push(category);
+    categories.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    populateAddCategories(categories, data.id);
+    closeInlineCreator("category", String(data.id));
+    await loadAddSubcategories(data.id, null);
+    document.getElementById("add-error").style.display = "none";
+  });
+
+  document.getElementById("add-subcategory-save").addEventListener("click", async function() {
+    const catId = parseInt(document.getElementById("add-category").value);
+    const name = document.getElementById("add-subcategory-name").value.trim();
+    if (!catId) { setAddError("Seleccioná primero una categoría."); return; }
+    if (!name) { setAddError("Escribí el nombre de la nueva subcategoría."); return; }
+    const res = await fetch("/api/subcategories/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({category_id: catId, name: name}),
+    });
+    const data = await res.json().catch(function() { return {}; });
+    if (!data.ok) { setAddError(data.error || "No se pudo crear la subcategoría."); return; }
+
+    await loadAddSubcategories(catId, data.id);
+    document.getElementById("add-error").style.display = "none";
+  });
+
+  document.getElementById("add-category-cancel").addEventListener("click", function() {
+    closeInlineCreator("category", "");
+    loadAddSubcategories(null, null);
+  });
+  document.getElementById("add-subcategory-cancel").addEventListener("click", function() {
+    closeInlineCreator("subcategory", "");
+  });
+  document.getElementById("add-category-name").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") { e.preventDefault(); document.getElementById("add-category-save").click(); }
+  });
+  document.getElementById("add-subcategory-name").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") { e.preventDefault(); document.getElementById("add-subcategory-save").click(); }
+  });
+
   document.getElementById("add-cancel").addEventListener("click", function() {
     document.getElementById("add-modal").style.display = "none";
   });
@@ -812,7 +965,10 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   document.getElementById("add-confirm").addEventListener("click", async function() {
     const concept  = document.getElementById("add-concept").value.trim();
     const amount   = parseFloat(document.getElementById("add-amount").value);
-    const catId    = document.getElementById("add-category").value || null;
+    const catValue = document.getElementById("add-category").value;
+    const subcatValue = document.getElementById("add-subcategory").value;
+    const catId    = catValue && catValue !== NEW_CATEGORY_VALUE ? catValue : null;
+    const subcatId = subcatValue && subcatValue !== NEW_SUBCATEGORY_VALUE ? subcatValue : null;
     const userId   = document.getElementById("add-user").value;
     const date     = document.getElementById("add-date").value;
     const currency = document.getElementById("add-currency").value;
@@ -822,13 +978,15 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     if (!concept)                   { errEl.textContent = "El concepto es obligatorio."; errEl.style.display = "inline"; return; }
     if (isNaN(amount) || amount <= 0) { errEl.textContent = "Ingresá un monto válido."; errEl.style.display = "inline"; return; }
+    if (catValue === NEW_CATEGORY_VALUE) { setAddError("Terminá de crear la categoría o cancelala."); return; }
+    if (subcatValue === NEW_SUBCATEGORY_VALUE) { setAddError("Terminá de crear la subcategoría o cancelala."); return; }
     if (!userId)                    { errEl.textContent = "Seleccioná un usuario."; errEl.style.display = "inline"; return; }
     if (!date)                      { errEl.textContent = "Seleccioná una fecha."; errEl.style.display = "inline"; return; }
 
     const res = await fetch("/api/expenses/add", {
       method:  "POST",
       headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({concept, amount, currency, category_id: catId, user_id: userId, date}),
+      body:    JSON.stringify({concept, amount, currency, category_id: catId, subcategory_id: subcatId, user_id: userId, date}),
     });
     const data = await res.json().catch(function() { return {}; });
 

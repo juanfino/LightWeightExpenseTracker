@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.0
+- El modal "Agregar gasto" de Historial incorpora un selector de subcategoría dependiente de la categoría elegida.
+- Los selectores de categoría y subcategoría permiten crear una opción nueva en el momento, sin salir del gasto ni perder los datos ya cargados; la opción creada queda seleccionada automáticamente.
+- El backend valida que la subcategoría pertenezca a la categoría seleccionada y evita nombres duplicados aunque cambien mayúsculas o acentos.
+- Se corrige el error 500 al agregar gastos cuando había gastos fijos configurados: el filtro por moneda trataba filas SQLite como diccionarios al buscar una sugerencia de vínculo. El gasto llegaba a insertarse antes del error, por lo que conviene revisar posibles duplicados de los intentos fallidos previos al fix.
+
 ## 2.4.2
 - En Historial, la columna "Moneda" desaparece y el monto se muestra combinado con su prefijo (`$100` / `U$S 100`), igual que en Gastos Fijos. La fila de edición inline mantiene el mismo comportamiento (moneda no editable si el gasto está vinculado a un fijo), ahora en una sola celda junto al monto.
 
