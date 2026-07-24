@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.0
+- **Fase 0 del plan de migración multi-tenant** (`docs/MULTITENANT_PLAN.md`): re-sincronización de `PROJECT.md` con el repo real, nuevo `docs/SQL_INVENTORY.md` (cada SQL crudo del código, archivo → función → tablas → read/write), y documentación precisa de la feature de Resúmenes (payload exacto de las dos llamadas a Opus, costo estimado por generación).
+- **Seguridad:** el backup diario (21:00 ART) y el botón "Backup ahora" ya no envían `gastos.db` por Telegram a los usuarios configurados — ahora guardan una copia local con timestamp en `<carpeta de la DB>/backups/`, con una retención de 7 días. El envío automático era un riesgo de fuga de datos apenas la app deje de tener una sola familia. El backup real fuera del dispositivo (con restore probado) queda para la Fase 1 del plan.
+
 ## 2.5.2
 - En el Dashboard, el total en la moneda secundaria ya no lleva el prefijo "También:", queda solo el monto.
 

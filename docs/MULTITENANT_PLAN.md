@@ -3,7 +3,7 @@
 **Status:** Phase 0 not started
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
-**Last updated by:** (agent name) — (date)
+**Last updated by:** Claude Code (Sonnet 5) — 2026-07-24
 
 ---
 
@@ -51,7 +51,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 
 | # | Phase | Status | Branch | Agent | Date |
 |---|---|---|---|---|---|
-| 0 | Ground truth | NOT STARTED | | | |
+| 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
 | 1 | PostgreSQL + Alembic + async safety | NOT STARTED | | | |
 | 2 | Tenancy (single family, no auth yet) | NOT STARTED | | | |
 | 3 | Identity & authentication | NOT STARTED | | | |
@@ -148,19 +148,19 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 ## 4. Screen Inventory
 
-> **This section is provisional and is corrected in Phase 0.** `PROJECT.md` is currently out of sync with the repository — it documents six screens and a `/history` route, while the live app shows a "Movimientos" screen, a "Resúmenes" screen, a currency selector, and an "Agregar gasto" modal with user and date fields. Phase 0's first job is to replace the table below with reality.
+> **Verified in Phase 0** (2026-07-24) against `dashboard.py`'s actual `@app.route` declarations and `templates/*.html`. `PROJECT.md` was already mostly in sync (it already documented Resúmenes) — the one real gap was the `/history` route's nav label, which was renamed "Historial" → "Movimientos" in 2.5.1 without the route, template, or `PROJECT.md`'s table being touched. There are 7 web pages total, matching `PROJECT.md`.
 
-### Current (to be verified in Phase 0)
+### Current (verified)
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `index.html` | Dashboard | verify |
-| `/history` or `/movimientos` | ? | Movements list, filters, inline edit, add-expense modal | **verify — name and features changed** |
-| `/fijos` | `fijos.html` | Fixed expenses | verify |
-| `/dolares` | `dolares.html` | USD/ARS operations | verify |
-| ? | ? | **Resúmenes — undocumented, uses Opus/Sonnet** | **verify — not in PROJECT.md** |
-| `/settings` | `settings.html` | Categories / subcategories / keywords | verify |
-| `/config` | `config.html` | Backup / restore | verify |
+| `/` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | verified |
+| `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
+| `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
+| `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart | verified |
+| `/resumenes`, `/resumenes/<period>` | `resumenes.html` | Monthly AI-generated report (2.3.0) — uses `claude-opus-4-8` by default (`REPORT_ANTHROPIC_MODEL`), separate from the Haiku model used elsewhere; see PROJECT.md → Monthly AI report for the full prompt/cost breakdown | verified |
+| `/settings` | `settings.html` | Categories / subcategories / keywords CRUD | verified |
+| `/config` | `config.html` | Backup status + "Backup ahora", restore DB from URL | verified |
 
 ### To be added
 
@@ -261,7 +261,24 @@ Any refactor. Any schema change. Any new feature.
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Done:**
+- `PROJECT.md` re-verified against the live code (routes in `dashboard.py`, bot commands in `bot.py`, schema in `db.py`, env vars in `main.py`). It was already close to accurate — the only real staleness found was the version number (said 2.4.0, code was at 2.5.2) and the `/history` route's table not mentioning the "Movimientos" nav-label rename (2.5.1). Fixed both, plus expanded the Monthly AI report section with the exact per-call payload shape and a cost estimate.
+- §4 Screen Inventory in this document replaced with verified reality: 7 web pages, all routes/templates confirmed by grep against `dashboard.py`. The "Resúmenes undocumented" and "six vs seven screens" concerns in the old provisional table turned out to be already resolved in `PROJECT.md` before this session — only the nav-label note was missing.
+- `docs/SQL_INVENTORY.md` created: every function with raw SQL in `db.py` (87 functions) and `sqlro.py` (3), with tables touched, read/write, and porting notes (SQLite date functions, f-string dynamic SQL, `PRAGMA table_info` migrations, upserts). Extraction was done by a sub-agent and spot-checked against source (3 functions + all of `sqlro.py`) before trusting it — all checks matched exactly.
+- Resúmenes feature documented precisely in `PROJECT.md`: exact JSON payload for both Claude calls (`classify_expenses` and `analyze`), model/effort/max_tokens per call, and a **cost estimate** (not a measurement — `response.usage` isn't logged anywhere yet) of ~$0.10–0.20 per generation at Opus 4.8 pricing.
+- Telegram DB backup broadcast disabled. `backup.py`'s `send_db_backup()` (sent the file to every configured user via `bot.send_document`) replaced with `create_local_backup()`: copies `gastos.db` into `<DB_PATH dir>/backups/gastos_<UTC timestamp>.db`, prunes anything older than 7 days on every run. Applies to both the 21:00 ART scheduled job (`main.py`) and the manual `/admin/backup-now` endpoint (`dashboard.py`) — confirmed with Juampi that both should stop using Telegram, not just the automatic one. `LAST_BACKUP_PATH`/`/api/backup-status` behavior is unchanged (still tracks the last successful backup timestamp, now meaning "last local dump" instead of "last Telegram send"). User-visible copy updated in `config.html` (status pill + the "sends automatically" description) since it explicitly said "por Telegram" before. Verified locally with a throwaway temp DB: first backup created, an artificially-aged file got pruned on the next run, no exceptions.
+
+**Deliberately not done (out of scope for Phase 0, per its own rules):**
+- No retention *configuration* was added (7 days is hardcoded in `backup.py`'s `RETENTION_DAYS`) — proper backup strategy (off-device, R2, tested restore) is explicitly Phase 1 scope.
+- Did not touch `gastos/DOCS.md` — grepped it for "backup" and found zero mentions, so no update was needed there (it never described the Telegram-send behavior to end users).
+- Did not touch the legacy `Blueprint.md` (per AGENTS.md, it's deprecated and not maintained).
+
+**Nothing surprising found** — `PROJECT.md` was in noticeably better shape than the plan's own §4 assumed (written before someone had apparently already resynced it, or the "six screens" note was simply stale by the time this session ran). The SQL inventory didn't turn up anything alarming for Phase 1 either — the SQLite-specific surface (date functions, `mode=ro` guardrails in `sqlro.py`) is exactly where the plan already expected the risk to concentrate.
+
+**For the next agent (Phase 1 — PostgreSQL + Alembic + async safety):**
+- Start from `docs/SQL_INVENTORY.md` — it's the checklist this phase's scope item 2–4 already anticipates. The "SQLite-specific date functions" section (~25 of 87 functions) is the biggest single porting surface; `sqlro.py`'s guardrails need a *different* mechanism entirely in Postgres (read-only role + `statement_timeout`), not a line-by-line translation.
+- `backup.py` no longer touches Telegram at all — when Phase 1 adds real off-device backups (`pg_dump` to R2), it can either extend `backup.py` or replace it; there's no Telegram coupling left to unwind.
+- One pre-existing oddity noticed in passing, not touched: the repo has two git remotes (`origin` and `LightWeightExpenseTracker`) pointing at the same URL; the second one's remote-tracking ref was stale (23 commits behind) at session start. Harmless, but worth knowing if `git status` ever looks confusing again.
 
 ---
 

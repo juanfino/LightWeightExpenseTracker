@@ -1,62 +1,65 @@
-import asyncio
-import io
 import logging
 import os
+import shutil
 from datetime import datetime, timezone
-
-from telegram import Bot
 
 logger = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = ""
-USERS: dict = {}   # {telegram_id_str: name}
 DB_PATH = "/data/gastos.db"
 LAST_BACKUP_PATH = "/data/last_backup.txt"
+RETENTION_DAYS = 7
 
 
-async def _send_backup_async() -> int:
-    bot = Bot(token=TELEGRAM_TOKEN)
-    async with bot:
-        with open(DB_PATH, "rb") as f:
-            data = f.read()
-        sent = 0
-        for chat_id in USERS:
-            try:
-                await bot.send_document(
-                    chat_id=int(chat_id),
-                    document=io.BytesIO(data),
-                    filename="gastos.db",
-                    caption="🗄 Backup de la base de datos",
-                )
-                sent += 1
-            except Exception as e:
-                logger.error("Error enviando backup a %s: %s", chat_id, e)
-    return sent
+def _backup_dir() -> str:
+    return os.path.join(os.path.dirname(DB_PATH) or ".", "backups")
 
 
-def send_db_backup() -> str | None:
-    """Sends gastos.db to all configured users via Telegram.
+def _prune_old_backups(backup_dir: str) -> int:
+    """Deletes backup files older than RETENTION_DAYS. Returns count deleted."""
+    cutoff = datetime.now(timezone.utc).timestamp() - RETENTION_DAYS * 86400
+    deleted = 0
+    for name in os.listdir(backup_dir):
+        path = os.path.join(backup_dir, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                deleted += 1
+        except OSError as e:
+            logger.warning("No se pudo evaluar/borrar backup viejo %s: %s", path, e)
+    return deleted
 
-    Returns the ISO UTC timestamp on success, None on failure.
+
+def create_local_backup() -> str | None:
+    """Copies gastos.db into a local, timestamped backup file (kept 7 days).
+
+    Replaces the old Telegram broadcast — no process sends the database file
+    to any Telegram chat. Returns the ISO UTC timestamp on success, None on failure.
     """
-    if not TELEGRAM_TOKEN or not USERS:
-        logger.warning("Backup: token o usuarios no configurados")
-        return None
     if not os.path.exists(DB_PATH):
         logger.warning("Backup: DB no encontrada en %s", DB_PATH)
         return None
+
+    backup_dir = _backup_dir()
     try:
-        sent = asyncio.run(_send_backup_async())
-    except Exception as e:
-        logger.error("Error en send_db_backup: %s", e)
+        os.makedirs(backup_dir, exist_ok=True)
+        ts_compact = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = os.path.join(backup_dir, f"gastos_{ts_compact}.db")
+        shutil.copy2(DB_PATH, dest)
+    except OSError as e:
+        logger.error("Error creando backup local: %s", e)
         return None
+
+    deleted = _prune_old_backups(backup_dir)
 
     ts = datetime.now(timezone.utc).isoformat()
     try:
         with open(LAST_BACKUP_PATH, "w") as f:
             f.write(ts)
-    except Exception as e:
+    except OSError as e:
         logger.warning("No se pudo escribir last_backup.txt: %s", e)
 
-    logger.info("Backup enviado a %d usuario(s). Timestamp: %s", sent, ts)
+    logger.info(
+        "Backup local creado en %s (%d backup(s) viejo(s) eliminado(s)). Timestamp: %s",
+        dest, deleted, ts,
+    )
     return ts
