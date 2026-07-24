@@ -158,7 +158,7 @@
       </div>
       <div class="config-divider"></div>
       <div style="font-size: 13.5px; color: var(--text2);">
-        El backup se envía automáticamente todos los días a las 21:00 ART.
+        Se guarda una copia local automáticamente todos los días a las 21:00 ART (se conservan los últimos 7 días).
       </div>
       <div class="feedback-msg" id="backup-feedback"></div>
     </div>
@@ -230,7 +230,7 @@
       if (data.success) {
         document.getElementById("backup-status-label").textContent =
           `Último backup: ${relativeTime(data.timestamp)}`;
-        feedback.innerHTML = '<span class="status-pill status-pill-ok">✓ Backup enviado por Telegram</span>';
+        feedback.innerHTML = '<span class="status-pill status-pill-ok">✓ Backup guardado localmente</span>';
       } else {
         feedback.innerHTML = `<span class="status-pill status-pill-err">✗ ${data.error || "Error desconocido"}</span>`;
       }

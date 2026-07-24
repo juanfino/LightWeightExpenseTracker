@@ -767,7 +767,7 @@ def admin_restore_db_url():
 
 @app.route("/admin/backup-now", methods=["POST"])
 def admin_backup_now():
-    ts = backup_module.send_db_backup()
+    ts = backup_module.create_local_backup()
     if ts is None:
         return jsonify({"success": False, "error": "Backup fallido — revisá los logs"}), 500
     return jsonify({"success": True, "timestamp": ts})
