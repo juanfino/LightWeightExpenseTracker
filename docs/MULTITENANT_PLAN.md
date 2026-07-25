@@ -380,7 +380,7 @@ until its PR is merged and migration `0002` is applied and verified on the Pi.
 - `seed.py` now only creates generic per-family taxonomy, excluding learned keywords.
 - Intent, OCR, Whisper, audio extraction, dollar parsing and both Resúmenes calls write
   best-effort telemetry to `llm_calls`.
-- Full local suite passed against disposable PostgreSQL 17: 14 tests, including two
+- Full local suite passed against disposable PostgreSQL 17: 15 tests, including two
   families, hostile SQL, cross-family reads/writes/references and forced-RLS coverage.
 
 **Deliberately not done:** auth, registration, invitations, family UI or quotas.
