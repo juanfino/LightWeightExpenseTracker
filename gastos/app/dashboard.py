@@ -1,22 +1,22 @@
 import os
-import shutil
-import sys
-import threading
-import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, jsonify, redirect
-
-import requests as http_requests
 
 import db
 import backup as backup_module
 import fixed_matcher
 import categorizer
 import report
+import pgcompat
 
 app = Flask(__name__)
 
 BAIRES = timezone(timedelta(hours=-3))
+
+
+@app.before_request
+def _select_web_db_pool():
+    pgcompat.select_pool("web")
 
 MONTHS_ES = [
     "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -196,7 +196,12 @@ def api_weekly():
     except ValueError:
         return jsonify({"error": "Parámetros inválidos"}), 400
 
-    rows = db.get_expenses_by_week(year, week)
+    try:
+        week_start = datetime.fromisocalendar(year, week, 1).date()
+    except ValueError:
+        return jsonify({"error": "Semana ISO inválida"}), 400
+    week_end = week_start + timedelta(days=6)
+    rows = db.get_expenses_by_week(week_start.isoformat(), week_end.isoformat())
     return jsonify([_row_to_dict(r) for r in rows])
 
 
@@ -717,57 +722,9 @@ def api_fixed_expenses_pay():
     return jsonify({"ok": True, "expense_id": expense_id})
 
 
-@app.route("/admin/restore-db-url", methods=["POST"])
-def admin_restore_db_url():
-    data = request.get_json(silent=True) or {}
-    url = (data.get("url") or "").strip()
-    if not url.startswith("https://"):
-        return jsonify({"success": False, "error": "La URL debe comenzar con https://"}), 400
-
-    db_path = db.DB_PATH
-    bak_path = db_path + ".bak"
-
-    try:
-        shutil.copy2(db_path, bak_path)
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Error al crear backup: {e}"}), 500
-
-    try:
-        resp = http_requests.get(url, stream=True, timeout=60)
-        resp.raise_for_status()
-        with open(db_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=65536):
-                f.write(chunk)
-    except Exception as e:
-        try:
-            shutil.copy2(bak_path, db_path)
-        except Exception:
-            pass
-        return jsonify({"success": False, "error": f"Error al descargar la DB: {e}"}), 500
-
-    # Validate SQLite magic header before restarting
-    try:
-        with open(db_path, "rb") as f:
-            header = f.read(16)
-    except Exception as e:
-        shutil.copy2(bak_path, db_path)
-        return jsonify({"success": False, "error": f"Error al leer el archivo descargado: {e}"}), 500
-
-    if header != b"SQLite format 3\x00":
-        shutil.copy2(bak_path, db_path)
-        return jsonify({"success": False, "error": "El archivo descargado no es una base de datos SQLite válida"}), 400
-
-    def _restart():
-        time.sleep(0.5)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-
-    threading.Thread(target=_restart, daemon=True).start()
-    return jsonify({"success": True})
-
-
 @app.route("/admin/backup-now", methods=["POST"])
 def admin_backup_now():
-    ts = backup_module.create_local_backup()
+    ts = backup_module.create_backup()
     if ts is None:
         return jsonify({"success": False, "error": "Backup fallido — revisá los logs"}), 500
     return jsonify({"success": True, "timestamp": ts})

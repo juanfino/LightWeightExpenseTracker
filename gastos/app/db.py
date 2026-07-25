@@ -1,12 +1,15 @@
-import sqlite3
 import os
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+from alembic import command
+from alembic.config import Config
+from psycopg import IntegrityError
 
-DB_PATH = os.environ.get("DB_PATH", "/data/gastos.db")
+import pgcompat
+
+logger = logging.getLogger(__name__)
 
 # Las monedas son deliberadamente pocas: un gasto conserva siempre su valor
 # original y la aplicación nunca convierte ni suma importes de distinta moneda.
@@ -144,17 +147,14 @@ CREATE TABLE IF NOT EXISTS expense_classifications (
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    with pgcompat.current_pool().connection() as raw:
+        conn = pgcompat.Connection(raw)
+        try:
+            yield conn
+            raw.commit()
+        except Exception:
+            raw.rollback()
+            raise
 
 
 def _migrate_users_color():
@@ -272,24 +272,11 @@ def _migrate_currencies():
 
 
 def init_db(users: dict | None = None):
-    """Crea tablas, ejecuta migraciones y seed (idempotente). Sincroniza usuarios si se pasan."""
-    try:
-        with get_conn() as conn:
-            conn.executescript(SCHEMA)
-    except sqlite3.DatabaseError:
-        logger.warning(
-            "DB corrupta en %s — eliminando y creando base de datos nueva.", DB_PATH
-        )
-        os.remove(DB_PATH)
-        with get_conn() as conn:
-            conn.executescript(SCHEMA)
-    _migrate_users_color()
-    _migrate_cambios_tipo()
-    _migrate_fixed_expenses_to_expense_link()
-    _migrate_expenses_subcategory()
-    _migrate_keywords_subcategory()
-    _migrate_fixed_expenses_subcategory()
-    _migrate_currencies()
+    """Apply versioned migrations, seed defaults and synchronize configured users."""
+    project_dir = os.path.dirname(os.path.dirname(__file__))
+    alembic_cfg = Config(os.path.join(project_dir, "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", os.path.join(project_dir, "migrations"))
+    command.upgrade(alembic_cfg, "head")
     import seed
     with get_conn() as conn:
         seed.seed(conn)
@@ -524,7 +511,7 @@ def get_expenses_summary_by_category(year: int, month: int, user_name: str | Non
               AND strftime('%m', e.created_at) = ?
               AND e.currency = ?
               {user_filter}
-            GROUP BY e.category_id
+            GROUP BY e.category_id, c.name, c.color, c.icon
             ORDER BY total DESC
             """,
             params,
@@ -595,7 +582,7 @@ def get_expenses_by_user(year: int, month: int, currency: str = DEFAULT_CURRENCY
             WHERE strftime('%Y', e.created_at) = ?
               AND strftime('%m', e.created_at) = ?
               AND e.currency = ?
-            GROUP BY e.user_id
+            GROUP BY e.user_id, u.name
             ORDER BY total DESC
             """,
             (str(year), f"{month:02d}", normalize_currency(currency)),
@@ -804,7 +791,7 @@ def create_category(name: str, icon: str, color: str) -> int | None:
                 (name.strip(), icon.strip(), color.strip()),
             )
             return cur.lastrowid
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return None
 
 
@@ -821,7 +808,7 @@ def update_category(category_id: int, name: str, icon: str, color: str) -> tuple
                 (name.strip(), icon.strip(), color.strip(), category_id),
             )
             return (cur.rowcount > 0, None)
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return False, f"Ya existe una categoría llamada '{name}'"
 
 
@@ -870,7 +857,7 @@ def get_expenses_by_week_of_month_by_user(year: int, month: int, user_name: str 
               AND strftime('%m', e.created_at) = ?
               AND e.currency = ?
               {user_filter}
-            GROUP BY day, e.user_id
+            GROUP BY day, e.user_id, u.id, u.name
             """,
             params,
         ).fetchall()
@@ -923,7 +910,8 @@ def get_gastos_por_categoria(year: int, month: int, user_name: str | None = None
               AND strftime('%m', e.created_at) = ?
               AND e.currency = ?
               {user_filter}
-            GROUP BY e.category_id, e.subcategory_id
+            GROUP BY e.category_id, e.subcategory_id,
+                     c.name, c.color, c.icon, s.name
             ORDER BY categoria
             """,
             params,
@@ -972,7 +960,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
             LEFT JOIN categories c ON c.id = e.category_id
             WHERE strftime('%Y', e.created_at) = ?
               AND e.currency = ?
-            GROUP BY month_num, e.category_id
+            GROUP BY month_num, e.category_id, c.name, c.color
             ORDER BY cat_name, month_num
             """,
             (str(year), normalize_currency(currency)),
@@ -1013,7 +1001,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
             JOIN users u ON u.id = e.user_id
             WHERE strftime('%Y', e.created_at) = ?
               AND e.currency = ?
-            GROUP BY month_num, e.user_id
+            GROUP BY month_num, e.user_id, u.name
             ORDER BY month_num
             """,
             (str(year), normalize_currency(currency)),
@@ -1649,7 +1637,7 @@ def upsert_ipc_value(year: int, month: int, value: float, is_estimated: bool) ->
             " VALUES (?, ?, ?, ?, ?)"
             " ON CONFLICT(year, month) DO UPDATE SET value=excluded.value,"
             " is_estimated=excluded.is_estimated, updated_at=excluded.updated_at",
-            (year, month, value, 1 if is_estimated else 0, now_utc),
+            (year, month, value, is_estimated, now_utc),
         )
 
 
@@ -1666,7 +1654,7 @@ def create_report(year: int, month: int, model: str | None, prompt_version: str 
             " dossier_json, output_json, fingerprint, llm_ok)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (year, month, now_utc, model, prompt_version, dossier_json, output_json,
-             fingerprint, 1 if llm_ok else 0),
+             fingerprint, llm_ok),
         )
         return cur.lastrowid
 

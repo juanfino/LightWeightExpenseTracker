@@ -1,4 +1,30 @@
 services:
+  postgres:
+    container_name: gastos-postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ~/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gastos}
+      POSTGRES_USER: ${POSTGRES_USER:-gastos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - statement_timeout=10s
+    volumes:
+      - ~/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gastos} -d ${POSTGRES_DB:-gastos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   homeassistant:
     container_name: homeassistant
     image: ghcr.io/home-assistant/home-assistant:stable
@@ -26,6 +52,9 @@ services:
     network_mode: host
     env_file:
       - ~/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ~/gastos-data:/data
     dns:

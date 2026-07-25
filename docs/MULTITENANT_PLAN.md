@@ -1,9 +1,9 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 0 not started
+**Status:** Phase 1 in progress
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
-**Last updated by:** Claude Code (Sonnet 5) — 2026-07-24
+**Last updated by:** Codex — 2026-07-25
 
 ---
 
@@ -52,7 +52,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | # | Phase | Status | Branch | Agent | Date |
 |---|---|---|---|---|---|
 | 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
-| 1 | PostgreSQL + Alembic + async safety | NOT STARTED | | | |
+| 1 | PostgreSQL + Alembic + async safety | IN PROGRESS | 2026-07-24 | Codex | Port, migration and R2 restore verified; final CI/PR and production cutover pending |
 | 2 | Tenancy (single family, no auth yet) | NOT STARTED | | | |
 | 3 | Identity & authentication | NOT STARTED | | | |
 | 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
@@ -322,7 +322,15 @@ Multi-tenancy. Auth. Any UI change. Converting the app to async.
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+In progress on `feat/mt-p1-postgres`. PostgreSQL 17 Compose service, Alembic
+schema, psycopg pools, dialect port, read-only reporting role, SQLite migration
+script, PostgreSQL CI and smoke tests are implemented. A real copy of the Pi's
+SQLite data migrated with matching row counts and SHA-256 checksums. The R2
+bucket has a 90-day lifecycle; a dump was uploaded, downloaded and restored
+into `r2_restore_check` on 2026-07-25. The bad first credential was revoked
+only after the replacement passed that restore test. Web restore was removed;
+restore is SSH-only (`docs/RUNBOOK.md`). Do not mark DONE until final CI, ready
+PR, merge and production cutover are complete.
 
 ---
 
@@ -495,7 +503,7 @@ A category-selection wizard (deferred — base taxonomy is enough for now).
 
 Before sending the link:
 
-- [ ] Off-device backups verified with an actual restore
+- [x] Off-device backups verified with an actual restore
 - [ ] Isolation test suite green
 - [ ] Error alerts arriving at Juampi's Telegram
 - [ ] Quotas active
@@ -622,10 +630,10 @@ To be finalized in Phase 2. Generic, Argentina-oriented, deliberately small — 
 
 | # | Decision | Status |
 |---|---|---|
-| D1 | **Restore endpoint.** Juampi's call: superadmin-only. Standing recommendation: remove it from the web entirely and make it an SSH `pg_restore` operation — zero attack surface, and it's a once-in-a-lifetime operation performed in a panic while looking at a console anyway. | Open |
+| D1 | **Restore endpoint.** Removed from the web; SSH-only `pg_restore`, with scratch restore first. | Decided in Phase 1 |
 | D2 | **Income taxonomy** — own table (proposed) vs. reusing expense categories | Proposed, unconfirmed |
 | D3 | **Resúmenes quota** — 5/family/day proposed. Also: show remaining count before generating, or only message on exhaustion? | Open |
-| D4 | **Off-device backup target** — Cloudflare R2 proposed | Open |
+| D4 | **Off-device backup target** — private Cloudflare R2 bucket, 90-day lifecycle | Decided in Phase 1 |
 
 ---
 

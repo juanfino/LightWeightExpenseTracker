@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.0
+- **Fase 1 multi-tenant:** PostgreSQL 17 reemplaza SQLite como único motor. Alembic administra el schema y el migrador SQLite → PostgreSQL verifica conteos y SHA-256 tabla por tabla.
+- Bot y dashboard usan pools separados de conexiones; el bot admite updates concurrentes y las consultas SQL generadas por IA se ejecutan con rol de solo lectura y timeout.
+- Los backups pasan a ser dumps PostgreSQL comprimidos, subidos diariamente al bucket privado de Cloudflare R2 y verificados después de la carga. R2 conserva 90 días.
+- Se elimina la restauración web desde una URL pública. La restauración es una operación administrativa por SSH, documentada y probada de punta a punta en `docs/RUNBOOK.md`.
+- Se agrega CI con PostgreSQL real, tests unitarios y smoke tests del esquema, SQL de solo lectura y rutas web.
+
 ## 2.6.0
 - **Fase 0 del plan de migración multi-tenant** (`docs/MULTITENANT_PLAN.md`): re-sincronización de `PROJECT.md` con el repo real, nuevo `docs/SQL_INVENTORY.md` (cada SQL crudo del código, archivo → función → tablas → read/write), y documentación precisa de la feature de Resúmenes (payload exacto de las dos llamadas a Opus, costo estimado por generación).
 - **Seguridad:** el backup diario (21:00 ART) y el botón "Backup ahora" ya no envían `gastos.db` por Telegram a los usuarios configurados — ahora guardan una copia local con timestamp en `<carpeta de la DB>/backups/`, con una retención de 7 días. El envío automático era un riesgo de fuga de datos apenas la app deje de tener una sola familia. El backup real fuera del dispositivo (con restore probado) queda para la Fase 1 del plan.

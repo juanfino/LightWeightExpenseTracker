@@ -12,10 +12,11 @@ is the single choke point that enforces those guarantees:
 - Hard row cap so a huge result can't blow up the bot's memory/context.
 """
 
-import os
 import re
-import sqlite3
-import time
+from psycopg import errors
+from psycopg.rows import dict_row
+
+import pgcompat
 
 # DB_PATH is resolved the same way db.py does, at call time, so tests that set
 # the env var after import still work.
@@ -28,10 +29,6 @@ _FORBIDDEN_RE = re.compile(
 
 class ReadOnlySQLError(ValueError):
     """Raised when a statement fails the read-only guardrails."""
-
-
-def _db_path() -> str:
-    return os.environ.get("DB_PATH", "/data/gastos.db")
 
 
 def _strip_sql(sql: str) -> str:
@@ -64,115 +61,25 @@ def run_readonly(sql: str, params=(), *, max_rows: int = 200, timeout_s: float =
     dicts. Raises ReadOnlySQLError on invalid SQL or if the statement times out."""
     stmt = validate(sql)
 
-    conn = sqlite3.connect(f"file:{_db_path()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        deadline = time.monotonic() + timeout_s
-
-        def _guard():
-            # Returning non-zero aborts the running statement.
-            return 1 if time.monotonic() > deadline else 0
-
-        # Fire the progress handler every ~1000 VM instructions.
-        conn.set_progress_handler(_guard, 1000)
+    timeout_ms = max(1, int(timeout_s * 1000))
+    with pgcompat.pool("readonly").connection() as conn:
         try:
-            cur = conn.execute(stmt, params)
+            conn.execute("SET TRANSACTION READ ONLY")
+            conn.execute("SET LOCAL ROLE gastos_readonly")
+            conn.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{timeout_ms}ms",),
+            )
+            cur = conn.cursor(row_factory=dict_row)
+            query = stmt.replace("?", "__SQLRO_PARAM__")
+            query = query.replace("%", "%%").replace("__SQLRO_PARAM__", "%s")
+            cur.execute(query, params)
             rows = cur.fetchmany(max_rows)
-        except sqlite3.OperationalError as e:
-            if time.monotonic() > deadline:
-                raise ReadOnlySQLError("La consulta tardó demasiado.") from e
+            conn.rollback()
+        except errors.QueryCanceled as e:
+            conn.rollback()
+            raise ReadOnlySQLError("La consulta tardó demasiado.") from e
+        except Exception as e:
+            conn.rollback()
             raise ReadOnlySQLError(f"Error ejecutando la consulta: {e}") from e
-        finally:
-            conn.set_progress_handler(None, 0)
-        return [dict(r) for r in rows]
-    finally:
-        conn.close()
-
-
-if __name__ == "__main__":
-    import tempfile
-
-    # Build a throwaway DB to exercise the guardrails.
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
-    os.environ["DB_PATH"] = tmp.name
-    seed = sqlite3.connect(tmp.name)
-    seed.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n TEXT)")
-    seed.executemany("INSERT INTO t (n) VALUES (?)", [("a",), ("b",), ("c",)])
-    seed.commit()
-    seed.close()
-
-    passed = 0
-    failed = 0
-
-    def check(desc, cond):
-        global passed, failed
-        if cond:
-            passed += 1
-            print(f"  ok  {desc}")
-        else:
-            failed += 1
-            print(f"FAIL  {desc}")
-
-    # Valid SELECT returns rows.
-    rows = run_readonly("SELECT n FROM t ORDER BY id")
-    check("SELECT returns rows", [r["n"] for r in rows] == ["a", "b", "c"])
-
-    # WITH is allowed.
-    rows = run_readonly("WITH x AS (SELECT 1 AS v) SELECT v FROM x")
-    check("WITH allowed", rows == [{"v": 1}])
-
-    # Row cap.
-    rows = run_readonly("SELECT n FROM t", max_rows=2)
-    check("row cap honored", len(rows) == 2)
-
-    # Trailing semicolon tolerated.
-    rows = run_readonly("SELECT COUNT(*) AS c FROM t;")
-    check("trailing semicolon ok", rows == [{"c": 3}])
-
-    def rejects(desc, sql):
-        try:
-            run_readonly(sql)
-            check(desc, False)
-        except ReadOnlySQLError:
-            check(desc, True)
-
-    rejects("rejects UPDATE", "UPDATE t SET n='z' WHERE id=1")
-    rejects("rejects DELETE", "DELETE FROM t")
-    rejects("rejects INSERT", "INSERT INTO t (n) VALUES ('z')")
-    rejects("rejects PRAGMA", "PRAGMA table_info(t)")
-    rejects("rejects stacked statements", "SELECT 1; DROP TABLE t")
-    rejects("rejects DROP", "DROP TABLE t")
-    rejects("rejects non-select", "EXPLAIN SELECT 1")
-
-    # mode=ro physically blocks writes even if validation were bypassed.
-    try:
-        conn = sqlite3.connect(f"file:{tmp.name}?mode=ro", uri=True)
-        try:
-            conn.execute("UPDATE t SET n='z'")
-            check("mode=ro blocks writes", False)
-        except sqlite3.OperationalError:
-            check("mode=ro blocks writes", True)
-        finally:
-            conn.close()
-    except Exception:
-        check("mode=ro blocks writes", False)
-
-    # Timeout aborts a long-running query (cartesian blowup).
-    try:
-        big = sqlite3.connect(tmp.name)
-        big.execute("CREATE TABLE big (x INTEGER)")
-        big.executemany("INSERT INTO big (x) VALUES (?)", [(i,) for i in range(2000)])
-        big.commit()
-        big.close()
-        run_readonly(
-            "SELECT COUNT(*) FROM big a, big b, big c, big d",
-            timeout_s=0.3,
-        )
-        check("timeout aborts long query", False)
-    except ReadOnlySQLError:
-        check("timeout aborts long query", True)
-
-    os.unlink(tmp.name)
-    print(f"\n{passed} passed, {failed} failed")
-    raise SystemExit(1 if failed else 0)
+        return rows
