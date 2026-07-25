@@ -17,6 +17,10 @@ BAIRES = timezone(timedelta(hours=-3))
 @app.before_request
 def _select_web_db_pool():
     pgcompat.select_pool("web")
+    # Authentication/family selection lands in Phase 3. Until then Cloudflare
+    # Access protects the single bootstrapped household.
+    pgcompat.set_family_id(1)
+    pgcompat.set_user_id(None)
 
 MONTHS_ES = [
     "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",

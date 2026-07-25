@@ -16,6 +16,7 @@ import audio as audio_module
 import dolar as dolar_module
 import intent as intent_module
 import fixed_matcher
+import pgcompat
 
 logger = logging.getLogger(__name__)
 
@@ -302,10 +303,15 @@ async def _maybe_offer_fixed_link(chat_id: int, bot, expense_id: int, concept: s
 
 async def _get_authorized_user(update: Update):
     """Retorna el row del usuario o None. Responde con rechazo si no autorizado."""
-    telegram_id = str(update.message.chat_id)
+    message = update.effective_message
+    telegram_id = str(update.effective_chat.id)
     user = db.get_user_by_telegram_id(telegram_id)
     if user is None:
-        await update.message.reply_text("⛔ No estás autorizado para usar este bot.")
+        await message.reply_text("⛔ No estás autorizado para usar este bot.")
+    else:
+        pgcompat.select_pool("bot")
+        pgcompat.set_family_id(user["family_id"])
+        pgcompat.set_user_id(user["id"])
     return user
 
 

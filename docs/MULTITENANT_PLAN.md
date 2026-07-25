@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 1 done
+**Status:** Phase 2 implementation complete; PR/merge pending
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-25
@@ -52,8 +52,8 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | # | Phase | Status | Branch | Agent | Date |
 |---|---|---|---|---|---|
 | 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
-| 1 | PostgreSQL + Alembic + async safety | DONE | 2026-07-24 | 2026-07-25 | Codex |
-| 2 | Tenancy (single family, no auth yet) | NOT STARTED | | | |
+| 1 | PostgreSQL + Alembic + async safety | DONE | `feat/mt-p1-postgres` | Codex | 2026-07-25 |
+| 2 | Tenancy (single family, no auth yet) | IN PROGRESS | `feat/mt-p2-tenancy` | Codex | 2026-07-25 |
 | 3 | Identity & authentication | NOT STARTED | | | |
 | 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
 | 5 | Telegram linking + quotas | NOT STARTED | | | |
@@ -219,7 +219,7 @@ telegram_link_tokens(id, user_id, token, expires_at, consumed_at)
 
 ### Domain tables (all carry `family_id NOT NULL` + RLS)
 
-Existing: `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `fixed_expense_payments`, `cambios_dolar`
+Existing: `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`
 
 New: `llm_calls`, `incomes`, `income_categories`, `shopping_items`
 
@@ -366,7 +366,28 @@ Login, registration, invitations, any UI for families. `USERS_JSON` still drives
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+Implementation completed locally on `feat/mt-p2-tenancy`; the phase remains `IN PROGRESS`
+until its PR is merged and migration `0002` is applied and verified on the Pi.
+
+**Done:**
+- Alembic creates `families`, `memberships` and `llm_calls`, backfills “Familia
+  Finochietto”, and assigns every existing domain row to family 1.
+- Forced RLS covers all domain data and tenant-safe platform reads. Composite tenant
+  foreign keys reject cross-family references. Application, read-only and dedicated
+  `BYPASSRLS` superadmin roles are separated.
+- Request/update context uses `ContextVar` plus transaction-local settings, preventing
+  pooled connections from retaining another tenant.
+- `seed.py` now only creates generic per-family taxonomy, excluding learned keywords.
+- Intent, OCR, Whisper, audio extraction, dollar parsing and both Resúmenes calls write
+  best-effort telemetry to `llm_calls`.
+- Full local suite passed against disposable PostgreSQL 17: 14 tests, including two
+  families, hostile SQL, cross-family reads/writes/references and forced-RLS coverage.
+
+**Deliberately not done:** auth, registration, invitations, family UI or quotas.
+`USERS_JSON` and Cloudflare Access remain in place, as scoped.
+
+**Before marking DONE:** merge the PR, deploy manually, verify Alembic `0002`, smoke-test
+dashboard and Telegram for family 1, and confirm `llm_calls` receives one real call.
 
 ---
 

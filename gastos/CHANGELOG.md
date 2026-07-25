@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.0
+- **Fase 2 multi-tenant:** familias, membresías y aislamiento por PostgreSQL Row-Level Security; los datos existentes se asignan a “Familia Finochietto”.
+- Todas las tablas de dominio llevan `family_id`; claves compuestas bloquean referencias entre familias y el SQL generado por IA queda sujeto al mismo RLS.
+- `seed.py` crea una taxonomía argentina genérica por familia, sin copiar keywords aprendidos del hogar original.
+- Las llamadas Anthropic/OpenAI registran módulo, modelo, uso, costo estimado, latencia, resultado y error en `llm_calls`.
+- Nueva suite PostgreSQL de aislamiento con dos familias, SQL hostil, writes cruzados, telemetría y RLS forzado.
+
 ## 3.0.0
 - **Fase 1 multi-tenant:** PostgreSQL 17 reemplaza SQLite como único motor. Alembic administra el schema y el migrador SQLite → PostgreSQL verifica conteos y SHA-256 tabla por tabla.
 - Bot y dashboard usan pools separados de conexiones; el bot admite updates concurrentes y las consultas SQL generadas por IA se ejecutan con rol de solo lectura y timeout.

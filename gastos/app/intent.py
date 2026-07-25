@@ -28,6 +28,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import anthropic
+import llm_usage
 
 import db
 import sqlro
@@ -300,13 +301,19 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
 
     try:
         for _ in range(_MAX_TOOL_TURNS):
-            message = client.messages.create(
-                model=_MODEL,
-                max_tokens=1024,
-                system=system,
-                tools=_TOOLS,
-                messages=messages,
-            )
+            call_started = llm_usage.started()
+            try:
+                message = client.messages.create(
+                    model=_MODEL,
+                    max_tokens=1024,
+                    system=system,
+                    tools=_TOOLS,
+                    messages=messages,
+                )
+            except Exception as e:
+                llm_usage.record("intent", _MODEL, call_started, error=e)
+                raise
+            llm_usage.record("intent", _MODEL, call_started, response=message)
 
             tool = _first_tool_use(message)
             if tool is None:

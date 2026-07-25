@@ -4,6 +4,7 @@ import logging
 from datetime import date
 
 import anthropic
+import llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -60,26 +61,32 @@ def extract_ticket_data(image_bytes: bytes, api_key: str) -> dict | None:
         image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
         media_type = _detect_media_type(image_bytes)
 
-        message = client.messages.create(
-            model=_MODEL,
-            max_tokens=256,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_b64,
+        call_started = llm_usage.started()
+        try:
+            message = client.messages.create(
+                model=_MODEL,
+                max_tokens=256,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": image_b64,
+                                },
                             },
-                        },
-                        {"type": "text", "text": _PROMPT},
-                    ],
-                }
-            ],
-        )
+                            {"type": "text", "text": _PROMPT},
+                        ],
+                    }
+                ],
+            )
+        except Exception as e:
+            llm_usage.record("ocr", _MODEL, call_started, error=e)
+            raise
+        llm_usage.record("ocr", _MODEL, call_started, response=message)
 
         raw = message.content[0].text.strip()
         if raw.startswith("```"):

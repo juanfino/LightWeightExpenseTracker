@@ -4,6 +4,7 @@ import logging
 
 import anthropic
 import openai
+import llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +56,19 @@ def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
     audio_file.name = "voice.ogg"
 
     try:
+        call_started = llm_usage.started()
         transcript = oa_client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             language="es",
             prompt=_WHISPER_PROMPT,
+            response_format="verbose_json",
         )
+        llm_usage.record("audio_whisper", "whisper-1", call_started, response=transcript)
         transcription = transcript.text.strip()
     except Exception as e:
+        if "call_started" in locals():
+            llm_usage.record("audio_whisper", "whisper-1", call_started, error=e)
         raise RuntimeError(f"Error en transcripción de audio: {e}") from e
 
     if not transcription:
@@ -80,6 +86,7 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     """
     try:
         an_client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=15.0, max_retries=0)
+        call_started = llm_usage.started()
         message = an_client.messages.create(
             model=_MODEL,
             max_tokens=512,
@@ -88,12 +95,15 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
                 "content": f"{_EXTRACT_PROMPT}\n\nTranscripción: {transcription}",
             }],
         )
+        llm_usage.record("audio_extract", _MODEL, call_started, response=message)
         raw = message.content[0].text.strip()
         if raw.startswith("```"):
             parts = raw.split("```")
             raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
         data = json.loads(raw)
     except Exception as e:
+        if "call_started" in locals() and "message" not in locals():
+            llm_usage.record("audio_extract", _MODEL, call_started, error=e)
         raise RuntimeError(f"Error al extraer datos del gasto: {e}") from e
 
     if not isinstance(data, list):
