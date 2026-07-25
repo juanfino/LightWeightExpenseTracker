@@ -53,8 +53,6 @@ def main():
     config = load_config()
 
     token   = config.get("telegram_token", "")
-    db_path = os.getenv("DB_PATH", "/data/gastos.db")
-
     if not token:
         raise RuntimeError("TELEGRAM_TOKEN no está definido.")
 
@@ -64,20 +62,18 @@ def main():
 
     # 3. Inicializar DB
     import db as database
-    database.DB_PATH = db_path
     database.init_db(users)
-    logger.info("Base de datos lista en %s", db_path)
+    logger.info("Base de datos PostgreSQL lista")
 
     # 4. Configurar módulo de backup y programar dump local diario
     import backup as backup_module
-    backup_module.DB_PATH = db_path
 
     from apscheduler.schedulers.background import BackgroundScheduler
     from zoneinfo import ZoneInfo
     scheduler = BackgroundScheduler(timezone=ZoneInfo("America/Argentina/Buenos_Aires"))
-    scheduler.add_job(backup_module.create_local_backup, "cron", hour=21, minute=0)
+    scheduler.add_job(backup_module.create_backup, "cron", hour=21, minute=0)
     scheduler.start()
-    logger.info("Scheduler de backup local iniciado (21:00 ART diario)")
+    logger.info("Scheduler de backup PostgreSQL → R2 iniciado (21:00 ART diario)")
 
     # 5. Iniciar Flask en thread daemon
     import dashboard

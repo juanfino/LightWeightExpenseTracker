@@ -4,3 +4,7 @@ APScheduler==3.10.4
 anthropic==0.101.0
 openai==1.82.0
 requests
+psycopg[binary,pool]==3.2.9
+SQLAlchemy==2.0.41
+alembic==1.16.1
+boto3==1.38.46

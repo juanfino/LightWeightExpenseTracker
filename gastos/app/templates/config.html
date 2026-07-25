@@ -158,7 +158,8 @@
       </div>
       <div class="config-divider"></div>
       <div style="font-size: 13.5px; color: var(--text2);">
-        Se guarda una copia local automáticamente todos los días a las 21:00 ART (se conservan los últimos 7 días).
+        Se guarda un dump cifrado en tránsito fuera de la Raspberry, en Cloudflare R2,
+        todos los días a las 21:00 ART. R2 elimina automáticamente los backups de más de 90 días.
       </div>
       <div class="feedback-msg" id="backup-feedback"></div>
     </div>
@@ -167,25 +168,18 @@
     <div class="config-card">
       <div class="config-card-header">
         <div class="config-card-title">Restaurar base de datos</div>
-        <div class="config-card-sub">La app se reiniciará automáticamente tras restaurar</div>
+        <div class="config-card-sub">Operación administrativa disponible únicamente por SSH</div>
       </div>
 
       <div class="restore-instructions" style="margin-top: 22px;">
         <ol>
-          <li>Subí tu archivo <code>gastos.db</code> a WeTransfer, Google Drive (link público) o similar</li>
-          <li>Pegá la URL de descarga directa aquí abajo</li>
-          <li>Hacé click en <strong>Restaurar</strong></li>
-          <li>La app se reiniciará automáticamente — esperá unos segundos y recargá la página</li>
+          <li>Elegí el dump de PostgreSQL en el bucket privado de R2.</li>
+          <li>Seguí el procedimiento verificado de <code>docs/RUNBOOK.md</code>.</li>
+          <li>Restaurá primero en una base temporal y compará los conteos.</li>
+          <li>La restauración de producción requiere acceso SSH a la Raspberry.</li>
         </ol>
       </div>
 
-      <div class="restore-input-row">
-        <input type="url" id="restore-url" placeholder="https://..." autocomplete="off" spellcheck="false" />
-        <button class="btn btn-restore" id="btn-restore" style="white-space:nowrap; flex-shrink:0;">
-          Restaurar
-        </button>
-      </div>
-      <div class="feedback-msg" id="restore-feedback"></div>
     </div>
 
   </div>
@@ -230,7 +224,7 @@
       if (data.success) {
         document.getElementById("backup-status-label").textContent =
           `Último backup: ${relativeTime(data.timestamp)}`;
-        feedback.innerHTML = '<span class="status-pill status-pill-ok">✓ Backup guardado localmente</span>';
+        feedback.innerHTML = '<span class="status-pill status-pill-ok">✓ Backup verificado en R2</span>';
       } else {
         feedback.innerHTML = `<span class="status-pill status-pill-err">✗ ${data.error || "Error desconocido"}</span>`;
       }
@@ -239,49 +233,6 @@
     } finally {
       btn.disabled    = false;
       btn.textContent = "Backup ahora";
-    }
-  });
-
-  // ── Restore ───────────────────────────────────────────────────────────────
-  document.getElementById("btn-restore").addEventListener("click", async function () {
-    const btn      = this;
-    const urlInput = document.getElementById("restore-url");
-    const feedback = document.getElementById("restore-feedback");
-    const url      = urlInput.value.trim();
-
-    if (!url.startsWith("https://")) {
-      feedback.innerHTML = '<span class="status-pill status-pill-err">✗ La URL debe comenzar con https://</span>';
-      return;
-    }
-
-    if (!confirm("¿Restaurar la base de datos desde esta URL? Se guardará un backup .bak del estado actual y la app se reiniciará.")) {
-      return;
-    }
-
-    btn.disabled    = true;
-    btn.textContent = "Restaurando…";
-    feedback.innerHTML = '<span class="status-pill status-pill-warn">⏳ Descargando y restaurando…</span>';
-
-    try {
-      const res  = await fetch("/admin/restore-db-url", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        feedback.innerHTML = '<span class="status-pill status-pill-ok">✓ Restaurado. Reiniciando… recargá la página en unos segundos.</span>';
-        urlInput.value = "";
-        setTimeout(() => location.reload(), 4000);
-      } else {
-        feedback.innerHTML = `<span class="status-pill status-pill-err">✗ ${data.error || "Error desconocido"}</span>`;
-        btn.disabled    = false;
-        btn.textContent = "Restaurar";
-      }
-    } catch (_) {
-      feedback.innerHTML = '<span class="status-pill status-pill-err">✗ Error de red</span>';
-      btn.disabled    = false;
-      btn.textContent = "Restaurar";
     }
   });
 

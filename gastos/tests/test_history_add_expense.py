@@ -1,32 +1,26 @@
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import dashboard  # noqa: E402
 import db  # noqa: E402
+from support import reset_database  # noqa: E402
 
 
 class HistoryAddExpenseTests(unittest.TestCase):
     def setUp(self):
-        self._old_db_path = db.DB_PATH
-        self._tmp = tempfile.TemporaryDirectory()
-        db.DB_PATH = str(Path(self._tmp.name) / "gastos.db")
-        db.init_db({"123": "Tester"})
+        reset_database({"123": "Tester"})
         self.client = dashboard.app.test_client()
         self.user = db.get_user_by_telegram_id("123")
         self.category = db.get_category_by_name("Hogar")
         self.subcategory = db.find_subcategory_normalized(
             self.category["id"], "Supermercado"
         )
-
-    def tearDown(self):
-        db.DB_PATH = self._old_db_path
-        self._tmp.cleanup()
 
     def test_add_expense_persists_selected_subcategory(self):
         response = self.client.post(

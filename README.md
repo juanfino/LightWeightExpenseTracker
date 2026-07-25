@@ -36,14 +36,18 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 | `USERS_JSON` | Yes | JSON array of authorized users, e.g. `[{"telegram_id":"123","name":"Juampi"}]` |
 | `ANTHROPIC_API_KEY` | No | Enables OCR of ticket photos, voice/dollar extraction, and the natural-language intent layer |
 | `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
-| `DB_PATH` | No | Path to SQLite file (default: `/data/gastos.db`) |
+| `DATABASE_URL` | Yes | PostgreSQL connection URL |
+| `POSTGRES_PASSWORD` | Yes | PostgreSQL service password |
+| `R2_ENDPOINT`, `R2_BUCKET` | Yes | Private Cloudflare R2 backup destination |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Yes | Bucket-scoped R2 credentials |
 | `DASHBOARD_PORT` | No | Dashboard port (default: `5000`; the Pi sets this to `8090` to free up 5000 for Frigate) |
 
 Copy `.env.example` to `~/.env` on the Pi and fill in the values.
 
 ### Persistent data
 
-The SQLite database is mounted from `~/gastos-data/gastos.db` on the Pi into `/data/gastos.db` inside the container.
+PostgreSQL is persisted at `~/postgres-data`. Daily dumps are stored off-device
+in private Cloudflare R2 with 90-day retention; see `docs/RUNBOOK.md`.
 
 ### Exposing the dashboard
 

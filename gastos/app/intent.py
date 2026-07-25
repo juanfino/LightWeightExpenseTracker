@@ -157,14 +157,15 @@ _TOOLS = [
 ]
 
 _SCHEMA_DOC = (
-    "Esquema SQLite (solo lectura):\n"
-    "  expenses(id, user_id, category_id, subcategory_id, concept TEXT, amount REAL, currency TEXT, raw_text TEXT, created_at TEXT)\n"
+    "Esquema PostgreSQL (solo lectura):\n"
+    "  expenses(id, user_id, category_id, subcategory_id, concept TEXT, amount NUMERIC, currency TEXT, raw_text TEXT, created_at TIMESTAMPTZ)\n"
     "  users(id, telegram_id, name, color)\n"
     "  categories(id, name, color, icon)\n"
     "  subcategories(id, category_id, name)\n"
     "Notas:\n"
-    "  - created_at está en UTC ('YYYY-MM-DD HH:MM:SS'). Para razonar por día/semana en hora argentina "
-    "usá datetime(created_at, '-3 hours').\n"
+    "  - created_at es TIMESTAMPTZ almacenado en UTC. Para día/semana/mes argentino usá "
+    "(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires').\n"
+    "  - Usá sintaxis PostgreSQL: EXTRACT, date_trunc, to_char e INTERVAL; nunca funciones SQLite.\n"
     "  - category_id y subcategory_id pueden ser NULL (gasto sin categorizar).\n"
     "  - currency es ARS o USD; amount está en su moneda nativa. Nunca sumes ni compares directamente monedas distintas: filtrá por currency o agrupá por currency."
 )

@@ -2173,7 +2173,7 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
 # ── Arranque ──────────────────────────────────────────────────────────────────
 
 def build_app():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
     app.add_handler(CommandHandler("gastos",      cmd_gastos))
     app.add_handler(CommandHandler("semana",      cmd_semana))
