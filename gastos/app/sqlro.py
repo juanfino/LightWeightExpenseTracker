@@ -62,10 +62,17 @@ def run_readonly(sql: str, params=(), *, max_rows: int = 200, timeout_s: float =
     stmt = validate(sql)
 
     timeout_ms = max(1, int(timeout_s * 1000))
+    family_id = pgcompat.current_family_id()
+    if family_id is None:
+        raise ReadOnlySQLError("No hay una familia activa para ejecutar la consulta.")
     with pgcompat.pool("readonly").connection() as conn:
         try:
             conn.execute("SET TRANSACTION READ ONLY")
             conn.execute("SET LOCAL ROLE gastos_readonly")
+            conn.execute(
+                "SELECT set_config('app.family_id', %s, true)",
+                (str(family_id),),
+            )
             conn.execute(
                 "SELECT set_config('statement_timeout', %s, true)",
                 (f"{timeout_ms}ms",),

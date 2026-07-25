@@ -150,6 +150,13 @@ def get_conn():
     with pgcompat.current_pool().connection() as raw:
         conn = pgcompat.Connection(raw)
         try:
+            family_id = pgcompat.current_family_id()
+            if family_id is not None:
+                raw.execute("SET LOCAL ROLE gastos_app")
+                raw.execute(
+                    "SELECT set_config('app.family_id', %s, true)",
+                    (str(family_id),),
+                )
             yield conn
             raw.commit()
         except Exception:
@@ -277,23 +284,106 @@ def init_db(users: dict | None = None):
     alembic_cfg = Config(os.path.join(project_dir, "alembic.ini"))
     alembic_cfg.set_main_option("script_location", os.path.join(project_dir, "migrations"))
     command.upgrade(alembic_cfg, "head")
+    pgcompat.set_family_id(1)
     import seed
     with get_conn() as conn:
-        seed.seed(conn)
+        if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
+            seed.create_family_defaults(conn, 1)
     if users:
         _sync_users(users)
 
 
 def _sync_users(users: dict):
     """Inserta o actualiza los usuarios definidos en la config de HA."""
-    with get_conn() as conn:
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
         for telegram_id, name in users.items():
-            conn.execute(
-                "INSERT INTO users (telegram_id, name) VALUES (?, ?)"
-                " ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name",
+            user_id = raw.execute(
+                "INSERT INTO users (telegram_id, name) VALUES (%s, %s)"
+                " ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name"
+                " RETURNING id",
                 (str(telegram_id), name),
+            ).fetchone()[0]
+            raw.execute(
+                """
+                INSERT INTO memberships (user_id, family_id, role)
+                VALUES (
+                    %s, 1,
+                    CASE WHEN EXISTS (SELECT 1 FROM memberships WHERE family_id = 1)
+                         THEN 'member' ELSE 'owner' END
+                )
+                ON CONFLICT (user_id) DO NOTHING
+                """,
+                (user_id,),
             )
+            raw.execute(
+                """
+                UPDATE families
+                SET created_by_user_id = COALESCE(created_by_user_id, %s)
+                WHERE id = 1
+                """,
+                (user_id,),
+            )
+        raw.commit()
+    pgcompat.set_family_id(1)
     _assign_default_user_colors()
+
+
+def create_family(name: str, *, timezone_name: str = "America/Argentina/Buenos_Aires") -> int:
+    """Create a family and its generic taxonomy. Authentication will call this in Phase 3."""
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        family_id = raw.execute(
+            "INSERT INTO families (name, timezone) VALUES (%s, %s) RETURNING id",
+            (name, timezone_name),
+        ).fetchone()[0]
+        raw.commit()
+    pgcompat.set_family_id(family_id)
+    import seed
+    with get_conn() as conn:
+        seed.create_family_defaults(conn, family_id)
+    return family_id
+
+
+def record_llm_call(
+    module: str,
+    model: str,
+    tokens_in: int,
+    tokens_out: int,
+    cost_usd_estimate: float,
+    latency_ms: int,
+    success: bool,
+    error_text: str | None = None,
+) -> None:
+    """Persist LLM telemetry without ever making the user-facing call fail."""
+    family_id = pgcompat.current_family_id()
+    if family_id is None:
+        logger.warning("No se registró llamada LLM de %s: falta family_id", module)
+        return
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO llm_calls
+                    (family_id, user_id, module, model, tokens_in, tokens_out,
+                     cost_usd_estimate, latency_ms, success, error_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    family_id,
+                    pgcompat.current_user_id(),
+                    module,
+                    model,
+                    int(tokens_in or 0),
+                    int(tokens_out or 0),
+                    cost_usd_estimate,
+                    max(0, int(latency_ms)),
+                    success,
+                    (error_text or "")[:2000] or None,
+                ),
+            )
+    except Exception:
+        logger.exception("No se pudo registrar telemetría LLM de %s", module)
 
 
 def _assign_default_user_colors():
@@ -301,7 +391,15 @@ def _assign_default_user_colors():
     color por defecto, para que se distingan bien en el dashboard. No pisa colores
     elegidos a mano (los que difieren del default)."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, color FROM users ORDER BY id").fetchall()
+        rows = conn.execute(
+            """
+            SELECT u.id, u.color
+            FROM users u
+            JOIN memberships m ON m.user_id = u.id
+            WHERE m.family_id = NULLIF(current_setting('app.family_id', true), '')::integer
+            ORDER BY u.id
+            """
+        ).fetchall()
         for index, row in enumerate(rows):
             if row["color"] == DEFAULT_USER_COLOR:
                 new_color = USER_COLOR_PALETTE[index % len(USER_COLOR_PALETTE)]
@@ -314,9 +412,21 @@ def _assign_default_user_colors():
 # ── Usuarios ──────────────────────────────────────────────────────────────────
 
 def get_user_by_telegram_id(tg_id: str):
-    with get_conn() as conn:
+    """Resolve the configured Telegram identity and its one family.
+
+    This platform lookup intentionally happens before tenant RLS is selected.
+    """
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        conn = pgcompat.Connection(raw)
         return conn.execute(
-            "SELECT * FROM users WHERE telegram_id = ?", (str(tg_id),)
+            """
+            SELECT u.*, m.family_id, m.role
+            FROM users u
+            JOIN memberships m ON m.user_id = u.id
+            WHERE u.telegram_id = ?
+            """,
+            (str(tg_id),),
         ).fetchone()
 
 
@@ -833,7 +943,15 @@ def delete_category(category_id: int) -> tuple[bool, str | None]:
 
 def get_all_users():
     with get_conn() as conn:
-        return conn.execute("SELECT id, name, color FROM users ORDER BY name").fetchall()
+        return conn.execute(
+            """
+            SELECT u.id, u.name, u.color
+            FROM users u
+            JOIN memberships m ON m.user_id = u.id
+            WHERE m.family_id = NULLIF(current_setting('app.family_id', true), '')::integer
+            ORDER BY u.name
+            """
+        ).fetchall()
 
 
 def get_expenses_by_week_of_month_by_user(year: int, month: int, user_name: str | None = None,
@@ -1113,7 +1231,7 @@ def add_keyword(keyword: str, category_id: int, subcategory_id: int | None = Non
         ).fetchone()
         conn.execute(
             "INSERT INTO keywords (keyword, category_id, subcategory_id) VALUES (?, ?, ?)"
-            " ON CONFLICT(keyword) DO UPDATE SET category_id = excluded.category_id,"
+            " ON CONFLICT(family_id, keyword) DO UPDATE SET category_id = excluded.category_id,"
             " subcategory_id = excluded.subcategory_id",
             (kw, category_id, subcategory_id),
         )
@@ -1635,7 +1753,7 @@ def upsert_ipc_value(year: int, month: int, value: float, is_estimated: bool) ->
         conn.execute(
             "INSERT INTO ipc_series (year, month, value, is_estimated, updated_at)"
             " VALUES (?, ?, ?, ?, ?)"
-            " ON CONFLICT(year, month) DO UPDATE SET value=excluded.value,"
+            " ON CONFLICT(family_id, year, month) DO UPDATE SET value=excluded.value,"
             " is_estimated=excluded.is_estimated, updated_at=excluded.updated_at",
             (year, month, value, is_estimated, now_utc),
         )

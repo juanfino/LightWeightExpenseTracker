@@ -3,6 +3,7 @@ import logging
 import re
 
 import anthropic
+import llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ def parse_dolar(text: str, anthropic_api_key: str) -> dict | None:
     """
     try:
         client = anthropic.Anthropic(api_key=anthropic_api_key)
+        call_started = llm_usage.started()
         message = client.messages.create(
             model=_MODEL,
             max_tokens=256,
@@ -73,6 +75,7 @@ def parse_dolar(text: str, anthropic_api_key: str) -> dict | None:
                 "content": f"{_PARSE_PROMPT}\n\nMensaje: {text}",
             }],
         )
+        llm_usage.record("dolar", _MODEL, call_started, response=message)
         raw = message.content[0].text.strip()
         if raw.startswith("```"):
             parts = raw.split("```")
@@ -81,6 +84,8 @@ def parse_dolar(text: str, anthropic_api_key: str) -> dict | None:
             return None
         data = json.loads(raw)
     except Exception as e:
+        if "call_started" in locals() and "message" not in locals():
+            llm_usage.record("dolar", _MODEL, call_started, error=e)
         logger.error("Error interpretando operación de dólar: %s", e)
         return None
 

@@ -15,6 +15,8 @@ from psycopg_pool import ConnectionPool
 _pools: dict[str, ConnectionPool] = {}
 _lock = threading.Lock()
 _pool_name = ContextVar("db_pool_name", default="bot")
+_family_id = ContextVar("family_id", default=None)
+_user_id = ContextVar("user_id", default=None)
 _INSERT_WITH_ID = {
     "users", "categories", "subcategories", "keywords", "expenses",
     "fixed_expenses", "cambios_dolar", "reports", "expense_classifications",
@@ -123,3 +125,20 @@ def current_pool() -> ConnectionPool:
 
 def select_pool(name: str):
     _pool_name.set(name)
+
+
+def set_family_id(family_id: int | None):
+    """Set the tenant for the current request/update context."""
+    _family_id.set(int(family_id) if family_id is not None else None)
+
+
+def current_family_id() -> int | None:
+    return _family_id.get()
+
+
+def set_user_id(user_id: int | None):
+    _user_id.set(int(user_id) if user_id is not None else None)
+
+
+def current_user_id() -> int | None:
+    return _user_id.get()
