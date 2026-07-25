@@ -6,6 +6,7 @@
 - `seed.py` crea una taxonomía argentina genérica por familia, sin copiar keywords aprendidos del hogar original.
 - Las llamadas Anthropic/OpenAI registran módulo, modelo, uso, costo estimado, latencia, resultado y error en `llm_calls`.
 - Nueva suite PostgreSQL de aislamiento con dos familias, SQL hostil, writes cruzados, telemetría y RLS forzado.
+- Se corrige la serialización de timestamps PostgreSQL en Dashboard y Movimientos; vuelven a mostrarse como fecha/hora argentina en lugar de `undefined`.
 
 ## 3.0.0
 - **Fase 1 multi-tenant:** PostgreSQL 17 reemplaza SQLite como único motor. Alembic administra el schema y el migrador SQLite → PostgreSQL verifica conteos y SHA-256 tabla por tabla.

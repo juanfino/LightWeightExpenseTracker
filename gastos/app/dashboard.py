@@ -32,16 +32,26 @@ def _month_label(year: int, month: int) -> str:
     return f"{MONTHS_ES[month]} {year}"
 
 
-def _to_baires_str(dt_str: str) -> str:
-    """Converts a UTC SQLite timestamp string to Buenos Aires (UTC-3) time."""
-    if not dt_str:
-        return dt_str
+def _to_baires_str(value) -> str:
+    """Serialize a PostgreSQL/legacy UTC timestamp for dashboard JavaScript.
+
+    psycopg returns ``datetime`` objects. Passing those directly to ``jsonify``
+    produces an RFC 1123 string, while the existing frontend contract is
+    ``YYYY-MM-DD HH:MM:SS``.
+    """
+    if not value:
+        return value
     try:
-        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-        dt_ba = dt.replace(tzinfo=timezone.utc).astimezone(BAIRES)
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_ba = dt.astimezone(BAIRES)
         return dt_ba.strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
-        return dt_str
+        return str(value)
 
 
 def _row_to_dict(row) -> dict:

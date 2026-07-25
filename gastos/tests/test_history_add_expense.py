@@ -41,6 +41,23 @@ class HistoryAddExpenseTests(unittest.TestCase):
         self.assertEqual(expense["category_id"], self.category["id"])
         self.assertEqual(expense["subcategory_id"], self.subcategory["id"])
 
+    def test_postgres_timestamp_keeps_dashboard_json_contract(self):
+        db.create_expense_full(
+            self.user["id"],
+            self.category["id"],
+            "Fecha PostgreSQL",
+            100,
+            "2026-07-20",
+            subcategory_id=self.subcategory["id"],
+        )
+
+        recent = self.client.get("/api/expenses").get_json()
+        filtered = self.client.get("/api/expenses?year=2026&month=7").get_json()
+
+        for payload in (recent, filtered):
+            row = next(item for item in payload if item["concept"] == "Fecha PostgreSQL")
+            self.assertEqual(row["created_at"], "2026-07-20 00:00:00")
+
     def test_add_usd_expense_with_existing_fixed_expenses_does_not_crash(self):
         fixed_id = db.create_fixed_expense(
             "Viaje Porto de Galinhas", 4650, self.category["id"], currency="USD"
