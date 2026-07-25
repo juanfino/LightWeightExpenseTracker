@@ -1,17 +1,18 @@
 # LightWeightExpenseTracker
 
-Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to SQLite. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
+Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 2.5.2 (canonical source: `gastos/config.yaml`)
+- **Version:** 3.0.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
 ## Architecture
 
-**Infrastructure:** Raspberry Pi 4 (SSD), Raspberry Pi OS Lite, Docker Compose. User `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Data at `~/gastos-data/gastos.db`.
+**Infrastructure:** Raspberry Pi 4 (SSD), Raspberry Pi OS Lite, Docker Compose. User `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. PostgreSQL data at `~/postgres-data`; the final SQLite snapshot is retained only for rollback.
 
 **Services** (all `network_mode: host`):
 - `gastos` — Flask dashboard + Telegram bot (same process, separate thread)
+- `postgres` — PostgreSQL 17, healthchecked before `gastos` starts
 - `cloudflared` — Cloudflare Tunnel, exposes `localhost:8090` as `expenses.juampifinochietto.com` (dashboard's code default is port 5000; the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up 5000 for Frigate)
 - `homeassistant` — unrelated, colocated
 
@@ -21,11 +22,11 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Database:** SQLite at `/data/gastos.db`, mounted from `~/gastos-data`. 10 tables: `users`, `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, plus `ipc_series`, `reports`, `expense_classifications`. `expenses.currency` and `fixed_expenses.currency` store `ARS` or `USD` natively (default ARS; historic rows migrate to ARS); there is no conversion and aggregates always filter one currency. A fixed-expense payment is a property of the expense itself — `expenses.fixed_expense_id` (+ `fixed_expense_year`/`fixed_expense_month`) — and must share the fixed expense's currency. All timestamps stored as UTC; dashboard converts to `America/Argentina/Buenos_Aires` (UTC-3).
 
-**Backup:** Daily at 21:00 ART via APScheduler — copies `gastos.db` into a local, timestamped file under `<DB_PATH dir>/backups/` (7-day retention, pruned on every run). Also triggerable via `POST /admin/backup-now`. As of 2.6.0, no process sends the database file via Telegram (previously a daily broadcast to every configured user — a data-leak risk once multiple families share the database, see `docs/MULTITENANT_PLAN.md` Phase 0). Off-device backup with a tested restore path is Phase 1 of that plan; today's local copy only survives the Pi itself.
+**Backup:** Daily at 21:00 ART via APScheduler — custom-format `pg_dump` uploaded to private Cloudflare R2 and remotely size-verified. R2 retains 90 days. Restore is SSH-only (`docs/RUNBOOK.md`) and was tested from production.
 
 ## Stack
 
-- Python, Flask, SQLite
+- Python, Flask, PostgreSQL 17, psycopg 3, Alembic
 - `python-telegram-bot` v20 (async, long polling)
 - Anthropic API (`claude-haiku-4-5-20251001`) for OCR receipt scanning, voice/dollar extraction, and the natural-language intent layer (tool use / function calling); `claude-opus-4-8` (configurable, separate model tier) for the monthly report's classification and narration calls (structured JSON outputs, no tool use)
 - The national open-data time-series API at `apis.datos.gob.ar` (IPC Nacional series) — free, unauthenticated, no API key. The app's first external dependency outside Anthropic/OpenAI; see **Monthly AI report** below for its failure mode

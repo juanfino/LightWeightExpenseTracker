@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 1 in progress
+**Status:** Phase 1 done
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-25
@@ -52,7 +52,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | # | Phase | Status | Branch | Agent | Date |
 |---|---|---|---|---|---|
 | 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
-| 1 | PostgreSQL + Alembic + async safety | IN PROGRESS | 2026-07-24 | Codex | Port, migration and R2 restore verified; final CI/PR and production cutover pending |
+| 1 | PostgreSQL + Alembic + async safety | DONE | 2026-07-24 | 2026-07-25 | Codex |
 | 2 | Tenancy (single family, no auth yet) | NOT STARTED | | | |
 | 3 | Identity & authentication | NOT STARTED | | | |
 | 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
@@ -322,15 +322,19 @@ Multi-tenancy. Auth. Any UI change. Converting the app to async.
 
 ### Handoff Notes
 
-In progress on `feat/mt-p1-postgres`. PostgreSQL 17 Compose service, Alembic
+Completed on `feat/mt-p1-postgres` plus the production cutover. PostgreSQL 17 Compose service, Alembic
 schema, psycopg pools, dialect port, read-only reporting role, SQLite migration
 script, PostgreSQL CI and smoke tests are implemented. A real copy of the Pi's
 SQLite data migrated with matching row counts and SHA-256 checksums. The R2
 bucket has a 90-day lifecycle; a dump was uploaded, downloaded and restored
 into `r2_restore_check` on 2026-07-25. The bad first credential was revoked
 only after the replacement passed that restore test. Web restore was removed;
-restore is SSH-only (`docs/RUNBOOK.md`). Do not mark DONE until final CI, ready
-PR, merge and production cutover are complete.
+restore is SSH-only (`docs/RUNBOOK.md`). PR #61 was merged and production was
+cut over on 2026-07-25. The final
+SQLite snapshot (290 expenses) is preserved both on the Pi and in R2. The
+production R2 dump was restored into a scratch database with matching counts;
+dashboard returned 200, Telegram `getMe` passed, and both production
+containers are healthy. Temporary resources were removed.
 
 ---
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A family expense tracker that records spending via Telegram and shows it in a web dashboard. Users send messages like `Supermercado 150000` to a Telegram bot; the app parses, categorizes, and stores the expense in SQLite. Runs as a Docker container on a Raspberry Pi 4 (aarch64), deployed via Docker Compose alongside Home Assistant and Cloudflare Tunnel.
+A family expense tracker that records spending via Telegram and shows it in a web dashboard. Users send messages like `Supermercado 150000` to a Telegram bot; the app parses, categorizes, and stores the expense in PostgreSQL. Runs as Docker containers on a Raspberry Pi 4 (aarch64), deployed via Docker Compose alongside Home Assistant and Cloudflare Tunnel.
 
 ## Development setup
 
@@ -17,7 +17,7 @@ pip install -r requirements.txt
 export TELEGRAM_TOKEN=<token>
 export USERS_JSON='[{"telegram_id": "123456", "name": "Juampi"}]'
 export ANTHROPIC_API_KEY=<key>   # only needed for OCR
-export DB_PATH=/tmp/gastos.db
+export DATABASE_URL=postgresql://gastos:password@localhost:5432/gastos
 python3 app/main.py
 ```
 
@@ -35,8 +35,8 @@ python3 gastos/app/categorizer.py
 ## Architecture
 
 `main.py` is the entrypoint. It:
-1. Loads config from env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `DB_PATH`)
-2. Initializes SQLite via `db.py`
+1. Loads config from env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `DATABASE_URL`)
+2. Applies Alembic migrations and initializes PostgreSQL via `db.py`
 3. Schedules a daily backup job (APScheduler, 21:00 ART)
 4. Starts Flask dashboard in a daemon thread
 5. Starts the Telegram bot (blocks main thread via polling)
@@ -68,7 +68,9 @@ Config is loaded exclusively from environment variables at startup — there is 
 | `USERS_JSON` | Yes | JSON array `[{"telegram_id": "...", "name": "..."}]` |
 | `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, and the natural-language intent layer |
 | `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
-| `DB_PATH` | No | Default: `/data/gastos.db` |
+| `DATABASE_URL` | Yes | PostgreSQL connection URL |
+| `R2_ENDPOINT`, `R2_BUCKET` | Yes | Cloudflare R2 backup destination |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Yes | Bucket-scoped credentials |
 | `DASHBOARD_PORT` | No | Default: `5000` |
 
 On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env`.
