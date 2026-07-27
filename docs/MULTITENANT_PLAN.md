@@ -1,9 +1,9 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 3 in progress
+**Status:** Phase 3 complete; Phase 4 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
-**Last updated by:** Codex — 2026-07-25
+**Last updated by:** Codex — 2026-07-27
 
 ---
 
@@ -54,7 +54,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
 | 1 | PostgreSQL + Alembic + async safety | DONE | `feat/mt-p1-postgres` | Codex | 2026-07-25 |
 | 2 | Tenancy (single family, no auth yet) | DONE | `feat/mt-p2-tenancy` | Codex | 2026-07-25 |
-| 3 | Identity & authentication | IN PROGRESS | `feat/mt-p3-auth` | Codex | 2026-07-25 |
+| 3 | Identity & authentication | DONE | `feat/mt-p3-auth` | Codex | 2026-07-27 |
 | 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
 | 5 | Telegram linking + quotas | NOT STARTED | | | |
 | 6 | Self-service onboarding polish | NOT STARTED | | | |
@@ -115,9 +115,13 @@ All schema changes go through Alembic. `seed.py` no longer performs schema migra
 
 Any new table or query added from Phase 2 onward must be covered by the isolation test suite (§3).
 
-### I9 — Cloudflare Access stays ON until Phase 3 is verified
+### I9 — Cloudflare Access stayed ON until Phase 3 was verified
 
-Cloudflare Access is currently the *only* authentication in the system. Every `/api/*` and `/admin/*` endpoint is effectively unauthenticated behind it. Own-auth is built *behind* Access, verified, and only then is Access turned off. There is never a window of exposure.
+Phase 3 built the application-owned authentication behind Cloudflare Access,
+verified it in production, and only then removed the `expenses` Access
+application. The Cloudflare Tunnel and Turnstile remain active. Every private
+route is now protected by the application's deny-by-default session middleware;
+there was no window in which the site was exposed without authentication.
 
 ### I10 — Money and dates
 
@@ -154,9 +158,9 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `landing.html` | Public landing; authenticated users continue to `/dashboard` | Phase 3 implemented, production verification pending |
-| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | Phase 3 implemented, production verification pending |
-| `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | Phase 3 implemented, publication pending |
+| `/` | `landing.html` | Public landing; authenticated users continue to `/dashboard` | verified in production |
+| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | verified in production |
+| `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | public; Google OAuth published |
 | `/dashboard` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | route moved from `/` in Phase 3 |
 | `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
@@ -430,8 +434,8 @@ Invitations. Members management. Apple Sign-In (see §8).
 
 ### Handoff Notes
 
-**Implementation complete locally; external verification still pending, so the
-phase remains `IN PROGRESS`.**
+**Phase 3 completed in production on 2026-07-27. Phase 4 can start from
+`main`.**
 
 - Alembic `0003` adds `sessions`, `otp_codes` and `oauth_identities`, makes
   Telegram optional for web-created users, and adds `users.last_login_at`.
@@ -445,30 +449,46 @@ phase remains `IN PROGRESS`.**
   `gastos_superadmin` with `SET LOCAL ROLE` so privilege cannot leak through a
   pooled connection.
 - Email OTP uses Resend, six digits, 10-minute expiry, single use, five
-  attempts, hashed at rest. Google uses Authlib with `email profile` scopes.
-  Both registration paths use Turnstile and in-process per-IP/email rate
-  limits.
+  attempts, hashed at rest. Resend's sender domain was verified through
+  Cloudflare DNS. Google uses Authlib with the basic identity scopes
+  `openid`, `email` and `profile`; the consent app is External/In production.
+  Version 5.0.1 adds `prompt=select_account` because production testing showed
+  that Google otherwise silently reused the browser's active account. Both
+  registration paths use Turnstile and in-process per-IP/email rate limits.
 - Registration creates user → family → owner membership → generic taxonomy.
   `AUTH_BOOTSTRAP_EMAIL` attaches the existing family-1 owner to web auth only
   when its email is still NULL.
 - Added landing, login, registration, OTP, privacy and terms templates, plus
   the authenticated user/family menu and logout.
-- Local disposable PostgreSQL 17 verification: migration `0003`, 21 tests,
-  schema smoke and all non-parameterized web GET smoke routes passed. Tests
+- Final disposable PostgreSQL 17 verification: migration `0003`, 22 tests,
+  schema smoke and 33 web smoke routes passed. Tests
   cover route enumeration, unauthenticated denial, CSRF, hashed/revoked
   sessions, OTP limits/single use, and full email registration through seeded
-  family creation.
-- Version/docs are prepared as 5.0.0. Cloudflare Access deliberately remains
-  enabled.
+  family creation, Turnstile's canonical `siteverify` call and Google's
+  account-selection prompt.
+- The GitHub UI exposes one `postgres` check, but that job intentionally
+  contains the whole gate: unit/integration tests, PostgreSQL schema smoke and
+  web route smoke. Its first Phase 3 run caught a test-only coupling:
+  registration expected `TESTING=1` to bypass Turnstile, while CI did not set
+  it. The registration test now mocks Turnstile explicitly and the separate
+  Turnstile contract test remains intact.
+- Production was deployed to the Raspberry Pi with all Phase 3 environment
+  variables. Google login, application logout/private-route behavior and the
+  anonymous entry flow were exercised. Seeing Cloudflare Access in incognito
+  before cutover was expected: it proved the temporary guard was still in
+  place.
+- After verification, only the Cloudflare Zero Trust Access application named
+  `expenses` was deleted. DNS, Cloudflare Tunnel and Turnstile were deliberately
+  retained. Anonymous visitors now reach the application's own landing/login.
+- Final shipped version is 5.0.1. PR #66 delivered Phase 3 and its CI fix; PR
+  #67 delivered the forced Google account selector. Both were merged before
+  this closeout.
 
-**External setup status (2026-07-27):** Turnstile widget and Google OAuth
-consent/client are configured; the Pi's `~/.env` has all Phase 3 variables.
-Resend API key/sender are configured and its DNS verification is propagating.
-
-**Still required before marking DONE:** commit/PR/merge, wait for Resend to
-report the domain verified, deploy behind Access, test Google and OTP from
-phone/incognito, then and only then disable Cloudflare Access and repeat the
-unauthenticated/private route checks.
+**Deliberately deferred to later phases:** invitations, family/member
+management, Telegram account linking, quotas, onboarding polish, Apple
+Sign-In and the superadmin UI. The in-process rate limiter is sufficient for
+the current single-instance Pi deployment; a distributed limiter would only
+be needed if the web tier becomes multi-process or multi-instance.
 
 ---
 
