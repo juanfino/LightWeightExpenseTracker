@@ -291,6 +291,38 @@ def init_db(users: dict | None = None):
             seed.create_family_defaults(conn, 1)
     if users:
         _sync_users(users)
+    bootstrap_email = os.environ.get("AUTH_BOOTSTRAP_EMAIL", "").strip().casefold()
+    if bootstrap_email:
+        _bootstrap_web_identity(bootstrap_email)
+
+
+def _bootstrap_web_identity(email: str) -> None:
+    """Attach the existing family-1 owner to the first web-login email.
+
+    This is intentionally a one-way NULL-only bootstrap: changing the env var
+    later cannot take over or rewrite an established identity.
+    """
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        owner = raw.execute(
+            """
+            SELECT u.id, u.email
+            FROM users u
+            JOIN memberships m ON m.user_id = u.id
+            WHERE m.family_id = 1 AND m.role = 'owner'
+            ORDER BY m.created_at, u.id
+            LIMIT 1
+            """
+        ).fetchone()
+        if not owner:
+            raise RuntimeError("No existe un owner para bootstrap de autenticación")
+        if owner[1] and owner[1].casefold() != email:
+            raise RuntimeError("AUTH_BOOTSTRAP_EMAIL no coincide con el email ya configurado")
+        raw.execute(
+            "UPDATE users SET email = %s WHERE id = %s AND email IS NULL",
+            (email, owner[0]),
+        )
+        raw.commit()
 
 
 def _sync_users(users: dict):

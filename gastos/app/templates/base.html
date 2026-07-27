@@ -177,6 +177,11 @@
       margin-left: auto;
       flex-shrink: 0;
     }
+    .user-menu { margin-left:auto; display:flex; align-items:center; gap:10px; }
+    .user-copy { text-align:right; line-height:1.25; }
+    .user-name { font-weight:700; font-size:13px; }
+    .user-family { color:var(--text3); font-size:11px; }
+    .logout-button { border:1px solid var(--border2); background:transparent; color:var(--text2); border-radius:8px; padding:7px 9px; cursor:pointer; }
 
     /* ── Layout ── */
     .container {
@@ -573,13 +578,13 @@
   <div class="topbar">
     <div class="topbar-inner">
       <div class="topbar-left">
-        <a href="/" class="topbar-brand">
+        <a href="{{ url_for('index') }}" class="topbar-brand">
           <span class="brand-logo" aria-hidden="true"><i></i><i></i><i></i></span>
           <span>Gastos Familiares</span>
         </a>
 
         <nav class="topbar-tabs">
-          <a href="/"         class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
+          <a href="{{ url_for('index') }}" class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
           <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Movimientos</a>
           <a href="/fijos"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
           <a href="/dolares"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
@@ -589,7 +594,13 @@
         </nav>
       </div>
 
-      <div class="topbar-avatar" aria-hidden="true"></div>
+      <div class="user-menu">
+        <div class="user-copy"><div class="user-name">{{ current_user.name }}</div><div class="user-family">{{ current_user.family_name }}</div></div>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="logout-button" type="submit" title="Cerrar sesión"><i class="ti ti-logout"></i></button>
+        </form>
+      </div>
 
       <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
         <i class="ti ti-menu-2"></i>
@@ -609,7 +620,7 @@
         <i class="ti ti-x"></i>
       </button>
     </div>
-    <a href="/"         class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
+    <a href="{{ url_for('index') }}" class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
     <a href="/history"  class="tab-link {{ self.nav_history() }}">Movimientos</a>
     <a href="/fijos"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
     <a href="/dolares"  class="tab-link {{ self.nav_dolares() }}">Dólares</a>
@@ -619,6 +630,26 @@
   </nav>
 
   {% block content %}{% endblock %}
+
+  <script>
+    // All same-origin mutations carry the server-session CSRF token. Existing
+    // page code can keep using fetch without duplicating security plumbing.
+    (function () {
+      const originalFetch = window.fetch;
+      window.fetch = function (input, init) {
+        init = init || {};
+        const method = String(init.method || "GET").toUpperCase();
+        const url = typeof input === "string" ? input : input.url;
+        const target = new URL(url, window.location.href);
+        if (target.origin === window.location.origin && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+          const headers = new Headers(init.headers || {});
+          headers.set("X-CSRF-Token", {{ csrf_token|tojson }});
+          init.headers = headers;
+        }
+        return originalFetch.call(window, input, init);
+      };
+    })();
+  </script>
 
   {% block scripts %}{% endblock %}
 

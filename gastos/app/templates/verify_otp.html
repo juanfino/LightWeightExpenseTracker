@@ -1,0 +1,15 @@
+{% extends "auth_base.html" %}
+{% block title %}Verificar código · Gastos Familiares{% endblock %}
+{% block content %}
+<main class="auth-wrap"><section class="card">
+  <h1>Revisá tu email</h1><p>Mandamos un código de seis dígitos a <strong>{{ email }}</strong>. Vence en 10 minutos.</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('verify_otp') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="email" value="{{ email }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="code">Código</label><input id="code" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required autofocus>
+    <button class="button" type="submit">Verificar y entrar</button>
+  </form>
+</section></main>
+{% endblock %}

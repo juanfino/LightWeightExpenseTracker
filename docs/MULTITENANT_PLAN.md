@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 2 done
+**Status:** Phase 3 in progress
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-25
@@ -54,7 +54,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 0 | Ground truth | DONE | `feat/mt-p0-ground-truth` | Claude Code (Sonnet 5) | 2026-07-24 |
 | 1 | PostgreSQL + Alembic + async safety | DONE | `feat/mt-p1-postgres` | Codex | 2026-07-25 |
 | 2 | Tenancy (single family, no auth yet) | DONE | `feat/mt-p2-tenancy` | Codex | 2026-07-25 |
-| 3 | Identity & authentication | NOT STARTED | | | |
+| 3 | Identity & authentication | IN PROGRESS | `feat/mt-p3-auth` | Codex | 2026-07-25 |
 | 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
 | 5 | Telegram linking + quotas | NOT STARTED | | | |
 | 6 | Self-service onboarding polish | NOT STARTED | | | |
@@ -154,7 +154,10 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | verified |
+| `/` | `landing.html` | Public landing; authenticated users continue to `/dashboard` | Phase 3 implemented, production verification pending |
+| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | Phase 3 implemented, production verification pending |
+| `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | Phase 3 implemented, publication pending |
+| `/dashboard` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | route moved from `/` in Phase 3 |
 | `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart | verified |
@@ -166,8 +169,6 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 | Route | Phase | Purpose |
 |---|---|---|
-| `/login` | 3 | Google + email OTP |
-| `/registro` | 3 | Create account + create family |
 | `/unirme/<token>` | 4 | Accept invitation, join an existing family |
 | `/familia` | 4 | Members list, invite, remove member, rename family, leave/delete family |
 | `/vincular-telegram` | 5 | Deep link button + QR + live "connected" state |
@@ -175,7 +176,6 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 | `/lista` | 7 | Shopping list |
 | `/exportar` | 7 | CSV export |
 | `/superadmin` | 8 | Cross-family metrics, LLM cost, user count |
-| `/privacidad`, `/terminos`, `/` (public landing) | 3 | Required for Google OAuth verification |
 
 ### To be modified
 
@@ -430,7 +430,45 @@ Invitations. Members management. Apple Sign-In (see §8).
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Implementation complete locally; external verification still pending, so the
+phase remains `IN PROGRESS`.**
+
+- Alembic `0003` adds `sessions`, `otp_codes` and `oauth_identities`, makes
+  Telegram optional for web-created users, and adds `users.last_login_at`.
+- Authenticated sessions use opaque 48-byte tokens; only SHA-256 hashes are
+  stored. Cookies are Secure/HttpOnly/SameSite=Lax. CSRF is tied to the
+  server-side session and automatically attached to all existing mutating
+  `fetch` calls.
+- `dashboard.py` resolves the browser session, user and family once in
+  `before_request`; every private route is deny-by-default. Public routes are
+  an explicit allow-list. Platform identity queries select
+  `gastos_superadmin` with `SET LOCAL ROLE` so privilege cannot leak through a
+  pooled connection.
+- Email OTP uses Resend, six digits, 10-minute expiry, single use, five
+  attempts, hashed at rest. Google uses Authlib with `email profile` scopes.
+  Both registration paths use Turnstile and in-process per-IP/email rate
+  limits.
+- Registration creates user → family → owner membership → generic taxonomy.
+  `AUTH_BOOTSTRAP_EMAIL` attaches the existing family-1 owner to web auth only
+  when its email is still NULL.
+- Added landing, login, registration, OTP, privacy and terms templates, plus
+  the authenticated user/family menu and logout.
+- Local disposable PostgreSQL 17 verification: migration `0003`, 21 tests,
+  schema smoke and all non-parameterized web GET smoke routes passed. Tests
+  cover route enumeration, unauthenticated denial, CSRF, hashed/revoked
+  sessions, OTP limits/single use, and full email registration through seeded
+  family creation.
+- Version/docs are prepared as 5.0.0. Cloudflare Access deliberately remains
+  enabled.
+
+**External setup status (2026-07-27):** Turnstile widget and Google OAuth
+consent/client are configured; the Pi's `~/.env` has all Phase 3 variables.
+Resend API key/sender are configured and its DNS verification is propagating.
+
+**Still required before marking DONE:** commit/PR/merge, wait for Resend to
+report the domain verified, deploy behind Access, test Google and OTP from
+phone/incognito, then and only then disable Cloudflare Access and repeat the
+unauthenticated/private route checks.
 
 ---
 

@@ -1,9 +1,10 @@
 """Exercise every non-parameterized GET route against a migrated scratch DB."""
 import dashboard
+from support import authenticated_client
 
 
 def main():
-    client = dashboard.app.test_client()
+    client, _csrf_headers = authenticated_client(dashboard)
     failures = []
     skipped = {"/static/<path:filename>", "/resumenes/<period>"}
     routes = sorted(

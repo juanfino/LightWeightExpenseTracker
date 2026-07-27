@@ -1,0 +1,25 @@
+{% extends "auth_base.html" %}
+{% block title %}Crear cuenta · Gastos Familiares{% endblock %}
+{% block content %}
+<main class="auth-wrap"><section class="card">
+  <h1>Creá tu espacio familiar</h1><p>Arrancás con categorías listas y después podés adaptarlas a tu casa.</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="name">Tu nombre</label><input id="name" name="name" autocomplete="name" required>
+    <label for="family_name">Nombre de la familia</label><input id="family_name" name="family_name" placeholder="Ej. Familia García" required>
+    <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required>
+    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="turnstile-spin-v2" data-size="flexible"></div>
+    <button class="button" type="submit">Crear con email</button>
+  </form>
+  <form method="post" action="{{ url_for('google_start') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="flow" value="register">
+    <label for="google-family-name">Nombre de la familia para registrarte con Google</label>
+    <input id="google-family-name" name="family_name" placeholder="Ej. Familia García" required>
+    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="turnstile-spin-v2" data-size="flexible"></div>
+    <button class="button secondary" type="submit">Crear con Google</button>
+  </form>
+  <p class="foot">¿Ya tenés cuenta? <a href="{{ url_for('login') }}">Iniciá sesión</a></p>
+</section></main>
+{% endblock %}
