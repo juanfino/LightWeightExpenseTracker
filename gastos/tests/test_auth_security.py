@@ -92,7 +92,10 @@ class AuthSecurityTests(unittest.TestCase):
         def capture(email, code):
             sent.update(email=email, code=code)
 
-        with patch.object(auth, "send_otp", side_effect=capture):
+        with (
+            patch.object(auth, "verify_turnstile", return_value=True),
+            patch.object(auth, "send_otp", side_effect=capture),
+        ):
             response = self.client.post(
                 "/registro",
                 data={
