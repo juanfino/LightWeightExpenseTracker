@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Familia · Gastos Familiares{% endblock %}
+{% block extra_styles %}
+.family-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}.notice{padding:12px 14px;border-radius:10px;margin-bottom:16px}.notice.ok{background:color-mix(in oklch,var(--green) 13%,transparent);color:var(--green)}.notice.error{background:color-mix(in oklch,var(--red) 13%,transparent);color:var(--red)}.stack{display:flex;flex-direction:column;gap:12px}.inline-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.invite-link{width:100%;font-size:13px}.danger-zone{border:1px solid color-mix(in oklch,var(--red) 35%,var(--border));}.muted{color:var(--text2);font-size:12px}.member-inactive{opacity:.6}@media(max-width:760px){.family-grid{grid-template-columns:1fr}.page-header{align-items:flex-start;flex-direction:column;gap:8px}}
+{% endblock %}
+{% block content %}
+<main class="container">
+  <div class="page-header"><div><h1 class="page-title">{{ family.name }}</h1><p class="muted">Miembros y acceso familiar</p></div></div>
+  {% if success %}<div class="notice ok">{{ success }}</div>{% endif %}
+  {% if error %}<div class="notice error">{{ error }}</div>{% endif %}
+  {% if invitation_url %}
+    <section class="card" style="margin-bottom:16px">
+      <div class="section-title">Enlace listo para compartir</div>
+      <p class="muted">Funciona una sola vez y vence en 7 días. Copialo ahora: después no podemos volver a mostrarlo.</p>
+      <div class="inline-form mt-8">
+        <input class="invite-link" id="invite-link" readonly value="{{ invitation_url }}">
+        <button class="btn btn-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('invite-link').value)">Copiar enlace</button>
+      </div>
+    </section>
+  {% endif %}
+  <div class="family-grid">
+    <section class="card">
+      <div class="section-header"><h2 class="section-title">Miembros</h2>
+        {% if current_user.role == 'owner' %}
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="invite"><button class="btn btn-primary">Invitar a alguien</button></form>
+        {% endif %}
+      </div>
+      <table class="rtable"><thead><tr><th>Persona</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody>
+      {% for member in family.members %}
+        <tr class="{{ '' if member.active else 'member-inactive' }}">
+          <td data-label="Persona"><div><strong>{{ member.name }}</strong><div class="muted">{{ member.email or 'Sin email web' }}</div></div></td>
+          <td data-label="Rol"><span class="badge">{{ 'Owner' if member.role == 'owner' else 'Miembro' }}</span></td>
+          <td data-label="Estado">{{ 'Activo' if member.active else 'Histórico' }}</td>
+          <td class="cell-actions">
+          {% if current_user.role == 'owner' and member.active and member.user_id != current_user.id %}
+            <div class="inline-form">
+              {% if member.role == 'member' %}
+              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="transfer"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn" onclick="return confirm('¿Transferir la propiedad a {{ member.name }}?')">Hacer owner</button></form>
+              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn btn-danger" onclick="return confirm('¿Remover a {{ member.name }}? Sus gastos se conservarán.')">Remover</button></form>
+              {% endif %}
+            </div>
+          {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody></table>
+    </section>
+    <div class="stack">
+      <section class="card">
+        <h2 class="section-title">Nombre de la familia</h2>
+        {% if current_user.role == 'owner' %}
+        <form method="post" class="inline-form mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="rename"><input name="name" value="{{ family.name }}" required><button class="btn">Guardar</button></form>
+        {% else %}<p class="mt-8">{{ family.name }}</p>{% endif %}
+      </section>
+      {% if current_user.role == 'owner' %}
+      <section class="card">
+        <h2 class="section-title">Invitaciones</h2>
+        <div class="stack mt-8">
+        {% for invite in invitations %}
+          <div class="inline-form"><span class="badge">{{ invite.status }}</span><span class="muted">{{ invite.created_at.strftime('%d/%m/%Y') }}</span>
+          {% if invite.status == 'activa' %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="revoke_invite"><input type="hidden" name="invitation_id" value="{{ invite.id }}"><button class="btn btn-danger">Revocar</button></form>{% endif %}</div>
+        {% else %}<p class="muted">Todavía no generaste invitaciones.</p>{% endfor %}
+        </div>
+      </section>
+      {% endif %}
+      <section class="card danger-zone">
+        <h2 class="section-title">Zona sensible</h2>
+        {% if current_user.role == 'member' %}
+        <p class="muted mt-8">Tus gastos quedan en la familia aunque salgas.</p>
+        <form method="post" class="mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="leave"><button class="btn btn-danger" onclick="return confirm('¿Salir de esta familia?')">Salir de la familia</button></form>
+        {% else %}
+        <p class="muted mt-8">Para salir, primero transferí la propiedad. Para borrar todo, escribí exactamente <strong>{{ family.name }}</strong>.</p>
+        <form method="post" class="stack mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete"><input name="confirmation" autocomplete="off" placeholder="{{ family.name }}" required><button class="btn btn-danger">Eliminar familia definitivamente</button></form>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</main>
+{% endblock %}

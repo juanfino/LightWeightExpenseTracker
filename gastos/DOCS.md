@@ -15,9 +15,10 @@ La app se configura mediante variables de entorno:
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
 | `TELEGRAM_TOKEN` | Sí | Token del bot obtenido con @BotFather en Telegram |
-| `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi"}]` |
+| `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi","email":"opcional@ejemplo.com"}]`; el email opcional vincula una cuenta Telegram histórica con el acceso web |
 | `AUTH_SECRET_KEY` | Sí | Secreto aleatorio para el estado temporal de autenticación |
 | `AUTH_BOOTSTRAP_EMAIL` | Sí | Email inicial del dueño de la familia existente |
+| `SUPERADMIN_EMAIL` | Sí | Email del superadministrador de la instalación |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sí | Credenciales OAuth de Google |
 | `RESEND_API_KEY` | Sí | Envío de códigos de acceso por email |
 | `TURNSTILE_SECRET` | Sí | Secreto privado para verificar Turnstile del lado del servidor |
@@ -79,3 +80,5 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
 
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
+
+Desde el nombre de la familia en la barra superior se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.

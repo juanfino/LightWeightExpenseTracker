@@ -278,7 +278,7 @@ def _migrate_currencies():
             conn.execute("ALTER TABLE expense_classifications ADD COLUMN currency TEXT NOT NULL DEFAULT 'ARS'")
 
 
-def init_db(users: dict | None = None):
+def init_db(users: dict | None = None, *, user_emails: dict | None = None):
     """Apply versioned migrations, seed defaults and synchronize configured users."""
     project_dir = os.path.dirname(os.path.dirname(__file__))
     alembic_cfg = Config(os.path.join(project_dir, "alembic.ini"))
@@ -287,13 +287,23 @@ def init_db(users: dict | None = None):
     pgcompat.set_family_id(1)
     import seed
     with get_conn() as conn:
-        if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
+        family_one_exists = conn.execute(
+            "SELECT EXISTS(SELECT 1 FROM families WHERE id = 1)"
+        ).fetchone()[0]
+        if family_one_exists and conn.execute(
+            "SELECT COUNT(*) FROM categories WHERE family_id = 1"
+        ).fetchone()[0] == 0:
             seed.create_family_defaults(conn, 1)
     if users:
         _sync_users(users)
+    if user_emails:
+        _sync_user_emails(user_emails)
     bootstrap_email = os.environ.get("AUTH_BOOTSTRAP_EMAIL", "").strip().casefold()
     if bootstrap_email:
         _bootstrap_web_identity(bootstrap_email)
+    superadmin_email = os.environ.get("SUPERADMIN_EMAIL", "").strip().casefold()
+    if superadmin_email:
+        _bootstrap_superadmin(superadmin_email)
 
 
 def _bootstrap_web_identity(email: str) -> None:
@@ -304,6 +314,12 @@ def _bootstrap_web_identity(email: str) -> None:
     """
     with pgcompat.current_pool().connection() as raw:
         raw.execute("SET LOCAL ROLE gastos_superadmin")
+        existing = raw.execute(
+            "SELECT id FROM users WHERE email = %s", (email,)
+        ).fetchone()
+        if existing:
+            raw.commit()
+            return
         owner = raw.execute(
             """
             SELECT u.id, u.email
@@ -325,6 +341,46 @@ def _bootstrap_web_identity(email: str) -> None:
         raw.commit()
 
 
+def _bootstrap_superadmin(email: str) -> None:
+    """Grant superadmin to the configured identity, never through HTTP."""
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        row = raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
+        if not row:
+            raise RuntimeError("SUPERADMIN_EMAIL no corresponde a un usuario existente")
+        raw.execute("UPDATE users SET is_superadmin = (id = %s)", (row[0],))
+        raw.commit()
+
+
+def _sync_user_emails(user_emails: dict) -> None:
+    """Attach web identity to legacy Telegram users without overwriting it."""
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        for telegram_id, email in user_emails.items():
+            normalized = str(email).strip().casefold()
+            conflict = raw.execute(
+                "SELECT id FROM users WHERE email = %s AND telegram_id <> %s",
+                (normalized, str(telegram_id)),
+            ).fetchone()
+            if conflict:
+                raise RuntimeError(f"El email {normalized} ya pertenece a otro usuario")
+            row = raw.execute(
+                "SELECT id, email FROM users WHERE telegram_id = %s",
+                (str(telegram_id),),
+            ).fetchone()
+            if not row:
+                raise RuntimeError(f"No existe el usuario Telegram {telegram_id}")
+            if row[1] and row[1].casefold() != normalized:
+                raise RuntimeError(
+                    f"El usuario Telegram {telegram_id} ya tiene otro email configurado"
+                )
+            raw.execute(
+                "UPDATE users SET email = %s WHERE id = %s AND email IS NULL",
+                (normalized, row[0]),
+            )
+        raw.commit()
+
+
 def _sync_users(users: dict):
     """Inserta o actualiza los usuarios definidos en la config de HA."""
     with pgcompat.current_pool().connection() as raw:
@@ -339,14 +395,17 @@ def _sync_users(users: dict):
             raw.execute(
                 """
                 INSERT INTO memberships (user_id, family_id, role)
-                VALUES (
+                SELECT
                     %s, 1,
                     CASE WHEN EXISTS (SELECT 1 FROM memberships WHERE family_id = 1)
                          THEN 'member' ELSE 'owner' END
+                WHERE EXISTS (SELECT 1 FROM families WHERE id = 1)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM memberships WHERE user_id = %s
                 )
-                ON CONFLICT (user_id) DO NOTHING
+                ON CONFLICT DO NOTHING
                 """,
-                (user_id,),
+                (user_id, user_id),
             )
             raw.execute(
                 """
@@ -456,7 +515,7 @@ def get_user_by_telegram_id(tg_id: str):
             SELECT u.*, m.family_id, m.role
             FROM users u
             JOIN memberships m ON m.user_id = u.id
-            WHERE u.telegram_id = ?
+            WHERE u.telegram_id = ? AND m.active
             """,
             (str(tg_id),),
         ).fetchone()

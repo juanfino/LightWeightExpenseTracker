@@ -36,9 +36,10 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
-| `USERS_JSON` | Yes | JSON array of authorized users, e.g. `[{"telegram_id":"123","name":"Juampi"}]` |
+| `USERS_JSON` | Yes | Authorized users; optional `email` links a legacy Telegram identity to web login without duplication |
 | `AUTH_SECRET_KEY` | Yes | Random secret used to sign short-lived OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |
+| `SUPERADMIN_EMAIL` | Yes | Sole superadmin email; applied at startup and never writable through HTTP |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth web client credentials |
 | `RESEND_API_KEY` | Yes | Sends six-digit login/registration codes |
 | `RESEND_FROM_EMAIL` | No | Verified sender; defaults to `acceso@juampifinochietto.com` |

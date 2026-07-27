@@ -28,6 +28,7 @@ class AuthSecurityTests(unittest.TestCase):
             "/", "/login", "/registro", "/privacy", "/terms",
             "/privacidad", "/terminos",
             "/auth/google", "/auth/google/callback", "/auth/otp/verify",
+            "/unirme/<token>",
         }
         for rule in dashboard.app.url_map.iter_rules():
             if rule.rule.startswith("/static/") or rule.rule in public:
