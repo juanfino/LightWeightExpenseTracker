@@ -16,7 +16,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - `cloudflared` — Cloudflare Tunnel, exposes `localhost:8090` as `expenses.juampifinochietto.com` (dashboard's code default is port 5000; the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up 5000 for Frigate)
 - `homeassistant` — unrelated, colocated
 
-**Access:** application-owned Google OAuth/email OTP login. Phase 3 was deployed and verified behind Cloudflare Access, then the `expenses` Access application was deleted on 2026-07-27; the Cloudflare Tunnel and Turnstile remain active. Google OAuth is External/In production, requests only basic identity scopes (`openid`, `email`, `profile`) and always sends `prompt=select_account`. `cloudflared` exposes the Pi's host port 8090.
+**Access:** application-owned Google OAuth/email OTP login. Phase 3 was deployed and verified behind Cloudflare Access, then the `expenses` Access application was deleted on 2026-07-27; the Cloudflare Tunnel and Turnstile remain active. Phase 4 was deployed and verified on 2026-07-27: `/familia` is live, Cele's legacy Telegram identity is linked to one web user/member without duplication, and exactly one user is bootstrapped as superadmin. Google OAuth is External/In production, requests only basic identity scopes (`openid`, `email`, `profile`) and always sends `prompt=select_account`. `cloudflared` exposes the Pi's host port 8090.
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 

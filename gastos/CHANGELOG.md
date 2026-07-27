@@ -6,6 +6,7 @@
 - El owner puede remover miembros con baja lógica, transferir la propiedad o eliminar la familia escribiendo su nombre exacto; los gastos de un miembro removido conservan su autor y siguen visibles.
 - `users.is_superadmin` se configura exclusivamente mediante `SUPERADMIN_EMAIL` al arrancar y ningún endpoint HTTP puede modificarlo.
 - `USERS_JSON` acepta un `email` opcional para vincular identidades Telegram históricas con el acceso web sin duplicar usuarios; el sync solo completa emails vacíos y nunca reactiva membresías dadas de baja.
+- Despliegue verificado en producción: migración `0004`, `/familia`, un único superadmin y la identidad histórica de Cele vinculada a una única membresía activa.
 
 ## 5.0.1
 - El acceso con Google muestra siempre el selector de cuenta, para evitar reutilizar silenciosamente una sesión de Google cuando hay varias cuentas abiertas en el dispositivo.
