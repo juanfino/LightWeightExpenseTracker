@@ -76,6 +76,6 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; una vez autenticado, el Dashboard vive en `/dashboard`. Las demás pantallas siguen en Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
 
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.

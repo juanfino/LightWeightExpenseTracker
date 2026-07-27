@@ -2,8 +2,13 @@
 
 ## Cutover de autenticación propia (Fase 3)
 
-Cloudflare Access debe permanecer activo durante todo el despliegue inicial.
-Antes de levantar la imagen 5.0.0, completar en `~/.env`:
+**Completado el 27 de julio de 2026 con la versión 5.0.1.** La autenticación
+propia quedó expuesta en producción y la aplicación de Cloudflare Access
+`expenses` fue eliminada después de verificar el cutover. El Cloudflare
+Tunnel y Turnstile siguen activos: no deben eliminarse al operar Access.
+
+Para una instalación nueva, Cloudflare Access debe permanecer activo durante
+todo el despliegue inicial. Antes de levantar la imagen, completar en `~/.env`:
 
 ```text
 AUTH_SECRET_KEY
@@ -34,6 +39,28 @@ Orden obligatorio:
 7. Recién entonces desactivar Cloudflare Access.
 8. Repetir desde una sesión anónima: `/` debe ser público, una API privada debe
    responder `401` y una página privada debe redirigir a `/login`.
+
+### Resultado y particularidades del cutover de producción
+
+- Resend verificó `juampifinochietto.com` por DNS y el remitente configurado
+  quedó operativo.
+- Google Auth Platform quedó como `External` e `In production`, con las URLs
+  públicas `/`, `/privacy` y `/terms`, el callback documentado arriba y sólo
+  los scopes básicos `openid`, `email` y `profile`.
+- Google reutilizaba silenciosamente la cuenta ya abierta en el navegador.
+  La versión 5.0.1 agregó `prompt=select_account`, por lo que ahora siempre
+  muestra el selector de cuenta.
+- En incógnito apareció correctamente Cloudflare Access durante la primera
+  prueba: todavía era la capa de protección temporal. Una vez verificada la
+  autenticación propia, se eliminó únicamente la aplicación Access `expenses`;
+  no se modificaron DNS, Tunnel ni Turnstile.
+- El único check de GitHub se llama `postgres`, pero agrupa toda la validación:
+  tests unitarios/integración, smoke del schema PostgreSQL y smoke de rutas
+  web. El primer run falló porque un test de registro dependía implícitamente
+  de `TESTING=1` para saltear Turnstile; se aisló Turnstile con un mock en ese
+  test, mientras su contrato `siteverify` continúa cubierto por un test
+  específico. El cierre terminó con 22 tests, schema smoke y 33 rutas web en
+  verde.
 
 ## Backup PostgreSQL → Cloudflare R2
 

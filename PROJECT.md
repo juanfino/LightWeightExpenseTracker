@@ -16,7 +16,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - `cloudflared` — Cloudflare Tunnel, exposes `localhost:8090` as `expenses.juampifinochietto.com` (dashboard's code default is port 5000; the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up 5000 for Frigate)
 - `homeassistant` — unrelated, colocated
 
-**Access:** application-owned Google OAuth/email OTP login, initially verified behind Cloudflare Access. Access is removed only after the production checks pass. `cloudflared` targets use container/service names — never `localhost`.
+**Access:** application-owned Google OAuth/email OTP login. Phase 3 was deployed and verified behind Cloudflare Access, then the `expenses` Access application was deleted on 2026-07-27; the Cloudflare Tunnel and Turnstile remain active. Google OAuth is External/In production, requests only basic identity scopes (`openid`, `email`, `profile`) and always sends `prompt=select_account`. `cloudflared` exposes the Pi's host port 8090.
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
@@ -71,7 +71,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `landing.html` | Public landing page; authenticated users continue to the dashboard |
-| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or email OTP; registration creates the user, family and default taxonomy |
+| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth (always shows the account selector) or email OTP; registration creates the user, family and default taxonomy |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages required for OAuth publication (`/privacidad` and `/terminos` remain aliases) |
 | `/dashboard` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
 | `/history` | `history.html` | Full expense history, filterable (concept search, month/year — each with an "all" option, category incl. uncategorized, subcategory scoped to the chosen category, fixed/variable status, user), active filters shown as removable chips, filter state reflected in the URL, inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete. **Nav label is "Movimientos"** (renamed from "Historial" in 2.5.1 to avoid confusion with "Fijos") — route and template name are unchanged, only the visible label moved |
