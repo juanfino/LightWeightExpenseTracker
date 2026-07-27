@@ -62,6 +62,49 @@ Orden obligatorio:
   específico. El cierre terminó con 22 tests, schema smoke y 33 rutas web en
   verde.
 
+## Cutover de familia y superadmin (Fase 4)
+
+**Completado el 27 de julio de 2026 con la versión 6.0.0.** Antes de recrear
+el contenedor, `~/.env` debe incluir:
+
+```text
+SUPERADMIN_EMAIL
+USERS_JSON
+```
+
+`SUPERADMIN_EMAIL` debe coincidir exactamente con el email ya asociado al
+owner; para la familia migrada, debe usar el mismo valor que
+`AUTH_BOOTSTRAP_EMAIL`. En `USERS_JSON`, el campo opcional `email` se agrega al
+objeto Telegram histórico correspondiente. El arranque sólo completa emails
+NULL y falla ante conflictos: no crea una segunda identidad ni sobrescribe un
+email existente.
+
+Despliegue:
+
+1. Actualizar `SUPERADMIN_EMAIL` y los emails opcionales de `USERS_JSON`.
+2. Descargar la imagen: `docker compose pull gastos`.
+3. Recrear para releer `~/.env`:
+   `docker compose up -d --force-recreate gastos`.
+4. Confirmar `docker compose ps gastos`: debe quedar `healthy`, sin reinicios.
+5. Confirmar Alembic `0004`, login del owner y del miembro migrado, y
+   `/familia`.
+
+Durante el primer cutover, `SUPERADMIN_EMAIL` tenía un valor distinto del
+email persistido del owner. `_bootstrap_superadmin()` falló deliberadamente,
+el contenedor entró en restart loop y Cloudflare mostró `502 Host Error`
+porque nada escuchaba en el puerto 8090. Diagnóstico:
+
+```bash
+docker compose ps gastos
+docker logs --tail 100 gastos
+curl -I http://127.0.0.1:8090/
+```
+
+El log característico es
+`SUPERADMIN_EMAIL no corresponde a un usuario existente`. Corregir la variable
+para que coincida exactamente con `AUTH_BOOTSTRAP_EMAIL` y volver a recrear el
+servicio. No hace falta modificar la base manualmente.
+
 ## Backup PostgreSQL → Cloudflare R2
 
 La aplicación ejecuta `pg_dump --format=custom` todos los días a las 21:00 ART,

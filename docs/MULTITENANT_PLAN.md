@@ -558,6 +558,18 @@ Email-delivered invitations (link-copy is enough). Multi-family membership. The 
   ownership transfer, exact-name deletion, non-owner denial and attempted
   HTTP superadmin mutation. PostgreSQL and all-route web smoke tests also
   passed.
+- Production cutover completed on 2026-07-27 after PR #69 merged. The Pi is
+  running migration `0004`; the `gastos` container is healthy with zero
+  restarts; authenticated `/familia` requests return 200. Database checks
+  confirmed exactly one superadmin, exactly one user for Cele's confirmed
+  email and exactly one active membership for that identity.
+- The first Phase 4 restart exposed a configuration mismatch:
+  `SUPERADMIN_EMAIL` did not equal the email already attached to the owner, so
+  `_bootstrap_superadmin()` correctly failed closed. The resulting container
+  restart loop left port 8090 unavailable and Cloudflare showed a 502 Host
+  Error. Recovery was to make `SUPERADMIN_EMAIL` exactly equal to the existing
+  `AUTH_BOOTSTRAP_EMAIL` and recreate the `gastos` container. This is now
+  documented in `docs/RUNBOOK.md`.
 
 **Deliberately not done:** Telegram self-service linking, quotas, email-sent
 invitations, simultaneous multi-family membership and the superadmin panel;
