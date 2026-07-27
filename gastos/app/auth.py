@@ -23,6 +23,7 @@ SESSION_COOKIE = "gastos_session"
 SESSION_DAYS = 30
 OTP_MINUTES = 10
 OTP_MAX_ATTEMPTS = 5
+INVITATION_DAYS = 7
 
 _rate_lock = threading.Lock()
 _rate_events: dict[str, deque[float]] = defaultdict(deque)
@@ -117,13 +118,14 @@ def resolve_session(token: str | None):
     with platform_transaction() as raw:
         row = raw.execute(
             """
-            SELECT u.id, u.email, u.name, u.color, s.csrf_token, s.expires_at,
+            SELECT u.id, u.email, u.name, u.color, u.is_superadmin,
+                   s.csrf_token, s.expires_at,
                    m.family_id, m.role, f.name AS family_name, f.timezone
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             JOIN memberships m ON m.user_id = u.id
             JOIN families f ON f.id = m.family_id
-            WHERE s.token_hash = %s AND s.expires_at > now()
+            WHERE s.token_hash = %s AND s.expires_at > now() AND m.active
             """,
             (_hash(token),),
         ).fetchone()
@@ -131,8 +133,9 @@ def resolve_session(token: str | None):
             return None
         return {
             "id": row[0], "email": row[1], "name": row[2], "color": row[3],
-            "csrf_token": row[4], "expires_at": row[5], "family_id": row[6],
-            "role": row[7], "family_name": row[8], "timezone": row[9],
+            "is_superadmin": row[4], "csrf_token": row[5], "expires_at": row[6],
+            "family_id": row[7], "role": row[8], "family_name": row[9],
+            "timezone": row[10],
         }
 
 
@@ -149,7 +152,22 @@ def find_user_by_email(email: str):
         return {"id": row[0], "email": row[1], "name": row[2]} if row else None
 
 
-def issue_otp(email: str, *, flow: str, name: str | None = None, family_name: str | None = None) -> str:
+def user_has_active_membership(user_id: int) -> bool:
+    with platform_transaction() as raw:
+        return bool(raw.execute(
+            "SELECT 1 FROM memberships WHERE user_id = %s AND active",
+            (user_id,),
+        ).fetchone())
+
+
+def issue_otp(
+    email: str,
+    *,
+    flow: str,
+    name: str | None = None,
+    family_name: str | None = None,
+    invitation_id: int | None = None,
+) -> str:
     email = normalize_email(email)
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_MINUTES)
@@ -160,10 +178,11 @@ def issue_otp(email: str, *, flow: str, name: str | None = None, family_name: st
         )
         raw.execute(
             """
-            INSERT INTO otp_codes (email, code_hash, expires_at, flow, name, family_name)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO otp_codes
+                (email, code_hash, expires_at, flow, name, family_name, invitation_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (email, _hash(code), expires_at, flow, name, family_name),
+            (email, _hash(code), expires_at, flow, name, family_name, invitation_id),
         )
     return code
 
@@ -173,7 +192,7 @@ def consume_otp(email: str, code: str):
     with platform_transaction() as raw:
         row = raw.execute(
             """
-            SELECT id, code_hash, attempts, flow, name, family_name
+            SELECT id, code_hash, attempts, flow, name, family_name, invitation_id
             FROM otp_codes
             WHERE email = %s AND consumed_at IS NULL AND expires_at > now()
             ORDER BY created_at DESC LIMIT 1
@@ -183,14 +202,17 @@ def consume_otp(email: str, code: str):
         ).fetchone()
         if not row:
             return None
-        otp_id, code_hash, attempts, flow, name, family_name = row
+        otp_id, code_hash, attempts, flow, name, family_name, invitation_id = row
         if attempts >= OTP_MAX_ATTEMPTS:
             return None
         if not hmac.compare_digest(code_hash, _hash(code.strip())):
             raw.execute("UPDATE otp_codes SET attempts = attempts + 1 WHERE id = %s", (otp_id,))
             return None
         raw.execute("UPDATE otp_codes SET consumed_at = now() WHERE id = %s", (otp_id,))
-        return {"email": email, "flow": flow, "name": name, "family_name": family_name}
+        return {
+            "email": email, "flow": flow, "name": name,
+            "family_name": family_name, "invitation_id": invitation_id,
+        }
 
 
 def send_otp(email: str, code: str) -> None:
@@ -251,10 +273,42 @@ def create_account(email: str, name: str, family_name: str) -> int:
     return user_id
 
 
+def create_family_for_existing_user(user_id: int, family_name: str) -> int:
+    family_name = family_name.strip()
+    if not family_name:
+        raise ValueError("Nombre de familia obligatorio")
+    with platform_transaction() as raw:
+        if raw.execute(
+            "SELECT 1 FROM memberships WHERE user_id = %s AND active", (user_id,)
+        ).fetchone():
+            raise ValueError("El usuario ya pertenece a una familia")
+        family_id = raw.execute(
+            "INSERT INTO families (name, created_by_user_id) VALUES (%s, %s) RETURNING id",
+            (family_name, user_id),
+        ).fetchone()[0]
+        raw.execute(
+            """
+            INSERT INTO memberships (user_id, family_id, role, active)
+            VALUES (%s, %s, 'owner', true)
+            """,
+            (user_id, family_id),
+        )
+        raw.execute("SET LOCAL ROLE gastos_app")
+        raw.execute("SELECT set_config('app.family_id', %s, true)", (str(family_id),))
+        import seed
+        previous_family_id = pgcompat.current_family_id()
+        pgcompat.set_family_id(family_id)
+        try:
+            seed.create_family_defaults(pgcompat.Connection(raw), family_id)
+        finally:
+            pgcompat.set_family_id(previous_family_id)
+    return family_id
+
+
 def link_google_identity(provider_user_id: str, email: str, name: str, family_name: str | None) -> int:
     email = normalize_email(email)
     with platform_transaction() as raw:
-        row = raw.execute(
+        identity = raw.execute(
             """
             SELECT u.id FROM oauth_identities oi
             JOIN users u ON u.id = oi.user_id
@@ -262,10 +316,16 @@ def link_google_identity(provider_user_id: str, email: str, name: str, family_na
             """,
             (provider_user_id,),
         ).fetchone()
-        if row:
-            return row[0]
-        row = raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
-    user_id = row[0] if row else create_account(email, name, family_name or f"Familia de {name}")
+        by_email = (
+            None if identity
+            else raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
+        )
+    if identity or by_email:
+        user_id = (identity or by_email)[0]
+        if family_name and not user_has_active_membership(user_id):
+            create_family_for_existing_user(user_id, family_name)
+    else:
+        user_id = create_account(email, name, family_name or f"Familia de {name}")
     with platform_transaction() as raw:
         raw.execute(
             """
@@ -276,3 +336,309 @@ def link_google_identity(provider_user_id: str, email: str, name: str, family_na
             (user_id, provider_user_id),
         )
     return user_id
+
+
+class InvitationError(ValueError):
+    pass
+
+
+class MembershipConflict(InvitationError):
+    def __init__(self, family_name: str):
+        super().__init__(f"Ya pertenecés a {family_name}. Tenés que salir de ahí primero.")
+        self.family_name = family_name
+
+
+def get_invitation(token: str | None = None, *, invitation_id: int | None = None):
+    if not token and invitation_id is None:
+        return None
+    with platform_transaction() as raw:
+        if token:
+            where, value = "i.token_hash = %s", _hash(token)
+        else:
+            where, value = "i.id = %s", invitation_id
+        row = raw.execute(
+            f"""
+            SELECT i.id, i.family_id, f.name, i.expires_at,
+                   i.consumed_at, i.revoked_at
+            FROM invitations i
+            JOIN families f ON f.id = i.family_id
+            WHERE {where}
+            """,
+            (value,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "family_id": row[1], "family_name": row[2],
+            "expires_at": row[3], "consumed_at": row[4], "revoked_at": row[5],
+            "valid": not row[4] and not row[5] and row[3] > datetime.now(timezone.utc),
+        }
+
+
+def create_invitation(family_id: int, created_by_user_id: int) -> tuple[str, dict]:
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=INVITATION_DAYS)
+    with platform_transaction() as raw:
+        row = raw.execute(
+            """
+            INSERT INTO invitations
+                (family_id, token_hash, role, created_by_user_id, expires_at)
+            VALUES (%s, %s, 'member', %s, %s)
+            RETURNING id, created_at
+            """,
+            (family_id, _hash(token), created_by_user_id, expires_at),
+        ).fetchone()
+    return token, {"id": row[0], "created_at": row[1], "expires_at": expires_at}
+
+
+def list_family_invitations(family_id: int):
+    with platform_transaction() as raw:
+        rows = raw.execute(
+            """
+            SELECT id, expires_at, consumed_at, revoked_at, created_at
+            FROM invitations
+            WHERE family_id = %s
+            ORDER BY created_at DESC
+            """,
+            (family_id,),
+        ).fetchall()
+    now = datetime.now(timezone.utc)
+    return [
+        {
+            "id": r[0], "expires_at": r[1], "consumed_at": r[2],
+            "revoked_at": r[3], "created_at": r[4],
+            "status": (
+                "usada" if r[2] else "revocada" if r[3]
+                else "vencida" if r[1] <= now else "activa"
+            ),
+        }
+        for r in rows
+    ]
+
+
+def revoke_invitation(invitation_id: int, family_id: int) -> bool:
+    with platform_transaction() as raw:
+        result = raw.execute(
+            """
+            UPDATE invitations SET revoked_at = now()
+            WHERE id = %s AND family_id = %s
+              AND consumed_at IS NULL AND revoked_at IS NULL
+            """,
+            (invitation_id, family_id),
+        )
+        return result.rowcount == 1
+
+
+def create_user_without_family(email: str, name: str) -> int:
+    with platform_transaction() as raw:
+        return raw.execute(
+            "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
+            (normalize_email(email), name.strip()),
+        ).fetchone()[0]
+
+
+def link_google_identity_for_invite(
+    provider_user_id: str, email: str, name: str
+) -> int:
+    email = normalize_email(email)
+    with platform_transaction() as raw:
+        row = raw.execute(
+            """
+            SELECT user_id FROM oauth_identities
+            WHERE provider = 'google' AND provider_user_id = %s
+            """,
+            (provider_user_id,),
+        ).fetchone()
+        if row:
+            return row[0]
+        row = raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
+        user_id = row[0] if row else raw.execute(
+            "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
+            (email, name.strip()),
+        ).fetchone()[0]
+        raw.execute(
+            """
+            INSERT INTO oauth_identities (user_id, provider, provider_user_id)
+            VALUES (%s, 'google', %s)
+            ON CONFLICT (provider, provider_user_id) DO NOTHING
+            """,
+            (user_id, provider_user_id),
+        )
+        return user_id
+
+
+def accept_invitation(invitation_id: int, user_id: int) -> int:
+    with platform_transaction() as raw:
+        invitation = raw.execute(
+            """
+            SELECT family_id, expires_at, consumed_at, revoked_at
+            FROM invitations WHERE id = %s FOR UPDATE
+            """,
+            (invitation_id,),
+        ).fetchone()
+        if (
+            not invitation or invitation[2] or invitation[3]
+            or invitation[1] <= datetime.now(timezone.utc)
+        ):
+            raise InvitationError("La invitación no es válida o ya venció.")
+        active = raw.execute(
+            """
+            SELECT f.name FROM memberships m
+            JOIN families f ON f.id = m.family_id
+            WHERE m.user_id = %s AND m.active
+            """,
+            (user_id,),
+        ).fetchone()
+        if active:
+            raise MembershipConflict(active[0])
+        family_id = invitation[0]
+        historical = raw.execute(
+            "SELECT id FROM memberships WHERE user_id = %s AND family_id = %s",
+            (user_id, family_id),
+        ).fetchone()
+        if historical:
+            raw.execute(
+                """
+                UPDATE memberships
+                SET active = true, role = 'member', deactivated_at = NULL
+                WHERE id = %s
+                """,
+                (historical[0],),
+            )
+        else:
+            raw.execute(
+                """
+                INSERT INTO memberships (user_id, family_id, role, active)
+                VALUES (%s, %s, 'member', true)
+                """,
+                (user_id, family_id),
+            )
+        updated = raw.execute(
+            """
+            UPDATE invitations
+            SET consumed_at = now(), consumed_by_user_id = %s
+            WHERE id = %s AND consumed_at IS NULL AND revoked_at IS NULL
+            """,
+            (user_id, invitation_id),
+        )
+        if updated.rowcount != 1:
+            raise InvitationError("La invitación ya fue utilizada.")
+        return family_id
+
+
+def get_family_management(family_id: int):
+    with platform_transaction() as raw:
+        family = raw.execute(
+            "SELECT id, name FROM families WHERE id = %s", (family_id,)
+        ).fetchone()
+        members = raw.execute(
+            """
+            SELECT m.id, u.id, u.name, u.email, m.role, m.active, m.created_at
+            FROM memberships m
+            JOIN users u ON u.id = m.user_id
+            WHERE m.family_id = %s
+            ORDER BY m.active DESC, CASE m.role WHEN 'owner' THEN 0 ELSE 1 END,
+                     u.name
+            """,
+            (family_id,),
+        ).fetchall()
+    return {
+        "id": family[0], "name": family[1],
+        "members": [
+            {
+                "membership_id": r[0], "user_id": r[1], "name": r[2],
+                "email": r[3], "role": r[4], "active": r[5],
+                "created_at": r[6],
+            }
+            for r in members
+        ],
+    }
+
+
+def rename_family(family_id: int, name: str) -> None:
+    name = name.strip()
+    if not name:
+        raise ValueError("El nombre de la familia es obligatorio.")
+    with platform_transaction() as raw:
+        raw.execute("UPDATE families SET name = %s WHERE id = %s", (name, family_id))
+
+
+def remove_family_member(family_id: int, user_id: int) -> None:
+    with platform_transaction() as raw:
+        row = raw.execute(
+            """
+            SELECT role FROM memberships
+            WHERE family_id = %s AND user_id = %s AND active
+            FOR UPDATE
+            """,
+            (family_id, user_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("El miembro ya no está activo.")
+        if row[0] == "owner":
+            raise ValueError("Transferí la propiedad antes de remover al owner.")
+        raw.execute(
+            """
+            UPDATE memberships SET active = false, deactivated_at = now()
+            WHERE family_id = %s AND user_id = %s AND active
+            """,
+            (family_id, user_id),
+        )
+        raw.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))
+
+
+def transfer_family_ownership(
+    family_id: int, current_owner_id: int, new_owner_id: int
+) -> None:
+    if current_owner_id == new_owner_id:
+        raise ValueError("Elegí otro miembro.")
+    with platform_transaction() as raw:
+        rows = raw.execute(
+            """
+            SELECT user_id, role FROM memberships
+            WHERE family_id = %s AND user_id IN (%s, %s) AND active
+            FOR UPDATE
+            """,
+            (family_id, current_owner_id, new_owner_id),
+        ).fetchall()
+        roles = {r[0]: r[1] for r in rows}
+        if roles.get(current_owner_id) != "owner" or roles.get(new_owner_id) != "member":
+            raise ValueError("La transferencia ya no es válida.")
+        raw.execute(
+            "UPDATE memberships SET role = 'member' WHERE family_id = %s AND user_id = %s",
+            (family_id, current_owner_id),
+        )
+        raw.execute(
+            "UPDATE memberships SET role = 'owner' WHERE family_id = %s AND user_id = %s",
+            (family_id, new_owner_id),
+        )
+
+
+def leave_family(family_id: int, user_id: int) -> None:
+    remove_family_member(family_id, user_id)
+
+
+def delete_family(family_id: int, owner_id: int, confirmation: str) -> None:
+    with platform_transaction() as raw:
+        row = raw.execute(
+            """
+            SELECT f.name
+            FROM families f
+            JOIN memberships m ON m.family_id = f.id
+            WHERE f.id = %s AND m.user_id = %s AND m.role = 'owner' AND m.active
+            FOR UPDATE
+            """,
+            (family_id, owner_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("Solo el owner puede eliminar la familia.")
+        if not hmac.compare_digest(row[0], confirmation.strip()):
+            raise ValueError("El nombre ingresado no coincide exactamente.")
+        user_ids = [
+            r[0] for r in raw.execute(
+                "SELECT user_id FROM memberships WHERE family_id = %s", (family_id,)
+            ).fetchall()
+        ]
+        raw.execute("DELETE FROM families WHERE id = %s", (family_id,))
+        if user_ids:
+            raw.execute("DELETE FROM sessions WHERE user_id = ANY(%s)", (user_ids,))

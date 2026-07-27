@@ -51,7 +51,7 @@ def _resolve_web_identity():
 
     public = {
         "landing", "login", "register", "verify_otp", "google_start",
-        "google_callback", "privacy", "terms", "static",
+        "google_callback", "family_join", "privacy", "terms", "static",
     }
     if request.endpoint not in public and not g.current_user:
         if request.path.startswith("/api/") or request.path.startswith("/admin/"):
@@ -203,6 +203,7 @@ def login():
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
+        login_user = None
         email = auth.normalize_email(request.form.get("email", ""))
         ip = _client_ip()
         if not auth.consume_rate_limit(f"otp-ip:{ip}", limit=10, window_seconds=3600):
@@ -211,8 +212,14 @@ def login():
             error = "Demasiados códigos pedidos para ese email. Probá más tarde."
         elif not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
             error = "No pudimos verificar que seas una persona. Intentá de nuevo."
-        elif not auth.find_user_by_email(email):
+        else:
+            login_user = auth.find_user_by_email(email)
+        if error:
+            pass
+        elif not login_user:
             error = "No existe una cuenta con ese email. Podés crear una ahora."
+        elif not auth.user_has_active_membership(login_user["id"]):
+            error = "Ya no pertenecés a una familia. Podés crear una nueva desde Registro."
         else:
             try:
                 code = auth.issue_otp(email, flow="login")
@@ -230,14 +237,19 @@ def register():
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
+        existing_user = None
         email = auth.normalize_email(request.form.get("email", ""))
         name = request.form.get("name", "").strip()
         family_name = request.form.get("family_name", "").strip()
         ip = _client_ip()
         if not email or not name or not family_name:
             error = "Completá todos los campos."
-        elif auth.find_user_by_email(email):
-            error = "Ya existe una cuenta con ese email. Iniciá sesión."
+        else:
+            existing_user = auth.find_user_by_email(email)
+        if error:
+            pass
+        elif existing_user and auth.user_has_active_membership(existing_user["id"]):
+            error = "Ya existe una cuenta activa con ese email. Iniciá sesión."
         elif not auth.consume_rate_limit(f"register-ip:{ip}", limit=5, window_seconds=3600):
             error = "Demasiados intentos. Probá de nuevo más tarde."
         elif not auth.consume_rate_limit(f"register-email:{email}", limit=3, window_seconds=3600):
@@ -266,15 +278,34 @@ def verify_otp():
         ), 400
     try:
         if result["flow"] == "register":
-            user_id = auth.create_account(
-                result["email"], result["name"] or "", result["family_name"] or ""
+            existing_user = auth.find_user_by_email(result["email"])
+            if existing_user:
+                user_id = existing_user["id"]
+                auth.create_family_for_existing_user(
+                    user_id, result["family_name"] or ""
+                )
+            else:
+                user_id = auth.create_account(
+                    result["email"], result["name"] or "", result["family_name"] or ""
+                )
+        elif result["flow"] == "invite":
+            user = auth.find_user_by_email(result["email"])
+            user_id = (
+                user["id"] if user
+                else auth.create_user_without_family(result["email"], result["name"] or "")
             )
+            auth.accept_invitation(result["invitation_id"], user_id)
         else:
             user = auth.find_user_by_email(result["email"])
             if not user:
                 raise ValueError("La cuenta ya no existe")
             user_id = user["id"]
         token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
+    except auth.MembershipConflict as exc:
+        invitation = auth.get_invitation(invitation_id=result.get("invitation_id"))
+        return render_template(
+            "join_family.html", invitation=invitation, error=str(exc)
+        ), 409
     except Exception:
         app.logger.exception("No se pudo completar autenticación OTP")
         return render_template(
@@ -299,6 +330,14 @@ def google_start():
         if not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
             return render_template("register.html", error="No pudimos verificar que seas una persona."), 400
         session["google_family_name"] = family_name
+    elif flow == "invite":
+        invitation = auth.get_invitation(request.form.get("invitation_token", ""))
+        if request.method != "POST" or not invitation or not invitation["valid"]:
+            return render_template(
+                "join_family.html", invitation=invitation,
+                error="La invitación no es válida o ya venció.",
+            ), 400
+        session["google_invitation_id"] = invitation["id"]
     session["google_flow"] = flow
     session["google_next"] = _safe_next(request.values.get("next"))
     return oauth.google.authorize_redirect(
@@ -321,17 +360,32 @@ def google_callback():
     email = auth.normalize_email(profile.get("email", ""))
     if not email or str(profile.get("email_verified")).lower() not in {"true", "1"}:
         return render_template("login.html", error="Google no confirmó el email de la cuenta."), 400
+    flow = session.get("google_flow")
     existing = auth.find_user_by_email(email)
-    if not existing and session.get("google_flow") != "register":
+    if not existing and flow not in {"register", "invite"}:
         return render_template("login.html", error="No existe una cuenta con ese email. Registrate primero."), 400
-    user_id = auth.link_google_identity(
-        str(profile["sub"]), email, profile.get("name") or email.split("@")[0],
-        session.get("google_family_name") or None,
-    )
+    if flow == "invite":
+        user_id = auth.link_google_identity_for_invite(
+            str(profile["sub"]), email, profile.get("name") or email.split("@")[0]
+        )
+        invitation_id = session.get("google_invitation_id")
+        try:
+            auth.accept_invitation(invitation_id, user_id)
+        except (auth.InvitationError, auth.MembershipConflict) as exc:
+            invitation = auth.get_invitation(invitation_id=invitation_id)
+            return render_template(
+                "join_family.html", invitation=invitation, error=str(exc)
+            ), 409
+    else:
+        user_id = auth.link_google_identity(
+            str(profile["sub"]), email, profile.get("name") or email.split("@")[0],
+            session.get("google_family_name") or None,
+        )
     token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
     destination = session.pop("google_next", url_for("index"))
     session.pop("google_flow", None)
     session.pop("google_family_name", None)
+    session.pop("google_invitation_id", None)
     return _set_auth_cookie(redirect(destination), token)
 
 
@@ -353,6 +407,128 @@ def privacy():
 @app.route("/terms")
 def terms():
     return render_template("terms.html")
+
+
+@app.route("/unirme/<token>", methods=["GET", "POST"])
+def family_join(token):
+    invitation = auth.get_invitation(token)
+    if not invitation or not invitation["valid"]:
+        return render_template(
+            "join_family.html", invitation=invitation,
+            error="La invitación no es válida, fue revocada o ya venció.",
+        ), 410
+    if g.current_user:
+        return render_template(
+            "join_family.html", invitation=invitation,
+            error=(
+                f"Ya pertenecés a {g.current_user['family_name']}. "
+                "Tenés que salir de ahí primero."
+            ),
+        ), 409
+    error = None
+    if request.method == "POST":
+        email = auth.normalize_email(request.form.get("email", ""))
+        name = request.form.get("name", "").strip()
+        ip = _client_ip()
+        if not email or (not name and not auth.find_user_by_email(email)):
+            error = "Ingresá tu nombre y email."
+        elif not auth.consume_rate_limit(f"invite-ip:{ip}", limit=10, window_seconds=3600):
+            error = "Demasiados intentos. Probá de nuevo más tarde."
+        elif not auth.consume_rate_limit(f"invite-email:{email}", limit=5, window_seconds=3600):
+            error = "Demasiados códigos pedidos para ese email. Probá más tarde."
+        else:
+            try:
+                code = auth.issue_otp(
+                    email,
+                    flow="invite",
+                    name=name or (auth.find_user_by_email(email) or {}).get("name"),
+                    invitation_id=invitation["id"],
+                )
+                auth.send_otp(email, code)
+                return render_template(
+                    "verify_otp.html", email=email, next=url_for("index")
+                )
+            except Exception:
+                app.logger.exception("No se pudo enviar OTP de invitación")
+                error = "No pudimos enviar el código. Intentá de nuevo."
+    return render_template(
+        "join_family.html", invitation=invitation, invitation_token=token, error=error
+    )
+
+
+def _owner_required():
+    if not g.current_user or g.current_user["role"] != "owner":
+        abort(403)
+
+
+@app.route("/familia", methods=["GET", "POST"])
+def family():
+    error = None
+    success = request.args.get("success")
+    invitation_url = None
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        try:
+            if action in {
+                "invite", "revoke_invite", "rename", "remove",
+                "transfer", "delete",
+            }:
+                _owner_required()
+            if action == "invite":
+                raw_token, _created = auth.create_invitation(
+                    g.current_user["family_id"], g.current_user["id"]
+                )
+                invitation_url = url_for("family_join", token=raw_token, _external=True)
+                success = "Invitación creada. Copiá el enlace ahora."
+            elif action == "revoke_invite":
+                auth.revoke_invitation(
+                    int(request.form["invitation_id"]), g.current_user["family_id"]
+                )
+                success = "Invitación revocada."
+            elif action == "rename":
+                auth.rename_family(
+                    g.current_user["family_id"], request.form.get("name", "")
+                )
+                g.current_user["family_name"] = request.form.get("name", "").strip()
+                success = "Nombre actualizado."
+            elif action == "remove":
+                target_id = int(request.form["user_id"])
+                if target_id == g.current_user["id"]:
+                    raise ValueError("Usá la opción para salir de la familia.")
+                auth.remove_family_member(g.current_user["family_id"], target_id)
+                success = "Miembro removido. Sus gastos históricos se conservaron."
+            elif action == "transfer":
+                auth.transfer_family_ownership(
+                    g.current_user["family_id"], g.current_user["id"],
+                    int(request.form["user_id"]),
+                )
+                return redirect(url_for("family", success="Propiedad transferida."))
+            elif action == "leave":
+                auth.leave_family(g.current_user["family_id"], g.current_user["id"])
+                response = redirect(url_for("register"))
+                response.delete_cookie(auth.SESSION_COOKIE, path="/")
+                return response
+            elif action == "delete":
+                auth.delete_family(
+                    g.current_user["family_id"], g.current_user["id"],
+                    request.form.get("confirmation", ""),
+                )
+                response = redirect(url_for("landing"))
+                response.delete_cookie(auth.SESSION_COOKIE, path="/")
+                return response
+            else:
+                raise ValueError("Acción desconocida.")
+        except (ValueError, KeyError) as exc:
+            error = str(exc)
+    family_data = auth.get_family_management(g.current_user["family_id"])
+    invitations = (
+        auth.list_family_invitations(g.current_user["family_id"])
+        if g.current_user["role"] == "owner" else []
+    )
+    return render_template(
+        "family.html", family=family_data, invitations=invitations,
+        invitation_url=invitation_url, error=error, success=success,
+    )
 
 
 @app.route("/history")

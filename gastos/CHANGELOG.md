@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.0.0
+- **Fase 4 multi-tenant:** nueva pantalla Familia para listar miembros, renombrar la familia y administrar invitaciones copiables de un solo uso con vencimiento a los 7 días.
+- Las invitaciones se aceptan con Google o código por email y siempre crean miembros; una cuenta que ya pertenece a otra familia recibe un error claro.
+- El owner puede remover miembros con baja lógica, transferir la propiedad o eliminar la familia escribiendo su nombre exacto; los gastos de un miembro removido conservan su autor y siguen visibles.
+- `users.is_superadmin` se configura exclusivamente mediante `SUPERADMIN_EMAIL` al arrancar y ningún endpoint HTTP puede modificarlo.
+- `USERS_JSON` acepta un `email` opcional para vincular identidades Telegram históricas con el acceso web sin duplicar usuarios; el sync solo completa emails vacíos y nunca reactiva membresías dadas de baja.
+
 ## 5.0.1
 - El acceso con Google muestra siempre el selector de cuenta, para evitar reutilizar silenciosamente una sesión de Google cuando hay varias cuentas abiertas en el dispositivo.
 

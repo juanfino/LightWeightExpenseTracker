@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 5.0.1 (canonical source: `gastos/config.yaml`)
+- **Version:** 6.0.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -20,7 +20,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes` and `oauth_identities`; tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
+**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities` and `invitations`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
 
 **Backup:** Daily at 21:00 ART via APScheduler — custom-format `pg_dump` uploaded to private Cloudflare R2 and remotely size-verified. R2 retains 90 days. Restore is SSH-only (`docs/RUNBOOK.md`) and was tested from production.
 
@@ -47,6 +47,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Flask dashboard:** mobile-friendly, per-member filter, Chart.js visualizations (monthly, annual, weekly, by category, last-6-months trend), sortable/filterable history with inline edit, full category/subcategory/keyword CRUD, fixed-expense CRUD, DB backup/restore panel. Visual identity redesigned to amber/orange (from violet) across all 6 original screens as of 1.15.0–1.17.0 — see **Screens** below
 - **Monthly AI-generated report** (2.3.0): `/resumenes` — see dedicated section below
 - **Users:** Juampi and Cele, both onboarded and actively using the app
+- **Family management:** `/familia` lets the owner generate/revoke seven-day single-use invitation links, rename the family, logically remove members, transfer ownership, or delete the family with exact-name confirmation. Invitees join as members through Google or email OTP. `SUPERADMIN_EMAIL` is startup-only; no HTTP path can change the flag.
 
 ## Monthly AI report
 
@@ -66,13 +67,14 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 
 **Telegram** is the primary input surface — no separate "screens," just chat plus inline keyboards (category picker, edit/confirm buttons, fixed-expense payment buttons, OCR/voice confirmation, NL edit candidate picker).
 
-**Web application** (Flask, public auth/legal pages plus 7 private product pages):
+**Web application** (Flask, public auth/legal pages plus 8 private product pages):
 
 | Route | Template | Purpose |
 |---|---|---|
 | `/` | `landing.html` | Public landing page; authenticated users continue to the dashboard |
 | `/login`, `/registro` | `login.html`, `register.html` | Google OAuth (always shows the account selector) or email OTP; registration creates the user, family and default taxonomy |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages required for OAuth publication (`/privacidad` and `/terminos` remain aliases) |
+| `/unirme/<token>` | `join_family.html` | Public invitation landing; Google/email acceptance into the inviter's family |
 | `/dashboard` | `index.html` | Dashboard: month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, "Top 3 del mes" list, charts (by category, by week w/ prior-month overlay, last 6 months, annual), per-member filter |
 | `/history` | `history.html` | Full expense history, filterable (concept search, month/year — each with an "all" option, category incl. uncategorized, subcategory scoped to the chosen category, fixed/variable status, user), active filters shown as removable chips, filter state reflected in the URL, inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete. **Nav label is "Movimientos"** (renamed from "Historial" in 2.5.1 to avoid confusion with "Fijos") — route and template name are unchanged, only the visible label moved |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
@@ -80,6 +82,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
 | `/resumenes` | `resumenes.html` | Monthly AI-generated report (2.3.0) — see dedicated section above. Most recent report with a month selector; `/resumenes/YYYY-MM` deep link; Generate button when a period has none; understated Regenerate always available |
 | `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only |
+| `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |
 
 All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark).
 
@@ -118,7 +121,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 - `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding and for the history screen's concept search
 - `db.py` — raw PostgreSQL operations through psycopg pools. `get_conn()` applies the RLS-bound role and transaction-local tenant before each domain transaction; platform identity resolution uses the dedicated bypass role.
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
-- `auth.py` — opaque server-side sessions, hashed OTPs, Resend, Google identity linking, Turnstile/rate limits, and account/family creation. Platform access uses transaction-local `gastos_superadmin`.
+- `auth.py` — opaque server-side sessions, hashed OTPs, Resend, Google identity linking, Turnstile/rate limits, invitation lifecycle, active/historical memberships, ownership transfer, and account/family creation. Platform access uses transaction-local `gastos_superadmin`.
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
 - `dolar.py` — natural-language USD buy/sell parsing (`looks_like_dolar` gate + `parse_dolar`); confidence-based auto-save
@@ -136,9 +139,10 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
-| `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "..."}]` |
+| `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "...", "email": "optional@example.com"}]`; optional email is a NULL-only legacy identity link |
 | `AUTH_SECRET_KEY` | Yes | Random secret for OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |
+| `SUPERADMIN_EMAIL` | Yes | Sole superadmin email, applied only at startup |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth web client |
 | `RESEND_API_KEY` | Yes | Sends email OTPs |
 | `RESEND_FROM_EMAIL` | No | Verified transactional sender |

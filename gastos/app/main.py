@@ -15,7 +15,7 @@ def load_config() -> dict:
     missing = [
         v for v in (
             "TELEGRAM_TOKEN", "USERS_JSON", "AUTH_SECRET_KEY",
-            "AUTH_BOOTSTRAP_EMAIL",
+            "AUTH_BOOTSTRAP_EMAIL", "SUPERADMIN_EMAIL",
             "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
             "RESEND_API_KEY", "TURNSTILE_SECRET",
         )
@@ -56,6 +56,17 @@ def parse_users(users_list: list) -> dict:
         return {}
 
 
+def parse_user_emails(users_list: list) -> dict:
+    """Return optional legacy Telegram → web email identity mappings."""
+    result = {}
+    for user in users_list:
+        telegram_id = str(user.get("telegram_id", "")).strip()
+        email = str(user.get("email", "")).strip().casefold()
+        if telegram_id and email:
+            result[telegram_id] = email
+    return result
+
+
 def main():
     # 1. Cargar configuración
     config = load_config()
@@ -66,11 +77,12 @@ def main():
 
     # 2. Parsear usuarios
     users = parse_users(config.get("users", []))
+    user_emails = parse_user_emails(config.get("users", []))
     logger.info("Usuarios configurados: %s", list(users.values()) or "(ninguno)")
 
     # 3. Inicializar DB
     import db as database
-    database.init_db(users)
+    database.init_db(users, user_emails=user_emails)
     logger.info("Base de datos PostgreSQL lista")
 
     # 4. Configurar módulo de backup y programar dump local diario

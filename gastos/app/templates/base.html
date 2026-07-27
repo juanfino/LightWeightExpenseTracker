@@ -595,7 +595,7 @@
       </div>
 
       <div class="user-menu">
-        <div class="user-copy"><div class="user-name">{{ current_user.name }}</div><div class="user-family">{{ current_user.family_name }}</div></div>
+        <a class="user-copy" href="{{ url_for('family') }}"><div class="user-name">{{ current_user.name }}</div><div class="user-family">{{ current_user.family_name }} · Administrar</div></a>
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="logout-button" type="submit" title="Cerrar sesión"><i class="ti ti-logout"></i></button>
@@ -627,6 +627,7 @@
     <a href="/resumenes" class="tab-link {{ self.nav_resumenes() }}">Resúmenes</a>
     <a href="/settings" class="tab-link {{ self.nav_settings() }}">Categorías</a>
     <a href="/config"   class="tab-link {{ self.nav_config() }}">Sistema</a>
+    <a href="{{ url_for('family') }}" class="tab-link">Familia</a>
   </nav>
 
   {% block content %}{% endblock %}

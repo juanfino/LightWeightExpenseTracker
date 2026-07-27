@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 3 complete; Phase 4 is next
+**Status:** Phase 4 complete; Phase 5 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-27
@@ -55,7 +55,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 1 | PostgreSQL + Alembic + async safety | DONE | `feat/mt-p1-postgres` | Codex | 2026-07-25 |
 | 2 | Tenancy (single family, no auth yet) | DONE | `feat/mt-p2-tenancy` | Codex | 2026-07-25 |
 | 3 | Identity & authentication | DONE | `feat/mt-p3-auth` | Codex | 2026-07-27 |
-| 4 | Invitations, members, superadmin flag | NOT STARTED | | | |
+| 4 | Invitations, members, superadmin flag | DONE | `feat/mt-p4-family-members` | Codex | 2026-07-27 |
 | 5 | Telegram linking + quotas | NOT STARTED | | | |
 | 6 | Self-service onboarding polish | NOT STARTED | | | |
 | 7 | New features (incomes, shopping list, CSV export) | NOT STARTED | | | |
@@ -91,7 +91,7 @@ Everything else — every domain table, present and future — carries it. Inclu
 
 ### I4 — Superadmin privilege is never writable over HTTP
 
-The `is_superadmin` column on `users` is read by the app and **never written by any HTTP endpoint**. It is set by Alembic migration or by the `SUPERADMIN_EMAIL` bootstrap on startup. Any endpoint that accepts a dict of user fields must use an explicit allow-list that excludes it.
+The `is_superadmin` column on `users` is read by the app and **never written by any HTTP endpoint**. It is set exclusively by the `SUPERADMIN_EMAIL` bootstrap on startup. Any endpoint that accepts a dict of user fields must use an explicit allow-list that excludes it.
 
 ### I5 — Superadmin reads use a separate database role
 
@@ -168,13 +168,13 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 | `/resumenes`, `/resumenes/<period>` | `resumenes.html` | Monthly AI-generated report (2.3.0) — uses `claude-opus-4-8` by default (`REPORT_ANTHROPIC_MODEL`), separate from the Haiku model used elsewhere; see PROJECT.md → Monthly AI report for the full prompt/cost breakdown | verified |
 | `/settings` | `settings.html` | Categories / subcategories / keywords CRUD | verified |
 | `/config` | `config.html` | Backup status + "Backup ahora", restore DB from URL | verified |
+| `/unirme/<token>` | `join_family.html` | Public single-use invitation acceptance through Google or email OTP | Phase 4 |
+| `/familia` | `family.html` | Members, invitations, rename, logical removal, ownership transfer, leave/delete | Phase 4 |
 
 ### To be added
 
 | Route | Phase | Purpose |
 |---|---|---|
-| `/unirme/<token>` | 4 | Accept invitation, join an existing family |
-| `/familia` | 4 | Members list, invite, remove member, rename family, leave/delete family |
 | `/vincular-telegram` | 5 | Deep link button + QR + live "connected" state |
 | `/ingresos` | 7 | Income entry and history |
 | `/lista` | 7 | Shopping list |
@@ -206,18 +206,22 @@ families(id, name, timezone default 'America/Argentina/Buenos_Aires',
 users(id, email UNIQUE, name, is_superadmin bool default false,
       telegram_chat_id UNIQUE NULL, created_at, last_login_at)
 
-memberships(id, user_id, family_id, role 'owner'|'member', created_at,
-            UNIQUE(user_id))   -- the UNIQUE is what enforces one-family-per-person
+memberships(id, user_id, family_id, role 'owner'|'member', active,
+            deactivated_at, created_at,
+            UNIQUE(user_id) WHERE active)
 ```
 
-> The `UNIQUE(user_id)` constraint is the whole point: it makes today's simple model correct, and makes future multi-family a matter of dropping a constraint rather than reshaping the schema. See §8 for why multi-family is deferred.
+> The partial `UNIQUE(user_id) WHERE active` index enforces one active family
+> per person while retaining historical membership rows referenced by expenses.
+> Future simultaneous multi-family support remains a matter of dropping this
+> index and adding context selection. See §8 for why it is deferred.
 
 ```
 oauth_identities(id, user_id, provider 'google', provider_user_id, created_at)
 otp_codes(id, email, code_hash, expires_at, attempts, consumed_at, created_at)
 sessions(id, user_id, token_hash, expires_at, created_at, user_agent, ip)
 invitations(id, family_id, token_hash, role, created_by_user_id,
-            expires_at, consumed_at, consumed_by_user_id, created_at)
+            expires_at, consumed_at, consumed_by_user_id, revoked_at, created_at)
 telegram_link_tokens(id, user_id, token, expires_at, consumed_at)
 ```
 
@@ -500,7 +504,7 @@ be needed if the web tier becomes multi-process or multi-instance.
 
 1. **Invitation links.** Owner clicks "Invitar a alguien" → the app generates a signed token URL (`/unirme/<token>`, 7-day expiry, single use) → owner copies it and sends it via WhatsApp. No email infrastructure needed for this path.
 2. **`/unirme/<token>` landing:** shows "Te invitaron a unirte a **Familia X**" with Google / email options. On completion the user joins the existing family and never sees the create-family screen.
-3. **Edge case — user already belongs to a family:** clear error, "Ya pertenecés a *Familia Y*. Tenés que salir de ahí primero." With the `UNIQUE(user_id)` constraint on `memberships` this is one validation.
+3. **Edge case — user already belongs to a family:** clear error, "Ya pertenecés a *Familia Y*. Tenés que salir de ahí primero." The partial unique index on active memberships is the database backstop.
 4. **`/familia` screen:** members list with roles, generate/copy/revoke invitation link, remove a member, rename the family, transfer ownership, leave family, delete family (with cascade and a typed confirmation).
 5. **Removing a member does not delete their data** — their expenses stay with the family and their name remains visible.
 6. **Superadmin flag:** `users.is_superadmin`, never writable over HTTP (invariant I4), bootstrapped from `SUPERADMIN_EMAIL` on startup.
@@ -518,7 +522,51 @@ Email-delivered invitations (link-copy is enough). Multi-family membership. The 
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Implemented on `feat/mt-p4-family-members` (version 6.0.0):**
+
+- Alembic `0004` adds `users.is_superadmin`, the `invitations` platform
+  table, invitation-aware OTPs and historical membership state. The original
+  `UNIQUE(user_id)` became a partial unique index over active memberships:
+  removed members retain the exact `(family_id, user_id)` row referenced by
+  their expenses but may later create or join one new active family.
+- `/familia` is available to every active member. Only the owner can create
+  or revoke seven-day, one-use invitation links, rename the family, remove a
+  member, transfer ownership or delete the family. Members can leave. Owner
+  removal is blocked; ownership must be transferred first. Destructive family
+  deletion requires the exact, case-sensitive family name and cascades domain
+  data.
+- `/unirme/<token>` is public and supports Google or six-digit email OTP.
+  Invitations always grant `member`; expired, revoked, consumed, or
+  already-affiliated accounts are rejected. Token hashes, never raw tokens,
+  are stored. Raw links are displayed only immediately after creation.
+- Logical removal revokes the member's web sessions and makes Telegram
+  resolution ignore that user, while all historical expenses and the user's
+  visible name remain intact. Startup `USERS_JSON` synchronization never
+  reactivates a historical membership.
+- `SUPERADMIN_EMAIL` is now required at startup. It is the sole source of
+  `is_superadmin`; HTTP inputs use explicit action handlers and cannot mutate
+  the flag.
+- Legacy Telegram entries may carry an optional `email`. The sync fills only a
+  NULL email matched by `telegram_id`, refuses conflicts/overwrites, and avoids
+  duplicate web users. For production, add Cele's confirmed email to her
+  existing `USERS_JSON` entry before deploying 6.0.0; she is already an active
+  `member` of Familia Finochietto and then signs in normally rather than
+  consuming an invitation.
+- Verification used a disposable PostgreSQL 17 container: 30 unit/integration
+  tests passed, including end-to-end UI email invitation acceptance, single
+  use/expiry/revocation, active-family conflict, historical expense retention,
+  ownership transfer, exact-name deletion, non-owner denial and attempted
+  HTTP superadmin mutation. PostgreSQL and all-route web smoke tests also
+  passed.
+
+**Deliberately not done:** Telegram self-service linking, quotas, email-sent
+invitations, simultaneous multi-family membership and the superadmin panel;
+these remain in later phases.
+
+**For Phase 5:** active membership is now part of both web-session and
+Telegram identity resolution. Telegram linking should create/link identity
+without bypassing that rule, and an unlinked or inactive chat must receive the
+friendly linking response defined by Phase 5.
 
 ---
 
@@ -685,7 +733,7 @@ Impersonation. Editing another family's data. Billing.
 
 | Deferred | Why | Reopen when |
 |---|---|---|
-| **Multi-family membership** | Manageable on the web (family switcher in the header), but unsolvable cleanly on the bot: a `chat_id` is a person, not a context. Asking "which family?" kills the fast path; a sticky active family fails *silently* — set once, forgotten, three weeks of expenses in the wrong family. And the intent layer injects recent expenses into the prompt, so an ambiguous family means ambiguous context, which is a leak risk rather than a UX annoyance. The `memberships` table with `UNIQUE(user_id)` means reopening this is dropping a constraint, not reshaping the schema. | A concrete case appears: separated parents, an accountant, a shared house |
+| **Multi-family membership** | Manageable on the web (family switcher in the header), but unsolvable cleanly on the bot: a `chat_id` is a person, not a context. Asking "which family?" kills the fast path; a sticky active family fails *silently* — set once, forgotten, three weeks of expenses in the wrong family. And the intent layer injects recent expenses into the prompt, so an ambiguous family means ambiguous context, which is a leak risk rather than a UX annoyance. The partial unique index over active memberships means reopening this is dropping an index, not reshaping the schema. | A concrete case appears: separated parents, an accountant, a shared house |
 | **`tenant_id` instead of `family_id`** | In this app the tenant *is* the family, one to one, with no possible distinction. The table is `families`; a `tenant_id` column pointing at `families.id` forces a permanent mental translation, and the UI says "grupo familiar" everywhere. Because resolution is encapsulated in one place (I2), renaming later is an Alembic `ALTER` plus a find-and-replace. | The tenant boundary stops being a family — e.g. an organization containing several families, or one family with two separate spaces (home and a small business) |
 | **Apple Sign-In** | Requires the Apple Developer Program (USD 99/yr), a client secret that is a JWT you sign yourself and that expires every 6 months (so rotation must be automated), plus "Hide My Email" edge cases. Not justified for a user who has already said yes. | Real demand from users who won't use Google or email |
 | **Onboarding wizard for taxonomy** | Base list is enough. A wizard is real design work. | Multiple families complain the defaults don't fit |

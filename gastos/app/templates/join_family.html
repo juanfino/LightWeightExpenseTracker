@@ -1,0 +1,30 @@
+{% extends "auth_base.html" %}
+{% block title %}Unirte a una familia · Gastos Familiares{% endblock %}
+{% block content %}
+<main class="auth-wrap"><section class="card">
+  {% if invitation %}
+    <h1>Te invitaron a unirte a {{ invitation.family_name }}</h1>
+    <p>Vas a compartir los gastos y la configuración de esta familia.</p>
+  {% else %}
+    <h1>Invitación familiar</h1>
+  {% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  {% if invitation and invitation.valid and not current_user %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="name">Tu nombre</label>
+      <input id="name" name="name" autocomplete="name">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" required>
+      <button class="button" type="submit">Continuar con email</button>
+    </form>
+    <div class="divider">o</div>
+    <form method="post" action="{{ url_for('google_start') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="flow" value="invite">
+      <input type="hidden" name="invitation_token" value="{{ invitation_token }}">
+      <button class="button secondary" type="submit">Continuar con Google</button>
+    </form>
+  {% endif %}
+</section></main>
+{% endblock %}
