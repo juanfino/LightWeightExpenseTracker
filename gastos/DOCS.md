@@ -16,9 +16,14 @@ La app se configura mediante variables de entorno:
 |----------|-----------|-------------|
 | `TELEGRAM_TOKEN` | Sí | Token del bot obtenido con @BotFather en Telegram |
 | `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi"}]` |
+| `AUTH_SECRET_KEY` | Sí | Secreto aleatorio para el estado temporal de autenticación |
+| `AUTH_BOOTSTRAP_EMAIL` | Sí | Email inicial del dueño de la familia existente |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sí | Credenciales OAuth de Google |
+| `RESEND_API_KEY` | Sí | Envío de códigos de acceso por email |
+| `TURNSTILE_SECRET` | Sí | Secreto privado para verificar Turnstile del lado del servidor |
 | `ANTHROPIC_API_KEY` | No | Habilita el OCR de tickets, la extracción por voz/dólar y el modo conversacional en lenguaje natural |
 | `OPENAI_API_KEY` | No | Habilita la transcripción de mensajes de voz (Whisper) |
-| `DB_PATH` | No | Ruta a la base de datos SQLite (default: `/data/gastos.db`) |
+| `DATABASE_URL` | Sí | URL de conexión a PostgreSQL |
 | `DASHBOARD_PORT` | No | Puerto del dashboard (default: `5000`) |
 
 ### Obtener el telegram_id de cada usuario
@@ -71,6 +76,6 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-Accesible en `http://[IP-RASPI]:8090` desde la red local (puerto configurado vía `DASHBOARD_PORT`; el default del código es `5000`). Pantallas: Dashboard (`/`), Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Sistema (`/config`).
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; una vez autenticado, el Dashboard vive en `/dashboard`. Las demás pantallas siguen en Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
 
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.

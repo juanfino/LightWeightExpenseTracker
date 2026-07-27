@@ -34,6 +34,12 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
 | `USERS_JSON` | Yes | JSON array of authorized users, e.g. `[{"telegram_id":"123","name":"Juampi"}]` |
+| `AUTH_SECRET_KEY` | Yes | Random secret used to sign short-lived OAuth/pre-auth state |
+| `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth web client credentials |
+| `RESEND_API_KEY` | Yes | Sends six-digit login/registration codes |
+| `RESEND_FROM_EMAIL` | No | Verified sender; defaults to `acceso@juampifinochietto.com` |
+| `TURNSTILE_SECRET` | Yes | Private Cloudflare Turnstile siteverify secret |
 | `ANTHROPIC_API_KEY` | No | Enables OCR of ticket photos, voice/dollar extraction, and the natural-language intent layer |
 | `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
 | `DATABASE_URL` | Yes | PostgreSQL connection URL |
@@ -51,4 +57,4 @@ in private Cloudflare R2 with 90-day retention; see `docs/RUNBOOK.md`.
 
 ### Exposing the dashboard
 
-The dashboard's own default port is 5000, but the Pi's `~/.env` sets `DASHBOARD_PORT=8090` (freeing port 5000 for Frigate). A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:8090` on the Pi.
+The dashboard's own default port is 5000, but the Pi's `~/.env` sets `DASHBOARD_PORT=8090` (freeing port 5000 for Frigate). A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:8090` on the Pi. Application authentication must be verified behind Cloudflare Access before the Access policy is disabled.

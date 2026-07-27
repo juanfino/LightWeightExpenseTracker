@@ -35,7 +35,7 @@ python3 gastos/app/categorizer.py
 ## Architecture
 
 `main.py` is the entrypoint. It:
-1. Loads config from env vars (`TELEGRAM_TOKEN`, `USERS_JSON`, `ANTHROPIC_API_KEY`, `DATABASE_URL`)
+1. Loads bot, database and web-auth config from environment variables
 2. Applies Alembic migrations and initializes PostgreSQL via `db.py`
 3. Schedules a daily backup job (APScheduler, 21:00 ART)
 4. Starts Flask dashboard in a daemon thread
@@ -50,13 +50,14 @@ python3 gastos/app/categorizer.py
 - `categorizer.py` — Matches concept against keyword list from DB (accent/case-insensitive). Returns `(category_id, subcategory_id)` tuple; both may be `None`.
 - `db.py` — Raw PostgreSQL operations. `get_conn()` selects the RLS-bound application role and transaction-local `app.family_id`, then auto-commits/rolls back. Fixed-expense link helpers remain the single write choke point.
 - `dashboard.py` — Flask app. Timestamps stored as UTC in DB; `dashboard.py` converts to Buenos Aires time (UTC-3) for display.
+- `auth.py` — web identity layer: opaque server-side sessions, hashed one-time codes, Resend delivery, Turnstile verification, rate limiting, Google identity linking, and account/family creation. Platform lookups use transaction-local `gastos_superadmin`; `dashboard.py` resolves the authenticated user and family once per request.
 - `ocr.py` — Uses `claude-haiku-4-5-20251001` via the Anthropic SDK to extract `{comercio, monto, fecha}` from ticket images.
 - `audio.py` — Voice pipeline. `transcribe()` (OpenAI Whisper `whisper-1`, `es`) → `extract_expenses()` (Claude `claude-haiku-4-5-20251001`) returns `[{concept, amount, confidence}]`. `confidence` (0–1) drives auto-save: `bot.py` registers voice expenses ≥ `AUTOSAVE_CONFIDENCE` (0.9) directly and only queues the rest for inline confirmation.
 - `dolar.py` — Uses `claude-haiku-4-5-20251001` to interpret natural-language dollar operations (`parse_dolar` → `{tipo: venta|compra, monto_usd, cotizacion, confidence}` or `None`). Gated by `looks_like_dolar()` (cheap keyword regex). Routed from both `handle_message` (text) and `handle_voice` (audio); high confidence registers directly, low confidence asks inline confirmation (`pending_dolar`). Legacy `CambioDolar <usd> <cotizacion>` command still works and records a sale.
 - `backup.py` — Runs a custom-format `pg_dump`, uploads it to private R2 and verifies the remote object. Called daily and by the admin endpoint; restore is SSH-only.
 - `seed.py` — `create_family_defaults(conn, family_id)` creates generic taxonomy for a new family. Schema changes are Alembic-only.
 
-**DB schema:** platform tables `families`, `users`, `memberships`; tenant tables `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`, `llm_calls`. Tenant tables carry `family_id NOT NULL` with forced RLS and composite foreign keys preventing cross-family references.
+**DB schema:** platform tables `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`; tenant tables `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`, `llm_calls`. Tenant tables carry `family_id NOT NULL` with forced RLS and composite foreign keys preventing cross-family references.
 
 ## Config
 
@@ -66,6 +67,12 @@ Config is loaded exclusively from environment variables at startup — there is 
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `USERS_JSON` | Yes | JSON array `[{"telegram_id": "...", "name": "..."}]` |
+| `AUTH_SECRET_KEY` | Yes | Random secret for OAuth/pre-auth signed state |
+| `AUTH_BOOTSTRAP_EMAIL` | Yes | Initial web email for the existing family-1 owner; only fills a NULL email |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth web client |
+| `RESEND_API_KEY` | Yes | Transactional OTP email |
+| `RESEND_FROM_EMAIL` | No | Verified sender address |
+| `TURNSTILE_SECRET` | Yes | Private Turnstile server-verification secret; the public site key is embedded in the app |
 | `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, and the natural-language intent layer |
 | `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
 | `DATABASE_URL` | Yes | PostgreSQL connection URL |

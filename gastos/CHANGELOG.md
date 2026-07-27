@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.0
+- **Fase 3 multi-tenant (implementación):** autenticación web propia con sesiones opacas server-side, cookies seguras, protección CSRF y resolución usuario → familia en un único `before_request`.
+- Login y registro mediante Google OAuth o código de seis dígitos por email (Resend); los códigos vencen a los 10 minutos, son de un solo uso, admiten hasta cinco intentos y se guardan hasheados.
+- Registro crea usuario, familia y taxonomía inicial; Cloudflare Turnstile y límites por IP/email protegen los endpoints que envían correo o crean cuentas.
+- Landing pública, política de privacidad, términos, menú de usuario y cierre de sesión; todas las rutas privadas requieren autenticación y la suite las audita automáticamente.
+- Cloudflare Access permanece activo hasta verificar ambos flujos en producción; desactivarlo es el último paso operativo de la fase.
+
 ## 4.0.0
 - **Fase 2 multi-tenant:** familias, membresías y aislamiento por PostgreSQL Row-Level Security; los datos existentes se asignan a “Familia Finochietto”.
 - Todas las tablas de dominio llevan `family_id`; claves compuestas bloquean referencias entre familias y el SQL generado por IA queda sujeto al mismo RLS.

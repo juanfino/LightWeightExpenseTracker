@@ -12,7 +12,15 @@ logger = logging.getLogger(__name__)
 
 def load_config() -> dict:
     """Lee la configuración desde variables de entorno."""
-    missing = [v for v in ("TELEGRAM_TOKEN", "USERS_JSON") if not os.environ.get(v)]
+    missing = [
+        v for v in (
+            "TELEGRAM_TOKEN", "USERS_JSON", "AUTH_SECRET_KEY",
+            "AUTH_BOOTSTRAP_EMAIL",
+            "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+            "RESEND_API_KEY", "TURNSTILE_SECRET",
+        )
+        if not os.environ.get(v)
+    ]
     if missing:
         raise RuntimeError(
             f"Variables de entorno requeridas no definidas: {', '.join(missing)}"

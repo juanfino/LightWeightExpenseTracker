@@ -9,13 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import dashboard  # noqa: E402
 import db  # noqa: E402
-from support import reset_database  # noqa: E402
+from support import authenticated_client, reset_database  # noqa: E402
 
 
 class HistoryAddExpenseTests(unittest.TestCase):
     def setUp(self):
         reset_database({"123": "Tester"})
-        self.client = dashboard.app.test_client()
+        self.client, self.csrf_headers = authenticated_client(dashboard, "123")
         self.user = db.get_user_by_telegram_id("123")
         self.category = db.get_category_by_name("Hogar")
         self.subcategory = db.find_subcategory_normalized(
@@ -34,6 +34,7 @@ class HistoryAddExpenseTests(unittest.TestCase):
                 "user_id": self.user["id"],
                 "date": "2026-07-20",
             },
+            headers=self.csrf_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -73,6 +74,7 @@ class HistoryAddExpenseTests(unittest.TestCase):
                 "user_id": self.user["id"],
                 "date": "2026-07-10",
             },
+            headers=self.csrf_headers,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -101,6 +103,7 @@ class HistoryAddExpenseTests(unittest.TestCase):
                 "user_id": self.user["id"],
                 "date": "2026-07-20",
             },
+            headers=self.csrf_headers,
         )
 
         self.assertEqual(response.status_code, 400)
@@ -108,11 +111,12 @@ class HistoryAddExpenseTests(unittest.TestCase):
 
     def test_inline_taxonomy_endpoints_reject_normalized_duplicates(self):
         category_response = self.client.post(
-            "/api/categories/add", json={"name": "  hÓGAR  "}
+            "/api/categories/add", json={"name": "  hÓGAR  "}, headers=self.csrf_headers
         )
         subcategory_response = self.client.post(
             "/api/subcategories/add",
             json={"category_id": self.category["id"], "name": "supermercádo"},
+            headers=self.csrf_headers,
         )
 
         self.assertEqual(category_response.status_code, 409)

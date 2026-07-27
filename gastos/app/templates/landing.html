@@ -1,0 +1,12 @@
+{% extends "auth_base.html" %}
+{% block title %}Gastos Familiares{% endblock %}
+{% block content %}
+<main class="hero">
+  <h1>Los gastos de tu familia, claros y en un solo lugar.</h1>
+  <p>Registrá movimientos desde Telegram o la web, compartí la información con tu familia y entendé en qué se va la plata.</p>
+  <div class="hero-actions">
+    <a class="button" href="{{ url_for('register') }}">Crear mi cuenta</a>
+    <a class="button secondary" href="{{ url_for('login') }}">Ya tengo cuenta</a>
+  </div>
+</main>
+{% endblock %}

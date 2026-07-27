@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Gastos Familiares{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{color-scheme:dark;--bg:#171411;--card:#211d19;--text:#faf7f2;--muted:#aaa097;--line:#39322b;--accent:#f2ac3d;--danger:#ff8c82}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 50% -10%,#3b2b19 0,transparent 38%),var(--bg);color:var(--text);font-family:"Plus Jakarta Sans",sans-serif;min-height:100vh}
+    a{color:inherit}.shell{width:min(100% - 32px,1080px);margin:auto}.header{height:76px;display:flex;align-items:center;justify-content:space-between}.brand{font-weight:800;text-decoration:none}.nav{display:flex;gap:20px;color:var(--muted);font-size:14px}
+    .auth-wrap{width:min(100%,440px);margin:56px auto}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:30px;box-shadow:0 24px 70px #0005}h1{font-size:28px;margin:0 0 8px}p{color:var(--muted);line-height:1.6}
+    label{display:block;font-size:13px;font-weight:700;margin:18px 0 7px}input{width:100%;background:#171411;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:13px 14px;font:inherit}input:focus{outline:2px solid #f2ac3d66;border-color:var(--accent)}
+    .button{width:100%;display:flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;background:var(--accent);color:#261a0b;margin-top:20px}.button.secondary{background:transparent;color:var(--text);border:1px solid var(--line);margin-top:12px}
+    .divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;margin:20px 0}.divider:before,.divider:after{content:"";height:1px;background:var(--line);flex:1}.error{color:var(--danger);background:#ff5c4d14;border:1px solid #ff5c4d44;border-radius:10px;padding:11px 13px;font-size:13px}.foot{text-align:center;font-size:13px;margin-top:20px}.hero{padding:90px 0 110px;text-align:center}.hero h1{font-size:clamp(38px,7vw,72px);max-width:850px;margin:0 auto 24px;letter-spacing:-.045em}.hero p{font-size:18px;max-width:650px;margin:0 auto}.hero-actions{display:flex;justify-content:center;gap:12px;margin:32px auto}.hero-actions .button{width:auto;margin:0;padding-inline:22px}
+    .legal{width:min(100%,760px);margin:40px auto 90px}.legal h1{font-size:38px}.legal h2{margin-top:32px}.legal p,.legal li{color:var(--muted);line-height:1.75}@media(max-width:560px){.nav{gap:10px;font-size:12px}.card{padding:22px}.auth-wrap{margin-top:28px}.hero-actions{flex-direction:column}.hero-actions .button{width:100%}}
+  </style>
+  {% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <a class="brand" href="{{ url_for('landing') }}">Gastos Familiares</a>
+      <nav class="nav"><a href="{{ url_for('privacy') }}">Privacidad</a><a href="{{ url_for('terms') }}">Términos</a></nav>
+    </header>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

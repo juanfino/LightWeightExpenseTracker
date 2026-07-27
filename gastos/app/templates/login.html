@@ -1,0 +1,17 @@
+{% extends "auth_base.html" %}
+{% block title %}Iniciar sesión · Gastos Familiares{% endblock %}
+{% block content %}
+<main class="auth-wrap"><section class="card">
+  <h1>Volvé a tu cuenta</h1><p>Ingresá con Google o recibí un código de seis dígitos por email.</p>
+  {% if error %}<div class="error">{{ "Google no está configurado todavía." if error == "google_unavailable" else error }}</div>{% endif %}
+  <a class="button secondary" href="{{ url_for('google_start', flow='login', next=next) }}">Continuar con Google</a>
+  <div class="divider">o con email</div>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required>
+    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}" data-action="turnstile-spin-v2" data-size="flexible"></div>
+    <button class="button" type="submit">Enviar código</button>
+  </form>
+  <p class="foot">¿Primera vez? <a href="{{ url_for('register') }}">Creá tu cuenta</a></p>
+</section></main>
+{% endblock %}

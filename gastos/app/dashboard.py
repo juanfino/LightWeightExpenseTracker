@@ -1,8 +1,14 @@
 import os
+import secrets
 from datetime import datetime, timezone, timedelta
-from flask import Flask, render_template, request, jsonify, redirect
+from urllib.parse import urljoin, urlparse
+
+from authlib.integrations.flask_client import OAuth
+from flask import Flask, abort, g, render_template, request, jsonify, redirect, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import db
+import auth
 import backup as backup_module
 import fixed_matcher
 import categorizer
@@ -10,17 +16,99 @@ import report
 import pgcompat
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.secret_key = os.environ.get("AUTH_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_NAME="gastos_oauth_state",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=15),
+)
+oauth = OAuth(app)
+TURNSTILE_SITE_KEY = "0x4AAAAAAD_DcrwEDapvydY6"
+if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"):
+    oauth.register(
+        name="google",
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+        client_kwargs={"scope": "email profile"},
+    )
 
 BAIRES = timezone(timedelta(hours=-3))
 
 
 @app.before_request
-def _select_web_db_pool():
+def _resolve_web_identity():
     pgcompat.select_pool("web")
-    # Authentication/family selection lands in Phase 3. Until then Cloudflare
-    # Access protects the single bootstrapped household.
-    pgcompat.set_family_id(1)
     pgcompat.set_user_id(None)
+    pgcompat.set_family_id(None)
+    g.current_user = auth.resolve_session(request.cookies.get(auth.SESSION_COOKIE))
+    if g.current_user:
+        pgcompat.set_user_id(g.current_user["id"])
+        pgcompat.set_family_id(g.current_user["family_id"])
+
+    public = {
+        "landing", "login", "register", "verify_otp", "google_start",
+        "google_callback", "privacy", "terms", "static",
+    }
+    if request.endpoint not in public and not g.current_user:
+        if request.path.startswith("/api/") or request.path.startswith("/admin/"):
+            return jsonify({"error": "Autenticación requerida"}), 401
+        return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
+        expected = (
+            g.current_user["csrf_token"] if g.current_user
+            else session.get("preauth_csrf")
+        )
+        if not expected or not supplied or not secrets.compare_digest(expected, supplied):
+            if request.path.startswith("/api/") or request.path.startswith("/admin/"):
+                return jsonify({"error": "Token CSRF inválido"}), 403
+            abort(403)
+
+
+@app.context_processor
+def _auth_template_context():
+    if "preauth_csrf" not in session:
+        session["preauth_csrf"] = secrets.token_urlsafe(32)
+    return {
+        "current_user": getattr(g, "current_user", None),
+        "csrf_token": (
+            g.current_user["csrf_token"]
+            if getattr(g, "current_user", None)
+            else session["preauth_csrf"]
+        ),
+        "turnstile_site_key": TURNSTILE_SITE_KEY,
+    }
+
+
+@app.after_request
+def _security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+    )
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net "
+        "https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' "
+        "https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' "
+        "https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data:; "
+        "connect-src 'self' https://challenges.cloudflare.com; frame-src "
+        "https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'",
+    )
+    if request.is_secure:
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    if request.endpoint in {"login", "register", "verify_otp", "google_callback"}:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 MONTHS_ES = [
     "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -70,10 +158,198 @@ def _currency_arg() -> str:
 # ── Páginas ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
+def landing():
+    if g.current_user:
+        return redirect(url_for("index"))
+    return render_template("landing.html")
+
+
+@app.route("/dashboard")
 def index():
     now = datetime.now()
     return render_template("index.html", year=now.year, month=now.month,
                            month_label=_month_label(now.year, now.month))
+
+
+def _client_ip() -> str:
+    return (request.headers.get("CF-Connecting-IP") or request.remote_addr or "unknown").strip()
+
+
+def _safe_next(target: str | None) -> str:
+    if target:
+        base = urlparse(request.host_url)
+        candidate = urlparse(urljoin(request.host_url, target))
+        if candidate.scheme in {"http", "https"} and candidate.netloc == base.netloc:
+            return candidate.path + (f"?{candidate.query}" if candidate.query else "")
+    return url_for("index")
+
+
+def _set_auth_cookie(response, token: str):
+    response.set_cookie(
+        auth.SESSION_COOKIE,
+        token,
+        max_age=auth.SESSION_DAYS * 86400,
+        secure=True,
+        httponly=True,
+        samesite="Lax",
+        path="/",
+    )
+    return response
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if g.current_user:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        email = auth.normalize_email(request.form.get("email", ""))
+        ip = _client_ip()
+        if not auth.consume_rate_limit(f"otp-ip:{ip}", limit=10, window_seconds=3600):
+            error = "Demasiados intentos. Probá de nuevo más tarde."
+        elif not auth.consume_rate_limit(f"otp-email:{email}", limit=5, window_seconds=3600):
+            error = "Demasiados códigos pedidos para ese email. Probá más tarde."
+        elif not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
+            error = "No pudimos verificar que seas una persona. Intentá de nuevo."
+        elif not auth.find_user_by_email(email):
+            error = "No existe una cuenta con ese email. Podés crear una ahora."
+        else:
+            try:
+                code = auth.issue_otp(email, flow="login")
+                auth.send_otp(email, code)
+                return render_template("verify_otp.html", email=email, next=_safe_next(request.args.get("next")))
+            except Exception:
+                app.logger.exception("No se pudo enviar OTP de login")
+                error = "No pudimos enviar el código. Intentá de nuevo."
+    return render_template("login.html", error=error, next=_safe_next(request.args.get("next")))
+
+
+@app.route("/registro", methods=["GET", "POST"])
+def register():
+    if g.current_user:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        email = auth.normalize_email(request.form.get("email", ""))
+        name = request.form.get("name", "").strip()
+        family_name = request.form.get("family_name", "").strip()
+        ip = _client_ip()
+        if not email or not name or not family_name:
+            error = "Completá todos los campos."
+        elif auth.find_user_by_email(email):
+            error = "Ya existe una cuenta con ese email. Iniciá sesión."
+        elif not auth.consume_rate_limit(f"register-ip:{ip}", limit=5, window_seconds=3600):
+            error = "Demasiados intentos. Probá de nuevo más tarde."
+        elif not auth.consume_rate_limit(f"register-email:{email}", limit=3, window_seconds=3600):
+            error = "Demasiados intentos para ese email. Probá más tarde."
+        elif not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
+            error = "No pudimos verificar que seas una persona. Intentá de nuevo."
+        else:
+            try:
+                code = auth.issue_otp(email, flow="register", name=name, family_name=family_name)
+                auth.send_otp(email, code)
+                return render_template("verify_otp.html", email=email, next=url_for("index"))
+            except Exception:
+                app.logger.exception("No se pudo enviar OTP de registro")
+                error = "No pudimos enviar el código. Intentá de nuevo."
+    return render_template("register.html", error=error)
+
+
+@app.route("/auth/otp/verify", methods=["POST"])
+def verify_otp():
+    email = auth.normalize_email(request.form.get("email", ""))
+    result = auth.consume_otp(email, request.form.get("code", ""))
+    if not result:
+        return render_template(
+            "verify_otp.html", email=email, next=_safe_next(request.form.get("next")),
+            error="El código es inválido, venció o superó los 5 intentos.",
+        ), 400
+    try:
+        if result["flow"] == "register":
+            user_id = auth.create_account(
+                result["email"], result["name"] or "", result["family_name"] or ""
+            )
+        else:
+            user = auth.find_user_by_email(result["email"])
+            if not user:
+                raise ValueError("La cuenta ya no existe")
+            user_id = user["id"]
+        token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
+    except Exception:
+        app.logger.exception("No se pudo completar autenticación OTP")
+        return render_template(
+            "verify_otp.html", email=email, next=url_for("index"),
+            error="No pudimos completar el acceso. Intentá de nuevo.",
+        ), 400
+    return _set_auth_cookie(redirect(_safe_next(request.form.get("next"))), token)
+
+
+@app.route("/auth/google", methods=["GET", "POST"])
+def google_start():
+    if not getattr(oauth, "google", None):
+        return redirect(url_for("login", error="google_unavailable"))
+    flow = request.values.get("flow", "login")
+    if flow == "register":
+        ip = _client_ip()
+        family_name = request.form.get("family_name", "").strip()
+        if request.method != "POST" or not family_name:
+            return redirect(url_for("register"))
+        if not auth.consume_rate_limit(f"register-google-ip:{ip}", limit=5, window_seconds=3600):
+            return render_template("register.html", error="Demasiados intentos. Probá más tarde."), 429
+        if not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
+            return render_template("register.html", error="No pudimos verificar que seas una persona."), 400
+        session["google_family_name"] = family_name
+    session["google_flow"] = flow
+    session["google_next"] = _safe_next(request.values.get("next"))
+    return oauth.google.authorize_redirect(url_for("google_callback", _external=True))
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    if not getattr(oauth, "google", None):
+        abort(404)
+    token_data = oauth.google.authorize_access_token()
+    profile = token_data.get("userinfo")
+    if not profile:
+        profile = oauth.google.get(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            token=token_data,
+        ).json()
+    email = auth.normalize_email(profile.get("email", ""))
+    if not email or str(profile.get("email_verified")).lower() not in {"true", "1"}:
+        return render_template("login.html", error="Google no confirmó el email de la cuenta."), 400
+    existing = auth.find_user_by_email(email)
+    if not existing and session.get("google_flow") != "register":
+        return render_template("login.html", error="No existe una cuenta con ese email. Registrate primero."), 400
+    user_id = auth.link_google_identity(
+        str(profile["sub"]), email, profile.get("name") or email.split("@")[0],
+        session.get("google_family_name") or None,
+    )
+    token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
+    destination = session.pop("google_next", url_for("index"))
+    session.pop("google_flow", None)
+    session.pop("google_family_name", None)
+    return _set_auth_cookie(redirect(destination), token)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    auth.revoke_session(request.cookies.get(auth.SESSION_COOKIE))
+    response = redirect(url_for("landing"))
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    return response
+
+
+@app.route("/privacidad")
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/terminos")
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
 
 
 @app.route("/history")

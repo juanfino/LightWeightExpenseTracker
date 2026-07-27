@@ -1,5 +1,40 @@
 # Runbook operativo
 
+## Cutover de autenticación propia (Fase 3)
+
+Cloudflare Access debe permanecer activo durante todo el despliegue inicial.
+Antes de levantar la imagen 5.0.0, completar en `~/.env`:
+
+```text
+AUTH_SECRET_KEY
+AUTH_BOOTSTRAP_EMAIL
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+TURNSTILE_SECRET
+```
+
+`AUTH_SECRET_KEY` se genera con `openssl rand -hex 32`.
+`AUTH_BOOTSTRAP_EMAIL` debe ser el email de Google/email OTP del owner actual
+de la familia 1; el bootstrap sólo completa un email NULL y falla si luego se
+intenta cambiar por variable de entorno.
+
+Orden obligatorio:
+
+1. Verificar el dominio/remitente de Resend mediante sus registros DNS.
+2. Crear Turnstile para `expenses.juampifinochietto.com`.
+3. Publicar el consentimiento OAuth de Google con las URLs `/`, `/privacy`
+   y `/terms`, y callback
+   `https://expenses.juampifinochietto.com/auth/google/callback`.
+4. Desplegar con Cloudflare Access todavía activo.
+5. En incógnito y desde un teléfono, probar registro/login Google y email OTP,
+   logout, expiración/reutilización del código y acceso a una ruta privada.
+6. Confirmar en logs que Alembic quedó en `0003`.
+7. Recién entonces desactivar Cloudflare Access.
+8. Repetir desde una sesión anónima: `/` debe ser público, una API privada debe
+   responder `401` y una página privada debe redirigir a `/login`.
+
 ## Backup PostgreSQL → Cloudflare R2
 
 La aplicación ejecuta `pg_dump --format=custom` todos los días a las 21:00 ART,
