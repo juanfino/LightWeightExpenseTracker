@@ -301,7 +301,10 @@ def google_start():
         session["google_family_name"] = family_name
     session["google_flow"] = flow
     session["google_next"] = _safe_next(request.values.get("next"))
-    return oauth.google.authorize_redirect(url_for("google_callback", _external=True))
+    return oauth.google.authorize_redirect(
+        url_for("google_callback", _external=True),
+        prompt="select_account",
+    )
 
 
 @app.route("/auth/google/callback")

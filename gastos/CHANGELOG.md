@@ -1,5 +1,8 @@
 # Changelog
 
+## 5.0.1
+- El acceso con Google muestra siempre el selector de cuenta, para evitar reutilizar silenciosamente una sesión de Google cuando hay varias cuentas abiertas en el dispositivo.
+
 ## 5.0.0
 - **Fase 3 multi-tenant (implementación):** autenticación web propia con sesiones opacas server-side, cookies seguras, protección CSRF y resolución usuario → familia en un único `before_request`.
 - Login y registro mediante Google OAuth o código de seis dígitos por email (Resend); los códigos vencen a los 10 minutos, son de un solo uso, admiten hasta cinco intentos y se guardan hasheados.

@@ -138,6 +138,18 @@ class AuthSecurityTests(unittest.TestCase):
         pgcompat.set_family_id(row[1])
         self.assertTrue(db.get_all_categories())
 
+    def test_google_login_always_requests_account_selection(self):
+        google = MagicMock()
+        google.authorize_redirect.return_value = dashboard.redirect("/google")
+        with patch.object(dashboard.oauth, "google", google, create=True):
+            response = self.client.get("/auth/google")
+
+        self.assertEqual(response.status_code, 302)
+        google.authorize_redirect.assert_called_once_with(
+            "http://localhost/auth/google/callback",
+            prompt="select_account",
+        )
+
 
 class TurnstileContractTests(unittest.TestCase):
     def test_turnstile_uses_canonical_siteverify_contract(self):
