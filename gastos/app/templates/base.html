@@ -613,6 +613,7 @@
         <nav class="topbar-tabs">
           <a href="{{ url_for('index') }}" class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
           <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Movimientos</a>
+          <a href="/ingresos" class="tab-link {% block nav_incomes %}{% endblock %}">Ingresos</a>
           <a href="/fijos"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
           <a href="/dolares"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
           <a href="/resumenes" class="tab-link {% block nav_resumenes %}{% endblock %}">Resúmenes</a>
@@ -649,6 +650,7 @@
     </div>
     <a href="{{ url_for('index') }}" class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
     <a href="/history"  class="tab-link {{ self.nav_history() }}">Movimientos</a>
+    <a href="/ingresos" class="tab-link {{ self.nav_incomes() }}">Ingresos</a>
     <a href="/fijos"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
     <a href="/dolares"  class="tab-link {{ self.nav_dolares() }}">Dólares</a>
     <a href="/resumenes" class="tab-link {{ self.nav_resumenes() }}">Resúmenes</a>

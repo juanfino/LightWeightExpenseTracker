@@ -2026,3 +2026,125 @@ def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: floa
                 (fecha, monto_usd, cotizacion, monto_ars, tipo, cambio_id),
             )
         return cur.rowcount > 0
+
+
+# ── Ingresos ─────────────────────────────────────────────────────────────────
+
+def get_income_categories():
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT c.*, COUNT(i.id) AS income_count FROM income_categories c "
+            "LEFT JOIN incomes i ON i.income_category_id=c.id "
+            "GROUP BY c.id ORDER BY c.name"
+        ).fetchall()
+
+
+def get_income_category(category_id: int):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM income_categories WHERE id=?", (category_id,)).fetchone()
+
+
+def find_income_category_normalized(name: str):
+    from categorizer import normalize
+    target = normalize((name or "").strip())
+    return next((r for r in get_income_categories() if normalize(r["name"]) == target), None)
+
+
+def create_income_category(name: str, icon: str = "💵", color: str = "#22c55e") -> int | None:
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "INSERT INTO income_categories (name, icon, color) VALUES (?, ?, ?)",
+                (name.strip(), icon.strip() or "💵", color.strip() or "#22c55e"),
+            )
+            return cur.lastrowid
+    except IntegrityError:
+        return None
+
+
+def update_income_category(category_id: int, name: str, icon: str, color: str) -> bool:
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                "UPDATE income_categories SET name=?, icon=?, color=? WHERE id=?",
+                (name.strip(), icon.strip() or "💵", color.strip() or "#22c55e", category_id),
+            )
+            return cur.rowcount > 0
+    except IntegrityError:
+        return False
+
+
+def delete_income_category(category_id: int) -> tuple[bool, str | None]:
+    with get_conn() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM incomes WHERE income_category_id=?", (category_id,)
+        ).fetchone()[0]
+        if count:
+            return False, f"Tiene {count} ingreso{'s' if count != 1 else ''} asociado{'s' if count != 1 else ''}"
+        cur = conn.execute("DELETE FROM income_categories WHERE id=?", (category_id,))
+        return cur.rowcount > 0, None if cur.rowcount else "Categoría no encontrada"
+
+
+def create_income(user_id: int, concept: str, amount: float, currency: str, date_str: str,
+                  income_category_id: int | None = None) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO incomes (user_id, concept, amount, currency, income_category_id, date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, _normalize_concept(concept), amount, normalize_currency(currency),
+             income_category_id, date_str),
+        )
+        return cur.lastrowid
+
+
+def get_incomes(year: int | None = None, month: int | None = None):
+    conditions, params = [], []
+    if year is not None:
+        conditions.append("EXTRACT(YEAR FROM i.date)=?")
+        params.append(year)
+    if month is not None:
+        conditions.append("EXTRACT(MONTH FROM i.date)=?")
+        params.append(month)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    with get_conn() as conn:
+        return conn.execute(
+            f"SELECT i.*, u.name AS user_name, c.name AS category_name, "
+            f"c.icon AS category_icon, c.color AS category_color FROM incomes i "
+            f"JOIN users u ON u.id=i.user_id "
+            f"LEFT JOIN income_categories c ON c.id=i.income_category_id "
+            f"{where} ORDER BY i.date DESC, i.created_at DESC",
+            params,
+        ).fetchall()
+
+
+def get_income(income_id: int):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM incomes WHERE id=?", (income_id,)).fetchone()
+
+
+def update_income(income_id: int, user_id: int, concept: str, amount: float, currency: str,
+                  date_str: str, income_category_id: int | None) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE incomes SET concept=?, amount=?, currency=?, date=?, income_category_id=? "
+            "WHERE id=? AND user_id=?",
+            (_normalize_concept(concept), amount, normalize_currency(currency), date_str,
+             income_category_id, income_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_income(income_id: int, user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM incomes WHERE id=? AND user_id=?", (income_id, user_id))
+        return cur.rowcount > 0
+
+
+def get_income_month_totals(year: int, month: int) -> dict[str, float]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT currency, COALESCE(SUM(amount), 0) AS total FROM incomes "
+            "WHERE EXTRACT(YEAR FROM date)=? AND EXTRACT(MONTH FROM date)=? GROUP BY currency",
+            (year, month),
+        ).fetchall()
+    return {row["currency"]: float(row["total"]) for row in rows}

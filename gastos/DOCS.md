@@ -79,13 +79,17 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Historial (`/history`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Movimientos (`/history`), Ingresos (`/ingresos`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
 
 Una familia nueva ve una checklist de primeros pasos en el Dashboard: crear la cuenta, cargar el primer gasto, conectar Telegram (opcional) e invitar a alguien. Cada paso lleva directamente a la pantalla correspondiente y la tarjeta desaparece cuando todos están completos. Las pantallas sin datos muestran qué va a aparecer ahí y un botón para empezar.
 
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
 
 En **Categorías**, una “palabra para categorizar” asocia un texto frecuente con una categoría o subcategoría: por ejemplo, `carrefour` → Hogar / Supermercado. Los siguientes gastos que contengan esa palabra se ordenan automáticamente.
+
+En **Ingresos** se registran sueldos, honorarios, alquileres, ventas, reintegros, inversiones, regalos y otros ingresos. ARS y USD se muestran separados y la aplicación no los convierte ni calcula un balance artificial. Cada persona puede editar o eliminar únicamente sus propios ingresos. Las categorías de ingresos son independientes de las categorías de gastos y se administran desde la misma pantalla.
+
+En Telegram, `Ingreso: sueldo 1.500.000` usa el camino rápido. También se entienden frases inequívocas como `cobré 300.000 de un freelance` o `me depositaron el sueldo`. El formato corto `concepto monto` sin prefijo continúa registrando un gasto.
 
 En **Fijos** se configuran gastos que se repiten, como alquiler, internet o cuotas. En **Resúmenes**, cada generación usa IA sobre los datos del grupo, consume una de las 15 generaciones mensuales disponibles y puede tardar cerca de un minuto.
 
