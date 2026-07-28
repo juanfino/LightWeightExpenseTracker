@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 7 complete; Phase 8 is next
+**Status:** All planned phases complete
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-28
@@ -58,8 +58,8 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 4 | Invitations, members, superadmin flag | DONE | `feat/mt-p4-family-members` | Codex | 2026-07-27 |
 | 5 | Telegram linking + quotas | DONE | `feat/mt-p5-telegram-quotas` | Codex | 2026-07-27 |
 | 6 | Self-service onboarding polish | DONE | `feat/mt-p6-onboarding` | Codex | 2026-07-27 |
-| 7 | New features (incomes, shopping list, CSV export) | NOT STARTED | | | |
-| 8 | Superadmin panel | NOT STARTED | | | |
+| 7 | New features (incomes, shopping list, CSV export) | DONE | `feat/p7a-incomes`, `feat/p7b-shopping-list`, `feat/p7c-data-export` | Codex | 2026-07-28 |
+| 8 | Superadmin panel | DONE | `feat/mt-p8-superadmin` | Codex | 2026-07-28 |
 
 Status values: `NOT STARTED` / `IN PROGRESS` / `BLOCKED` / `DONE`.
 
@@ -85,7 +85,7 @@ Rationale: the LLM writes SQL in `intent.py` / `sqlro.py`. A prompt instruction 
 
 ### I3 — Tables that do NOT carry `family_id`
 
-`families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `alembic_version`.
+`families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `telegram_link_tokens`, `infrastructure_cost_settings`, `alembic_version`.
 
 Everything else — every domain table, present and future — carries it. Including `llm_calls`.
 
@@ -171,27 +171,17 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 | `/unirme/<token>` | `join_family.html` | Public single-use invitation acceptance through Google or email OTP | Phase 4 |
 | `/familia` | `family.html` | Members, invitations, rename, logical removal, ownership transfer, leave/delete | Phase 4 |
 | `/vincular-telegram` | `telegram_link.html` | One-tap Telegram deep link + QR + live connected state | Phase 5 |
+| `/superadmin` | `superadmin.html` | Cross-family activity, expense/LLM metrics, operating costs, quota overrides and recent errors | Phase 8 complete |
 
 ### To be added
 
-| Route | Phase | Purpose |
-|---|---|---|
-| `/ingresos` | 7 | Income entry and history |
-| `/lista` | 7 | Shopping list |
-| `/exportar` | 7 | CSV export |
-| `/superadmin` | 8 | Cross-family metrics, LLM cost, user count |
+No screens remain in the current plan.
 
 ### To be modified
 
-| Screen | Phase | Change |
-|---|---|---|
-| All | 2 | Every query scoped by family |
-| All | 3 | Session-based auth replaces Cloudflare Access; user menu in header |
-| All | 6 | Designed empty states — completed in 7.1.0 |
-| Dashboard | 6 | Self-dismissing onboarding checklist card — completed in 7.1.0 |
-| Dashboard | 7 | Net balance (income − expenses) |
-| Config | 4 | Restore becomes superadmin-only (see Open Decision D1) |
-| Nav | 7 | New entries: Ingresos, Lista, Exportar |
+No screen changes remain in the current plan. The cross-currency net balance
+originally sketched for Phase 7 was deliberately rejected in favor of separate
+ARS/USD income totals; restore was removed from HTTP entirely in Phase 1.
 
 ---
 
@@ -230,6 +220,10 @@ telegram_link_tokens(id, user_id, token_hash, expires_at, consumed_at, created_a
 Existing: `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`
 
 New: `llm_calls`, `incomes`, `income_categories`, `shopping_items`
+
+Phase 8 adds tenant-scoped `family_quota_overrides` and `system_errors`.
+Global `infrastructure_cost_settings` is administrative installation metadata,
+not family domain data, and is accessible only through `gastos_superadmin`.
 
 ```
 llm_calls(id, family_id, user_id NULL, created_at, module,
@@ -816,7 +810,28 @@ Impersonation. Editing another family's data. Billing.
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Implemented on `feat/mt-p8-superadmin` (version 7.5.0):**
+
+- `/superadmin` is visible only to `users.is_superadmin` and reads cross-family
+  metrics exclusively with the existing `gastos_superadmin` `BYPASSRLS` role.
+  It covers families/users/activity, expense volume, LLM calls and estimated
+  cost per family/module/model/day, operating-cost assumptions and recent
+  web/Telegram/LLM failures.
+- `family_quota_overrides` keeps optional routine/report limits under forced
+  RLS; `llm_limits.py` reads them in the current family context and falls back
+  to 100 daily routine calls and 15 monthly summaries.
+- Unhandled tenant-attributed web and bot exceptions are persisted in
+  `system_errors` as well as logged/notified. The panel does not impersonate
+  users, edit another family's business data or implement billing.
+- The primary header now contains only daily product areas. Dashboard is
+  reached exclusively through the logo; the avatar popup groups Family,
+  Categories, Telegram, Export, System, Superadmin and logout. At 390 px the
+  header and popup have no horizontal overflow.
+- Verification: clean migrations through `0008`, 51 unit/integration/isolation
+  tests, schema smoke, all-route web smoke and desktop/mobile browser QA.
+
+**Deliberately not done:** impersonation, business-data editing and billing,
+matching the phase's explicit out-of-scope list.
 
 ---
 

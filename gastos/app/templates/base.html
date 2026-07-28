@@ -106,8 +106,9 @@
     .topbar-left {
       display: flex;
       align-items: center;
-      gap: 36px;
+      gap: 24px;
       min-width: 0;
+      flex: 1;
     }
 
     .topbar-brand {
@@ -148,7 +149,7 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      flex-shrink: 0;
+      min-width: 0;
     }
 
     .tab-link {
@@ -168,20 +169,37 @@
       color: var(--text);
     }
 
-    .topbar-avatar {
-      width: 34px;
-      height: 34px;
+    .account-menu { margin-left:auto; position:relative; flex-shrink:0; }
+    .account-trigger {
+      width: 38px;
+      height: 38px;
       border-radius: 50%;
-      background: oklch(0.3 0.05 55);
-      border: 1px solid var(--border2);
-      margin-left: auto;
-      flex-shrink: 0;
+      background: var(--accent-grad);
+      border: 2px solid color-mix(in oklch,var(--accent) 55%,var(--border2));
+      color: var(--on-accent);
+      display:grid;
+      place-items:center;
+      font:700 13px var(--font-sans);
+      cursor:pointer;
+      transition:transform .15s,box-shadow .15s;
     }
-    .user-menu { margin-left:auto; display:flex; align-items:center; gap:10px; }
-    .user-copy { text-align:right; line-height:1.25; }
-    .user-name { font-weight:700; font-size:13px; }
-    .user-family { color:var(--text3); font-size:11px; }
-    .logout-button { border:1px solid var(--border2); background:transparent; color:var(--text2); border-radius:8px; padding:7px 9px; cursor:pointer; }
+    .account-trigger:hover,.account-trigger[aria-expanded="true"]{transform:scale(1.04);box-shadow:0 0 0 4px color-mix(in oklch,var(--accent) 15%,transparent)}
+    .account-popover {
+      position:absolute;right:0;top:48px;width:310px;padding:10px;
+      background:var(--bg2);border:1px solid var(--border2);border-radius:22px;
+      box-shadow:0 20px 60px rgba(0,0,0,.32);opacity:0;visibility:hidden;
+      transform:translateY(-6px);transition:opacity .16s,transform .16s,visibility .16s;z-index:80;
+    }
+    .account-popover.open{opacity:1;visibility:visible;transform:translateY(0)}
+    .account-profile{text-align:center;padding:15px 12px 18px;border-bottom:1px solid var(--border)}
+    .account-profile-avatar{width:58px;height:58px;border-radius:50%;margin:0 auto 10px;background:var(--accent-grad);color:var(--on-accent);display:grid;place-items:center;font-size:20px;font-weight:800}
+    .account-profile-name{font-size:17px;font-weight:700}.account-profile-family{font-size:12px;color:var(--text2);margin-top:2px}
+    .account-links{padding:8px 0;display:grid;gap:2px}
+    .account-link{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:var(--text2);font-weight:600}
+    .account-link i{font-size:19px}.account-link:hover,.account-link.active{background:var(--surface2);color:var(--text)}
+    .account-link.admin-only{color:var(--accent)}
+    .account-logout{border-top:1px solid var(--border);padding-top:8px}
+    .account-logout form{display:block}.account-logout button{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
 
     /* ── Layout ── */
     .container {
@@ -538,9 +556,9 @@
 
     @media (max-width: 1024px) {
       .topbar-tabs   { display: none; }
-      .topbar-avatar { display: none; }
-      .user-menu     { display: none; }
-      .nav-toggle    { display: flex; margin-left: auto; }
+      .nav-toggle    { display: flex; margin-left: 0; }
+      .topbar-inner  { gap: 9px; }
+      .account-menu  { margin-left:auto; }
     }
 
     /* ── Tabla responsive: filas como tarjetas en mobile ── */
@@ -611,25 +629,40 @@
         </a>
 
         <nav class="topbar-tabs">
-          <a href="{{ url_for('index') }}" class="tab-link {% block nav_dashboard %}{% endblock %}">Dashboard</a>
           <a href="/history"  class="tab-link {% block nav_history %}{% endblock %}">Movimientos</a>
           <a href="/ingresos" class="tab-link {% block nav_incomes %}{% endblock %}">Ingresos</a>
           <a href="/lista" class="tab-link {% block nav_shopping %}{% endblock %}">Lista{% if shopping_pending_count %} · {{ shopping_pending_count }}{% endif %}</a>
           <a href="/fijos"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
           <a href="/dolares"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
           <a href="/resumenes" class="tab-link {% block nav_resumenes %}{% endblock %}">Resúmenes</a>
-          <a href="/settings" class="tab-link {% block nav_settings %}{% endblock %}">Categorías</a>
-          <a href="/config"   class="tab-link {% block nav_config %}{% endblock %}">Sistema</a>
-          <a href="/exportar" class="tab-link {% block nav_export %}{% endblock %}">Exportar</a>
         </nav>
       </div>
 
-      <div class="user-menu">
-        <a class="user-copy" href="{{ url_for('family') }}"><div class="user-name">{{ current_user.name }}</div><div class="user-family">{{ current_user.family_name }} · Administrar</div></a>
-        <form method="post" action="{{ url_for('logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="logout-button" type="submit" title="Cerrar sesión"><i class="ti ti-logout"></i></button>
-        </form>
+      <div class="account-menu">
+        <button class="account-trigger" id="account-trigger" aria-label="Abrir menú de cuenta" aria-haspopup="true" aria-expanded="false">
+          {{ current_user.name[:1]|upper }}{{ current_user.name.split()[-1][:1]|upper if current_user.name.split()|length > 1 else '' }}
+        </button>
+        <div class="account-popover" id="account-popover" role="menu">
+          <div class="account-profile">
+            <div class="account-profile-avatar">{{ current_user.name[:1]|upper }}{{ current_user.name.split()[-1][:1]|upper if current_user.name.split()|length > 1 else '' }}</div>
+            <div class="account-profile-name">Hola, {{ current_user.name.split()[0] }}</div>
+            <div class="account-profile-family">{{ current_user.family_name }}</div>
+          </div>
+          <div class="account-links">
+            <a href="{{ url_for('family') }}" class="account-link"><i class="ti ti-users"></i> Administrar familia</a>
+            <a href="/settings" class="account-link {{ 'active' if request.path == '/settings' else '' }}"><i class="ti ti-category"></i> Categorías</a>
+            <a href="{{ url_for('telegram_link') }}" class="account-link"><i class="ti ti-brand-telegram"></i> Conectar Telegram</a>
+            <a href="/exportar" class="account-link {{ 'active' if request.path.startswith('/exportar') else '' }}"><i class="ti ti-file-export"></i> Exportar datos</a>
+            <a href="/config" class="account-link {{ 'active' if request.path == '/config' else '' }}"><i class="ti ti-settings"></i> Sistema</a>
+            {% if current_user.is_superadmin %}<a href="/superadmin" class="account-link admin-only {{ 'active' if request.path == '/superadmin' else '' }}"><i class="ti ti-shield-lock"></i> Superadmin</a>{% endif %}
+          </div>
+          <div class="account-logout">
+            <form method="post" action="{{ url_for('logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="account-link" type="submit"><i class="ti ti-logout"></i> Cerrar sesión</button>
+            </form>
+          </div>
+        </div>
       </div>
 
       <button class="nav-toggle" id="nav-toggle" aria-label="Menú">
@@ -650,17 +683,12 @@
         <i class="ti ti-x"></i>
       </button>
     </div>
-    <a href="{{ url_for('index') }}" class="tab-link {{ self.nav_dashboard() }}">Dashboard</a>
     <a href="/history"  class="tab-link {{ self.nav_history() }}">Movimientos</a>
     <a href="/ingresos" class="tab-link {{ self.nav_incomes() }}">Ingresos</a>
     <a href="/lista" class="tab-link {{ self.nav_shopping() }}">Lista{% if shopping_pending_count %} · {{ shopping_pending_count }}{% endif %}</a>
     <a href="/fijos"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
     <a href="/dolares"  class="tab-link {{ self.nav_dolares() }}">Dólares</a>
     <a href="/resumenes" class="tab-link {{ self.nav_resumenes() }}">Resúmenes</a>
-    <a href="/settings" class="tab-link {{ self.nav_settings() }}">Categorías</a>
-    <a href="/config"   class="tab-link {{ self.nav_config() }}">Sistema</a>
-    <a href="/exportar" class="tab-link {{ self.nav_export() }}">Exportar</a>
-    <a href="{{ url_for('family') }}" class="tab-link">Familia</a>
   </nav>
 
   {% block content %}{% endblock %}
@@ -695,6 +723,8 @@
       const menu   = document.getElementById('mobile-menu');
       const scrim  = document.getElementById('menu-scrim');
       const close  = document.getElementById('menu-close');
+      const accountTrigger = document.getElementById('account-trigger');
+      const accountPopover = document.getElementById('account-popover');
 
       function openMenu() {
         menu.classList.add('open');
@@ -711,6 +741,26 @@
       toggle.addEventListener('click', openMenu);
       close.addEventListener('click', closeMenu);
       scrim.addEventListener('click', closeMenu);
+
+      function closeAccount() {
+        accountPopover.classList.remove('open');
+        accountTrigger.setAttribute('aria-expanded', 'false');
+      }
+      accountTrigger.addEventListener('click', function(event) {
+        event.stopPropagation();
+        const opening = !accountPopover.classList.contains('open');
+        closeAccount();
+        if (opening) {
+          accountPopover.classList.add('open');
+          accountTrigger.setAttribute('aria-expanded', 'true');
+        }
+      });
+      document.addEventListener('click', function(event) {
+        if (!accountPopover.contains(event.target)) closeAccount();
+      });
+      document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') { closeAccount(); closeMenu(); }
+      });
 
       // Cerrar al tocar cualquier link del drawer
       menu.querySelectorAll('.tab-link').forEach(function(link) {

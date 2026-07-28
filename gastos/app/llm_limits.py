@@ -32,12 +32,16 @@ def _family_semaphore(family_id: int) -> threading.BoundedSemaphore:
 
 def routine_usage() -> dict:
     used = db.count_routine_llm_calls_today()
-    return {"used": used, "limit": ROUTINE_DAILY_LIMIT, "remaining": max(0, ROUTINE_DAILY_LIMIT - used)}
+    override = db.get_family_quota_limits()["routine_daily_limit"]
+    limit = override or ROUTINE_DAILY_LIMIT
+    return {"used": used, "limit": limit, "remaining": max(0, limit - used)}
 
 
 def summary_usage() -> dict:
     used = db.count_reports_this_month()
-    return {"used": used, "limit": SUMMARY_MONTHLY_LIMIT, "remaining": max(0, SUMMARY_MONTHLY_LIMIT - used)}
+    override = db.get_family_quota_limits()["summary_monthly_limit"]
+    limit = override or SUMMARY_MONTHLY_LIMIT
+    return {"used": used, "limit": limit, "remaining": max(0, limit - used)}
 
 
 @contextmanager
@@ -51,7 +55,7 @@ def routine_call():
         with _lock:
             usage = routine_usage()
             pending = _pending_routine.get(family_id, 0)
-            if usage["used"] + pending >= ROUTINE_DAILY_LIMIT:
+            if usage["used"] + pending >= usage["limit"]:
                 timezone_name = db.get_current_family_timezone()
                 now = datetime.now(ZoneInfo(timezone_name))
                 reset = now.date().fromordinal(now.date().toordinal() + 1).strftime("%d/%m")
@@ -90,9 +94,10 @@ def summary_generation():
     with _lock:
         usage = summary_usage()
         pending = _pending_summaries.get(family_id, 0)
-        if usage["used"] + pending >= SUMMARY_MONTHLY_LIMIT:
+        if usage["used"] + pending >= usage["limit"]:
             raise QuotaExceeded(
-                "Alcanzaron el límite mensual de 15 Resúmenes. Se habilita de nuevo el mes próximo."
+                f"Alcanzaron el límite mensual de {usage['limit']} Resúmenes. "
+                "Se habilita de nuevo el mes próximo."
             )
         _pending_summaries[family_id] = pending + 1
     try:

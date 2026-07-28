@@ -3,6 +3,7 @@ import secrets
 import base64
 import io
 import traceback
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urljoin, urlparse
 
@@ -55,6 +56,7 @@ def _report_web_exception(_sender, exception, **_extra):
         "Excepción web no manejada family_id=%s user_id=%s\n%s",
         family_id, user_id, details,
     )
+    db.record_system_error("web", exception, details)
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
         return
@@ -197,6 +199,11 @@ def _currency_arg() -> str:
     return db.normalize_currency(request.args.get("currency") or body.get("currency") or "ARS")
 
 
+def _require_superadmin():
+    if not g.current_user.get("is_superadmin"):
+        abort(403)
+
+
 # ── Páginas ───────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -227,6 +234,74 @@ def index():
         "index.html", year=now.year, month=now.month,
         month_label=_month_label(now.year, now.month), onboarding=onboarding,
     )
+
+
+@app.route("/superadmin")
+def superadmin():
+    _require_superadmin()
+    data = db.get_superadmin_dashboard()
+    data["llm_daily"] = [
+        {"day": row["day"].isoformat(), "calls": row["calls"], "cost": float(row["cost"])}
+        for row in data["llm_daily"]
+    ]
+    totals = {
+        "families": len(data["families"]),
+        "users": sum(row["users"] for row in data["families"]),
+        "active_30d": sum(row["active_30d"] for row in data["families"]),
+        "expenses": sum(row["expenses"] for row in data["families"]),
+        "llm_cost_30d": sum(row["cost"] for row in data["llm_by_family"]),
+    }
+    return render_template("superadmin.html", data=data, totals=totals)
+
+
+@app.route("/admin/families/<int:family_id>/quotas", methods=["POST"])
+def admin_family_quotas(family_id):
+    _require_superadmin()
+    body = request.get_json(silent=True) or {}
+
+    def optional_positive(name):
+        raw = body.get(name)
+        if raw in (None, ""):
+            return None
+        value = int(raw)
+        if value <= 0 or value > 100000:
+            raise ValueError
+        return value
+
+    try:
+        routine = optional_positive("routine_daily_limit")
+        summaries = optional_positive("summary_monthly_limit")
+    except (TypeError, ValueError):
+        return jsonify({"error": "Los límites deben ser enteros positivos."}), 400
+    if not db.set_family_quota_override(family_id, routine, summaries):
+        return jsonify({"error": "Familia no encontrada."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/costs/<provider>", methods=["POST"])
+def admin_cost(provider):
+    _require_superadmin()
+    body = request.get_json(silent=True) or {}
+    try:
+        rate = Decimal(str(body.get("unit_rate_usd", "")))
+        volume = Decimal(str(body.get("monthly_volume", "")))
+        if not rate.is_finite() or not volume.is_finite() or rate < 0 or volume < 0:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
+        return jsonify({"error": "Tarifa y volumen deben ser números no negativos."}), 400
+    unit_label = str(body.get("unit_label", "")).strip()
+    if not unit_label:
+        return jsonify({"error": "Indicá la unidad medida."}), 400
+    updated = db.update_infrastructure_cost(
+        provider,
+        unit_label[:100],
+        rate,
+        volume,
+        str(body.get("notes", "")).strip()[:500] or None,
+    )
+    if not updated:
+        return jsonify({"error": "Proveedor desconocido."}), 404
+    return jsonify({"ok": True})
 
 
 def _client_ip() -> str:

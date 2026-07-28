@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from alembic import command
 from alembic.config import Config
 from psycopg import IntegrityError
+from psycopg.rows import dict_row
 
 import pgcompat
 
@@ -512,6 +513,229 @@ def count_reports_this_month() -> int:
                   ) AT TIME ZONE f.timezone
             """
         ).fetchone()["count"]
+
+
+def get_family_quota_limits() -> dict:
+    """Return tenant-visible overrides; missing values keep application defaults."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT routine_daily_limit, summary_monthly_limit
+            FROM family_quota_overrides
+            """
+        ).fetchone()
+    return dict(row) if row else {
+        "routine_daily_limit": None,
+        "summary_monthly_limit": None,
+    }
+
+
+def record_system_error(
+    source: str,
+    error: BaseException,
+    details: str | None = None,
+) -> None:
+    """Persist tenant-attributed unhandled failures without masking the original."""
+    family_id = pgcompat.current_family_id()
+    if family_id is None:
+        return
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO system_errors
+                    (family_id, user_id, source, error_type, message, details)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    family_id,
+                    pgcompat.current_user_id(),
+                    source[:50],
+                    type(error).__name__[:120],
+                    str(error)[:1000] or type(error).__name__,
+                    (details or "")[-8000:] or None,
+                ),
+            )
+    except Exception:
+        logger.exception("No se pudo registrar el error no manejado")
+
+
+def get_superadmin_dashboard() -> dict:
+    """Cross-family operational view. This is the only dashboard BYPASSRLS read."""
+    with pgcompat.current_pool().connection() as raw:
+        original_row_factory = raw.row_factory
+        raw.row_factory = dict_row
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        families = raw.execute(
+            """
+            SELECT
+                f.id, f.name, f.created_at,
+                COUNT(DISTINCT m.user_id) FILTER (WHERE m.active) AS users,
+                COUNT(DISTINCT m.user_id) FILTER (
+                    WHERE m.active AND u.last_login_at >= now() - interval '7 days'
+                ) AS active_7d,
+                COUNT(DISTINCT m.user_id) FILTER (
+                    WHERE m.active AND u.last_login_at >= now() - interval '30 days'
+                ) AS active_30d,
+                COUNT(DISTINCT e.id) AS expenses,
+                COUNT(DISTINCT e.id) FILTER (
+                    WHERE e.created_at >= date_trunc('month', now())
+                ) AS expenses_month,
+                COALESCE(q.routine_daily_limit, %s) AS routine_limit,
+                COALESCE(q.summary_monthly_limit, %s) AS summary_limit,
+                q.routine_daily_limit IS NOT NULL AS routine_overridden,
+                q.summary_monthly_limit IS NOT NULL AS summary_overridden
+            FROM families f
+            LEFT JOIN memberships m ON m.family_id = f.id
+            LEFT JOIN users u ON u.id = m.user_id
+            LEFT JOIN expenses e ON e.family_id = f.id
+            LEFT JOIN family_quota_overrides q ON q.family_id = f.id
+            GROUP BY f.id, q.routine_daily_limit, q.summary_monthly_limit
+            ORDER BY f.name
+            """,
+            (100, 15),
+        ).fetchall()
+        llm_by_family = raw.execute(
+            """
+            SELECT f.id AS family_id, f.name AS family_name,
+                   COUNT(l.id) AS calls,
+                   COALESCE(SUM(l.cost_usd_estimate), 0) AS cost,
+                   COUNT(l.id) FILTER (WHERE NOT l.success) AS failures
+            FROM families f
+            LEFT JOIN llm_calls l
+              ON l.family_id = f.id
+             AND l.created_at >= now() - interval '30 days'
+            GROUP BY f.id, f.name
+            ORDER BY cost DESC, f.name
+            """
+        ).fetchall()
+        llm_breakdown = raw.execute(
+            """
+            SELECT module, model, COUNT(*) AS calls,
+                   COALESCE(SUM(tokens_in), 0) AS tokens_in,
+                   COALESCE(SUM(tokens_out), 0) AS tokens_out,
+                   COALESCE(SUM(cost_usd_estimate), 0) AS cost
+            FROM llm_calls
+            WHERE created_at >= now() - interval '30 days'
+            GROUP BY module, model
+            ORDER BY cost DESC, calls DESC
+            """
+        ).fetchall()
+        llm_daily = raw.execute(
+            """
+            SELECT created_at::date AS day, COUNT(*) AS calls,
+                   COALESCE(SUM(cost_usd_estimate), 0) AS cost
+            FROM llm_calls
+            WHERE created_at >= current_date - 29
+            GROUP BY created_at::date
+            ORDER BY day
+            """
+        ).fetchall()
+        errors = raw.execute(
+            """
+            SELECT se.created_at, se.source, se.error_type, se.message,
+                   f.name AS family_name, u.name AS user_name
+            FROM system_errors se
+            JOIN families f ON f.id = se.family_id
+            LEFT JOIN users u ON u.id = se.user_id
+            ORDER BY se.created_at DESC
+            LIMIT 30
+            """
+        ).fetchall()
+        llm_errors = raw.execute(
+            """
+            SELECT l.created_at, l.module AS source, 'LLM' AS error_type,
+                   COALESCE(l.error_text, 'Llamada fallida') AS message,
+                   f.name AS family_name, u.name AS user_name
+            FROM llm_calls l
+            JOIN families f ON f.id = l.family_id
+            LEFT JOIN users u ON u.id = l.user_id
+            WHERE NOT l.success
+            ORDER BY l.created_at DESC
+            LIMIT 30
+            """
+        ).fetchall()
+        costs = raw.execute(
+            """
+            SELECT provider, unit_label, unit_rate_usd, monthly_volume, notes,
+                   unit_rate_usd * monthly_volume AS estimated_monthly_cost
+            FROM infrastructure_cost_settings
+            ORDER BY CASE provider
+                WHEN 'Anthropic' THEN 1 WHEN 'OpenAI' THEN 2
+                WHEN 'Resend' THEN 3 ELSE 4 END
+            """
+        ).fetchall()
+        raw.row_factory = original_row_factory
+        raw.commit()
+    recent_errors = sorted(
+        [dict(row) for row in errors] + [dict(row) for row in llm_errors],
+        key=lambda row: row["created_at"],
+        reverse=True,
+    )[:30]
+    return {
+        "families": [dict(row) for row in families],
+        "llm_by_family": [dict(row) for row in llm_by_family],
+        "llm_breakdown": [dict(row) for row in llm_breakdown],
+        "llm_daily": [dict(row) for row in llm_daily],
+        "recent_errors": recent_errors,
+        "costs": [dict(row) for row in costs],
+    }
+
+
+def set_family_quota_override(
+    family_id: int,
+    routine_daily_limit: int | None,
+    summary_monthly_limit: int | None,
+) -> bool:
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        if not raw.execute(
+            "SELECT 1 FROM families WHERE id = %s", (family_id,)
+        ).fetchone():
+            raw.commit()
+            return False
+        if routine_daily_limit is None and summary_monthly_limit is None:
+            raw.execute(
+                "DELETE FROM family_quota_overrides WHERE family_id = %s",
+                (family_id,),
+            )
+        else:
+            raw.execute(
+                """
+                INSERT INTO family_quota_overrides
+                    (family_id, routine_daily_limit, summary_monthly_limit, updated_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (family_id) DO UPDATE SET
+                    routine_daily_limit = excluded.routine_daily_limit,
+                    summary_monthly_limit = excluded.summary_monthly_limit,
+                    updated_at = now()
+                """,
+                (family_id, routine_daily_limit, summary_monthly_limit),
+            )
+        raw.commit()
+        return True
+
+
+def update_infrastructure_cost(
+    provider: str,
+    unit_label: str,
+    unit_rate_usd,
+    monthly_volume,
+    notes: str | None,
+) -> bool:
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        result = raw.execute(
+            """
+            UPDATE infrastructure_cost_settings
+            SET unit_label = %s, unit_rate_usd = %s, monthly_volume = %s,
+                notes = %s, updated_at = now()
+            WHERE provider = %s
+            """,
+            (unit_label, unit_rate_usd, monthly_volume, notes, provider),
+        )
+        raw.commit()
+        return result.rowcount == 1
 
 
 def _assign_default_user_colors():

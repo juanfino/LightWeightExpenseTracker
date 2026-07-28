@@ -79,7 +79,9 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Movimientos (`/history`), Ingresos (`/ingresos`), Lista (`/lista`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`), Exportar (`/exportar`) y Sistema (`/config`).
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **Gastos Familiares** arriba a la izquierda. El menú principal contiene Movimientos, Ingresos, Lista, Gastos Fijos, Dólares y Resúmenes.
+
+Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, Sistema y **Cerrar sesión**. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú muestra el acceso al panel operativo global.
 
 Una familia nueva ve una checklist de primeros pasos en el Dashboard: crear la cuenta, cargar el primer gasto, conectar Telegram (opcional) e invitar a alguien. Cada paso lleva directamente a la pantalla correspondiente y la tarjeta desaparece cuando todos están completos. Las pantallas sin datos muestran qué va a aparecer ahí y un botón para empezar.
 
@@ -99,7 +101,7 @@ En **Exportar** (`/exportar`) cualquier miembro activo puede descargar CSV de Mo
 
 En **Fijos** se configuran gastos que se repiten, como alquiler, internet o cuotas. En **Resúmenes**, cada generación usa IA sobre los datos del grupo, consume una de las 15 generaciones mensuales disponibles y puede tardar cerca de un minuto.
 
-Desde el nombre de la familia en la barra superior se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.
+Desde **Administrar familia** en el menú del avatar se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.
 
 Cada miembro puede elegir **Conectar mi Telegram**. En el celular se toca el botón; desde una computadora se escanea el QR. Telegram abre el bot directamente y alcanza con tocar **INICIAR**: la web confirma sola la conexión. El enlace vence a los 15 minutos y es de un solo uso. La cuenta se puede desconectar desde Familia. Los grupos todavía no están soportados.
 

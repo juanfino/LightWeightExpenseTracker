@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.4.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.5.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -20,7 +20,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations` and `telegram_link_tokens`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
+**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `telegram_link_tokens` and global `infrastructure_cost_settings`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `income_categories`, `incomes`, `shopping_items`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`, `llm_calls`, `family_quota_overrides` and `system_errors`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role and is the only role used by `/superadmin` for cross-family reads. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
 
 Phase 5 adds the platform table `telegram_link_tokens` (no `family_id`): only SHA-256 token hashes are stored, tokens expire after 15 minutes and are single-use.
 
@@ -51,6 +51,7 @@ Phase 5 adds the platform table `telegram_link_tokens` (no `family_id`): only SH
 - **Users:** Juampi and Cele, both onboarded and actively using the app
 - **Family management:** `/familia` lets the owner generate/revoke seven-day single-use invitation links, rename the family, logically remove members, transfer ownership, or delete the family with exact-name confirmation. Invitees join as members through Google or email OTP. `SUPERADMIN_EMAIL` is startup-only; no HTTP path can change the flag.
 - **Telegram linking and LLM safeguards:** `/vincular-telegram` provides a 15-minute, one-use deep link and QR with live confirmation; unknown chats get linking help, groups are rejected, and unlinking lives in `/familia`. Routine AI calls are capped at 100/family/day, Resúmenes at 15 generations/family/month, and `llm_limits.py` permits at most two concurrent LLM calls per family. Unhandled bot/web errors alert the linked superadmin Telegram with tenant/user context.
+- **Superadmin operations:** `/superadmin` shows cross-family adoption/activity, expense volume, LLM calls/cost by family/module/model/day, editable operating-cost assumptions, optional family quota overrides and recent web/Telegram/LLM failures. It does not provide impersonation, billing or business-data editing.
 
 ## Monthly AI report
 
@@ -90,8 +91,9 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only |
 | `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |
 | `/vincular-telegram` | `telegram_link.html` | Telegram deep link, desktop QR and live connected status |
+| `/superadmin` | `superadmin.html` | Superadmin-only cross-family operational metrics, AI/cost analysis, quota overrides and recent failures |
 
-All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark).
+All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark). The logo is the sole navigation entry for Dashboard. The desktop/mobile primary menu contains daily product areas; the avatar popup groups family administration, taxonomy, Telegram linking, export, system, superadmin access and logout.
 
 ## Telegram Commands
 
