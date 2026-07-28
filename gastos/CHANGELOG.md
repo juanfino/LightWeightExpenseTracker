@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.3.0
+- **Fase 7b — Lista de compras:** nueva lista familiar compartida, agrupada por categoría, con cantidades libres, edición, comprados recientes y contador de pendientes.
+- Telegram permite agregar faltantes, marcar compras y consultar la lista; los mensajes con monto siguen tratándose como gastos.
+- Los duplicados pendientes se consolidan y los comprados se conservan 30 días para reagregarlos.
+- `shopping_items` queda protegida por RLS y referencias compuestas entre familias.
+
 ## 7.2.0
 - **Fase 7a — Ingresos:** nueva pantalla para registrar, filtrar, editar y eliminar ingresos en ARS o USD, con categorías propias administrables y reglas de propiedad por persona.
 - El Dashboard muestra los ingresos del mes separados por moneda, sin conversiones ni un balance engañoso entre monedas.

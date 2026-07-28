@@ -21,6 +21,7 @@ _INSERT_WITH_ID = {
     "users", "categories", "subcategories", "keywords", "expenses",
     "fixed_expenses", "cambios_dolar", "reports", "expense_classifications",
     "income_categories", "incomes",
+    "shopping_items",
 }
 
 
