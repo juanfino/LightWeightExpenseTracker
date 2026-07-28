@@ -261,7 +261,12 @@
       <tbody id="admin-tbody"></tbody>
     </table>
    </div>
-    <div id="admin-empty" class="empty" style="display:none">No hay gastos fijos configurados.</div>
+    <div id="admin-empty" class="empty-state" style="display:none">
+      <div class="empty-state-icon"><i class="ti ti-calendar-repeat"></i></div>
+      <div class="empty-state-title">Empezá por un gasto que se repite</div>
+      <p class="empty-state-copy">Alquiler, internet o una cuota: cargalo una vez y cada mes vas a ver si ya está pagado.</p>
+      <button class="btn btn-primary" onclick="document.getElementById('btn-add-fijo').click()">Agregar gasto fijo</button>
+    </div>
   </div>
 
 </div>

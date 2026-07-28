@@ -325,6 +325,9 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 {% block scripts %}
 <script type="application/json" id="cat-data">{{ categories | tojson }}</script>
 <script>
+  const initialParams = new URLSearchParams(window.location.search);
+  const shouldOpenAdd = initialParams.get("add") === "1";
+  const enteredWithFilters = Array.from(initialParams.keys()).some(key => key !== "add");
   const PAGE_SIZE = 25;
   let allExpenses = [];
   let page        = 0;
@@ -642,7 +645,14 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     const tbody = document.getElementById("expense-body");
     if (slice.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados</td></tr>';
+      const filtered = enteredWithFilters && !shouldOpenAdd;
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon"><i class="ti ti-receipt"></i></div><div class="empty-state-title">'
+        + (filtered ? 'No encontramos gastos con esos filtros' : 'Cargá tu primer gasto')
+        + '</div><p class="empty-state-copy">'
+        + (filtered ? 'Probá limpiar los filtros para volver a ver todos tus movimientos.' : 'Anotá qué compraste y cuánto pagaste. Después vas a poder editarlo cuando quieras.')
+        + '</p><button class="btn btn-primary" onclick="'
+        + (filtered ? "document.getElementById('btn-reset').click()" : "document.getElementById('btn-add-expense').click()")
+        + '">' + (filtered ? 'Limpiar filtros' : 'Agregar gasto') + '</button></div></td></tr>';
       return;
     }
     tbody.innerHTML = slice.map(buildReadRow).join("");
@@ -1038,7 +1048,10 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     await loadFixedExpenses();
     await loadFilterSubcategories(document.getElementById("f-category").value);
     if (desiredSubcat) document.getElementById("f-subcategory").value = desiredSubcat;
-    loadExpenses();
+    await loadExpenses();
+    if (shouldOpenAdd) {
+      openAddModal();
+    }
   }
   init();
 </script>

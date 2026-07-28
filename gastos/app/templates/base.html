@@ -415,6 +415,28 @@
       font-size: 13px;
     }
 
+    .empty-state {
+      text-align: center;
+      padding: 42px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .empty-state-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 15px;
+      display: grid;
+      place-items: center;
+      background: color-mix(in oklch, var(--accent) 15%, transparent);
+      color: var(--accent);
+      font-size: 24px;
+    }
+    .empty-state-title { font-size: 17px; font-weight: 700; color: var(--text); }
+    .empty-state-copy { color: var(--text2); max-width: 460px; }
+    .help-copy { color: var(--text2); font-size: 13px; line-height: 1.6; }
+
     /* ── Disabled ── */
     button[disabled] { opacity: 0.38; cursor: not-allowed; }
 
@@ -517,6 +539,7 @@
     @media (max-width: 1024px) {
       .topbar-tabs   { display: none; }
       .topbar-avatar { display: none; }
+      .user-menu     { display: none; }
       .nav-toggle    { display: flex; margin-left: auto; }
     }
 
@@ -566,6 +589,10 @@
       .container { padding: 20px 14px; }
       .topbar    { padding: 0 14px; }
       .card      { padding: 16px; }
+      .page-header { align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+      .page-header .btn { width: 100%; justify-content: center; }
+      .section-header { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+      .empty-state { padding: 32px 12px; }
 
       /* iOS hace zoom automático al enfocar un input con font-size < 16px */
       input, select { font-size: 16px; }

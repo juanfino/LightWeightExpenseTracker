@@ -258,8 +258,9 @@
       metaEl.textContent = "—";
       root.innerHTML = `
         <div class="card empty-state">
-          <div class="section-title">Todavía no hay un resumen para ${MONTHS_ES[selMonth]} ${selYear}</div>
-          <div class="summary" style="margin-top:8px">Se genera en dos pasos con IA y tarda medio minuto aproximadamente. Quedan ${quota.remaining} de ${quota.limit} generaciones este mes.</div>
+          <div class="empty-state-icon"><i class="ti ti-sparkles"></i></div>
+          <div class="empty-state-title">Todavía no hay un resumen para ${MONTHS_ES[selMonth]} ${selYear}</div>
+          <div class="summary">La IA revisa los gastos de este grupo y prepara tendencias y hallazgos. Cada generación usa 1 de las ${quota.limit} disponibles por mes; te quedan ${quota.remaining}. Suele tardar cerca de un minuto.</div>
           <button class="btn btn-primary" id="btn-generate" ${quota.remaining <= 0 ? "disabled" : ""}>Generar resumen</button>
         </div>`;
       document.getElementById('btn-generate').addEventListener('click', () => generateReport());

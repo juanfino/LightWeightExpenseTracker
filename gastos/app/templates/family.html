@@ -68,7 +68,7 @@
         {% for invite in invitations %}
           <div class="inline-form"><span class="badge">{{ invite.status }}</span><span class="muted">{{ invite.created_at.strftime('%d/%m/%Y') }}</span>
           {% if invite.status == 'activa' %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="revoke_invite"><input type="hidden" name="invitation_id" value="{{ invite.id }}"><button class="btn btn-danger">Revocar</button></form>{% endif %}</div>
-        {% else %}<p class="muted">Todavía no generaste invitaciones.</p>{% endfor %}
+        {% else %}<div class="empty-state"><div class="empty-state-icon"><i class="ti ti-user-plus"></i></div><div class="empty-state-title">Sumá a alguien de tu familia</div><p class="empty-state-copy">Generá un enlace de un solo uso y mandáselo por el medio que prefieras.</p></div>{% endfor %}
         </div>
       </section>
       {% endif %}

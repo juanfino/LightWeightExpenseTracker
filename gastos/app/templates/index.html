@@ -411,6 +411,26 @@
 .fijos-row-amount.paid   { color: var(--green); }
 .fijos-row-amount.unpaid { color: var(--text2); }
 
+.onboarding-card { margin-bottom: 28px; display:grid; grid-template-columns: .8fr 1.2fr; gap:28px; }
+.onboarding-list { display:flex; flex-direction:column; gap:4px; }
+.onboarding-step { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; color:var(--text); }
+a.onboarding-step:hover { background:var(--surface2); }
+.onboarding-step i { color:var(--text3); font-size:18px; }
+.onboarding-step.done i { color:var(--green); }
+.onboarding-step.done span { color:var(--text2); }
+.onboarding-step span { flex:1; }
+.onboarding-step small { color:var(--text3); }
+.onboarding-step b { color:var(--accent); font-size:12px; }
+@media (max-width:700px) {
+  .onboarding-card { grid-template-columns:1fr; gap:18px; }
+  .hero-total { font-size:42px; }
+  .hero-controls, .hero-controls > * { width:100%; }
+  .user-filter { justify-content:space-between; }
+  .user-filter select { flex:1; min-width:0 !important; }
+  .view-toggle { width:100%; }
+  .view-btn { flex:1; }
+}
+
 /* ── Pay modal (dashboard) ── */
 .modal-backdrop {
   display: none;
@@ -575,6 +595,22 @@
 {% block content %}
 <div class="container">
 
+  {% if not onboarding.complete %}
+  <section class="card onboarding-card" aria-labelledby="onboarding-title">
+    <div>
+      <div class="card-title">Primeros pasos</div>
+      <h1 class="section-title" id="onboarding-title">Dejá tu espacio listo en pocos minutos</h1>
+      <p class="help-copy" style="margin-top:6px">Podés cargar desde la web o conectar Telegram. La conexión es opcional.</p>
+    </div>
+    <div class="onboarding-list">
+      <div class="onboarding-step done"><i class="ti ti-circle-check-filled"></i><span>Crear cuenta</span></div>
+      <a class="onboarding-step {{ 'done' if onboarding.has_expense else '' }}" href="/history?add=1"><i class="ti {{ 'ti-circle-check-filled' if onboarding.has_expense else 'ti-circle' }}"></i><span>Cargar tu primer gasto</span><b>Ir →</b></a>
+      <a class="onboarding-step {{ 'done' if onboarding.telegram_connected else '' }}" href="/vincular-telegram"><i class="ti {{ 'ti-circle-check-filled' if onboarding.telegram_connected else 'ti-circle' }}"></i><span>Conectar Telegram <small>(opcional)</small></span><b>Ir →</b></a>
+      <a class="onboarding-step {{ 'done' if onboarding.family_invited else '' }}" href="/familia"><i class="ti {{ 'ti-circle-check-filled' if onboarding.family_invited else 'ti-circle' }}"></i><span>Invitar a alguien a tu grupo</span><b>Ir →</b></a>
+    </div>
+  </section>
+  {% endif %}
+
   <!-- Hero: big total + period navigator + user filter + view toggle -->
   <div class="hero">
     <div class="hero-main">
@@ -627,7 +663,7 @@
         <div class="section-title" style="margin-bottom:14px">Por categoría</div>
         <div class="chart-wrap">
           <canvas id="chart-doughnut"></canvas>
-          <div id="doughnut-empty" class="empty" style="display:none">Sin datos</div>
+          <div id="doughnut-empty" class="empty" style="display:none">Tu distribución por categorías aparecerá después del primer gasto.</div>
         </div>
         <div class="legend" id="legend"></div>
       </div>
@@ -636,13 +672,13 @@
         <div class="section-title" style="margin-bottom:14px">Por semana</div>
         <div class="chart-wrap">
           <canvas id="chart-bar"></canvas>
-          <div id="bar-empty" class="empty" style="display:none">Sin datos</div>
+          <div id="bar-empty" class="empty" style="display:none">Todavía no hay semanas para comparar.</div>
         </div>
         <div class="chart-divider"></div>
         <div class="section-title" style="margin-bottom:14px">Últimos 6 meses</div>
         <div class="chart-wrap">
           <canvas id="chart-months"></canvas>
-          <div id="months-empty" class="empty" style="display:none">Sin datos</div>
+          <div id="months-empty" class="empty" style="display:none">El historial mensual se arma a medida que cargás gastos.</div>
         </div>
       </div>
     </div>
@@ -651,7 +687,7 @@
     <div class="card mt-24">
       <div class="section-title" style="margin-bottom:14px">Gastos por categoría</div>
       <div id="cat-bars-wrap"></div>
-      <div id="cat-bars-empty" class="empty" style="display:none">Sin datos este mes</div>
+      <div id="cat-bars-empty" class="empty-state" style="display:none"><div class="empty-state-icon"><i class="ti ti-receipt"></i></div><div class="empty-state-title">Este mes todavía está vacío</div><p class="empty-state-copy">Cargá un gasto y acá vas a ver cómo se distribuye.</p><a class="btn btn-primary" href="/history?add=1">Cargar primer gasto</a></div>
     </div>
 
     <!-- Fijos del mes widget -->

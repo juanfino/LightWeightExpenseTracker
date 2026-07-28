@@ -127,7 +127,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       <tbody id="historial-tbody"></tbody>
     </table>
    </div>
-    <div id="historial-empty" class="empty" style="display:none">No hay cambios registrados.</div>
+    <div id="historial-empty" class="empty-state" style="display:none">
+      <div class="empty-state-icon"><i class="ti ti-currency-dollar"></i></div>
+      <div class="empty-state-title">Todavía no registraste cambios de dólares</div>
+      <p class="empty-state-copy">Cuando compres o vendas dólares desde Telegram, acá vas a ver el monto y la cotización histórica.</p>
+      <a class="btn btn-primary" href="/vincular-telegram">Conectar Telegram</a>
+    </div>
   </div>
 
 </div>

@@ -163,7 +163,8 @@ button[disabled] {
   <!-- ── Keywords ───────────────────────────────────────────────────────── -->
   <div class="card mt-24">
     <div class="section-header">
-      <div class="section-title">Keywords de categorización</div>
+      <div><div class="section-title">Palabras para categorizar</div>
+      <p class="help-copy" style="margin-top:5px">Una palabra le enseña a la app dónde guardar gastos parecidos. Por ejemplo, “carrefour” puede ir siempre a Hogar → Supermercado.</p></div>
       <span style="font-size:12px; color:var(--muted)" id="kw-count">
         {{ keywords | length }} keywords
       </span>
@@ -202,6 +203,9 @@ button[disabled] {
         {% endfor %}
       </tbody>
     </table>
+    {% if not keywords %}
+    <div class="empty-state"><div class="empty-state-icon"><i class="ti ti-wand"></i></div><div class="empty-state-title">La categorización aprende con vos</div><p class="empty-state-copy">Agregá una palabra frecuente y elegí su categoría. La próxima vez se asignará sola.</p></div>
+    {% endif %}
 
     <!-- Add keyword form -->
     <div class="add-form">

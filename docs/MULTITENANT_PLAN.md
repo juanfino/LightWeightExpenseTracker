@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 5 complete; Phase 6 is next
+**Status:** Phase 6 complete; Phase 7 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-27
@@ -57,7 +57,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 3 | Identity & authentication | DONE | `feat/mt-p3-auth` | Codex | 2026-07-27 |
 | 4 | Invitations, members, superadmin flag | DONE | `feat/mt-p4-family-members` | Codex | 2026-07-27 |
 | 5 | Telegram linking + quotas | DONE | `feat/mt-p5-telegram-quotas` | Codex | 2026-07-27 |
-| 6 | Self-service onboarding polish | NOT STARTED | | | |
+| 6 | Self-service onboarding polish | DONE | `feat/mt-p6-onboarding` | Codex | 2026-07-27 |
 | 7 | New features (incomes, shopping list, CSV export) | NOT STARTED | | | |
 | 8 | Superadmin panel | NOT STARTED | | | |
 
@@ -158,10 +158,10 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `landing.html` | Public landing; authenticated users continue to `/dashboard` | verified in production |
+| `/` | `landing.html` | Public product landing: explains the first-expense workflow, family sharing and tenant privacy; authenticated users continue to `/dashboard` | Phase 6 complete; production verification pending merge/deploy |
 | `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | verified in production |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | public; Google OAuth published |
-| `/dashboard` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | route moved from `/` in Phase 3 |
+| `/dashboard` | `index.html` | Dashboard: self-dismissing onboarding checklist, designed empty states, month total, KPI strip, Top 3, charts and per-member filter | Phase 6 complete; production verification pending merge/deploy |
 | `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart | verified |
@@ -187,8 +187,8 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 |---|---|---|
 | All | 2 | Every query scoped by family |
 | All | 3 | Session-based auth replaces Cloudflare Access; user menu in header |
-| All | 6 | Designed empty states |
-| Dashboard | 6 | Onboarding checklist card |
+| All | 6 | Designed empty states — completed in 7.1.0 |
+| Dashboard | 6 | Self-dismissing onboarding checklist card — completed in 7.1.0 |
 | Dashboard | 7 | Net balance (income − expenses) |
 | Config | 4 | Restore becomes superadmin-only (see Open Decision D1) |
 | Nav | 7 | New entries: Ingresos, Lista, Exportar |
@@ -683,7 +683,32 @@ A category-selection wizard (deferred — base taxonomy is enough for now).
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Implemented on `feat/mt-p6-onboarding` (version 7.1.0):**
+
+- The dashboard now derives a four-step onboarding checklist from real tenant
+  state: account exists, at least one expense exists, the current member linked
+  Telegram, and the family has either another active member or an invitation.
+  It disappears automatically when every step is complete. Telegram remains
+  explicitly optional and reuses the Phase 5 linking screen.
+- The first-expense action opens the existing web expense form directly.
+  Dashboard charts and the Movements, Fixed expenses, Dollars, Summaries and
+  Family screens now explain empty data and provide the relevant next action.
+- The public landing explains the first expense path, shared family view and
+  tenant privacy boundary. Contextual help explains categorization words,
+  recurring expenses and the 15-per-month AI summary allowance.
+- A 390x844 mobile walkthrough covered every private page. There is no
+  horizontal overflow; the user header no longer collides with the mobile
+  menu; the first-expense deep link was fixed after the walkthrough exposed
+  that URL filter synchronization removed its intent too early.
+- Disposable PostgreSQL 17 verification passed all 36
+  unit/integration/isolation tests, including new checks for checklist content,
+  self-dismissal and landing guidance.
+
+**Deliberately not done:** no taxonomy wizard, second Telegram linking flow,
+group chat support or Phase 7 feature work.
+
+**For Phase 7:** onboarding is complete and Fede can be invited after the
+remaining production-readiness checklist below is confirmed by Juampi.
 
 ---
 

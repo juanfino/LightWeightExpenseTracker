@@ -50,6 +50,11 @@ class TenantIsolationTests(unittest.TestCase):
         self.assertIn("Solo A", concepts)
         self.assertNotIn("Solo B", concepts)
         self.assertIsNone(db.get_expense_by_id(self.expense_b))
+        self.assertTrue(db.has_expenses())
+        self.assertTrue(db.delete_expense(self.expense_a))
+        self.assertFalse(db.has_expenses(), "family B expenses must stay hidden")
+        pgcompat.set_family_id(self.family_b)
+        self.assertTrue(db.has_expenses())
 
     def test_hostile_generated_sql_is_isolated(self):
         pgcompat.set_family_id(1)
