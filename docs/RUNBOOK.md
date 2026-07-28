@@ -1,5 +1,35 @@
 # Runbook operativo
 
+## Verificación de la versión final del roadmap (7.5.1)
+
+El roadmap multitenant quedó completo hasta la Fase 8. La versión `7.5.0`
+incorporó la consola operativa de superadmin y `7.5.1`, versión final del
+roadmap, corrigió el recorte visual del popup de administración del avatar.
+
+Después de desplegar esta versión:
+
+1. Confirmar que `/health` y `/health/db` respondan `200`.
+2. Confirmar que la base esté en el head de Alembic `0008`.
+3. Ingresar como el superadmin configurado y verificar que `/superadmin`
+   muestre adopción y actividad, telemetría LLM de 30 días, overrides de cuota,
+   supuestos manuales de infraestructura y errores recientes persistidos.
+4. Ingresar como un admin normal de familia y confirmar que `/superadmin`
+   responda `403`.
+5. Confirmar que el popup del avatar se muestre por encima del contenido y
+   contenga las acciones de administración, sistema, exportación y cierre de
+   sesión que correspondan al usuario.
+6. Confirmar que borrar un override restaure los defaults configurados:
+   `100` llamadas rutinarias por día y `15` generaciones de resumen por mes.
+   El límite de concurrencia sigue siendo de dos llamadas LLM por familia.
+7. Confirmar que `family_quota_overrides` y `system_errors` tengan RLS forzado,
+   y que el rol dedicado `gastos_superadmin` sea el único camino operativo con
+   `BYPASSRLS`.
+
+La Fase 8 no agregó variables de entorno obligatorias. Los costos de
+infraestructura cargados en la consola son supuestos manuales; los costos LLM
+provienen de la telemetría medida en `llm_calls`. La consola no incluye
+impersonación, billing ni edición transversal de datos de negocio familiares.
+
 ## Cutover de autenticación propia (Fase 3)
 
 **Completado el 27 de julio de 2026 con la versión 5.0.1.** La autenticación

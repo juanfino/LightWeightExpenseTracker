@@ -2,6 +2,22 @@
 
 A family expense tracker: send a message like `Supermercado 150000` to a Telegram bot and it records, categorizes, and displays your spending in a web dashboard. Runs as a Docker container on a Raspberry Pi 4.
 
+## Current product
+
+The multi-tenant roadmap (Phases 0–8) is complete as of version **7.5.1**.
+The application now provides:
+
+- PostgreSQL tenancy enforced with forced Row-Level Security.
+- Google/email authentication, family invitations and self-service Telegram linking.
+- Per-family LLM quotas and concurrency isolation.
+- Expenses, fixed expenses, incomes, USD operations, shopping lists, AI monthly reports and portable CSV/ZIP exports.
+- A superadmin-only operational panel for cross-family adoption, LLM usage/cost, quota overrides and recent failures.
+
+The superadmin panel uses the dedicated `gastos_superadmin` PostgreSQL role with
+`BYPASSRLS`; normal application and read-only roles remain subject to tenant
+isolation. It does not support impersonation, billing or editing a family's
+business data.
+
 ## Deployment
 
 ### Making a change
@@ -30,6 +46,9 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 - Google always shows the account selector; email OTP reaches the verified sender
 - `/dashboard` redirects to `/login` without a session and private APIs return `401`
 - Bot responds in Telegram
+- The database reports Alembic head `0008`
+- The configured superadmin can open `/superadmin`; a regular family admin receives `403`
+- The avatar popup opens above page content and exposes the applicable administration, export and logout actions
 
 ### Environment variables
 
