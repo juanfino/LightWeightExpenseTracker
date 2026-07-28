@@ -9,19 +9,23 @@
 
 ## 0. How to use this document
 
-This plan is executed by **multiple different AI coding agents** (Claude Code, Codex/ChatGPT, possibly others), in **sequential sessions**, on the same repository. This document is the shared memory between them. It is authoritative over any agent's own assumptions.
+This plan was executed by **multiple different AI coding agents** in sequential
+sessions on the same repository. Phases 0–8 are complete; this document is now
+the historical record and architectural rationale. `PROJECT.md` is the
+canonical source for the current product state after this roadmap.
 
-### Mandatory session protocol
+### Historical session protocol
 
-**At the start of every session, the agent must:**
+**During roadmap execution, every session started by:**
 
 1. Read this file in full.
 2. Read `PROJECT.md`.
-3. Read the **Status Ledger** (§1) and identify the single phase that is `IN PROGRESS` or the next one that is `NOT STARTED`.
+3. Read the **Status Ledger** (§1). No phase remains; new work is ordinary
+   maintenance or a separately approved roadmap, not an implicit Phase 9.
 4. Read the **Handoff Notes** of the previous phase.
 5. Confirm the phase's scope with the user before writing code.
 
-**At the end of every session, the agent must:**
+**For historical phase work, the end-of-session protocol was:**
 
 1. Update the **Status Ledger** (§1) — phase status, date, agent name.
 2. Fill in the phase's **Handoff Notes** — what was done, what was deliberately *not* done, anything surprising found in the code, and anything the next agent must know.
@@ -31,7 +35,9 @@ This plan is executed by **multiple different AI coding agents** (Claude Code, C
 6. Update `PROJECT.md` if modules, routes, env vars, DB tables, or bot commands changed.
 7. Update the "Last updated by" line at the top of this file.
 
-**A phase is not complete until all seven of those are done.** An agent that runs out of context mid-phase must still update the Ledger and Handoff Notes before stopping, marking the phase `IN PROGRESS` with a precise description of where it stopped.
+All phases now satisfy those closeout requirements. Future bugfixes should use
+the normal repository process in `AGENTS.md`; they must not reopen or renumber
+this plan unless the user explicitly creates a new roadmap.
 
 ### Concurrency rules
 
@@ -64,6 +70,21 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 Status values: `NOT STARTED` / `IN PROGRESS` / `BLOCKED` / `DONE`.
 
 **Fede (first external user) can be onboarded after Phase 6 is DONE. Not before.**
+
+### Final outcome
+
+The roadmap is fully delivered in production code through version **7.5.1**:
+
+- Phases 0–2 established ground truth, PostgreSQL/Alembic and database-enforced
+  tenant isolation.
+- Phases 3–6 delivered application auth, family lifecycle, Telegram linking,
+  quotas and self-service onboarding.
+- Phase 7 delivered incomes, the shared shopping list and a complete portable
+  export path.
+- Phase 8 delivered cross-family operational visibility without weakening RLS.
+
+There is no Phase 9 in this plan. The items in §8 are deliberately deferred
+product ideas, not incomplete acceptance criteria.
 
 ---
 
@@ -152,26 +173,32 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 ## 4. Screen Inventory
 
-> **Verified in Phase 0** (2026-07-24) against `dashboard.py`'s actual `@app.route` declarations and `templates/*.html`. `PROJECT.md` was already mostly in sync (it already documented Resúmenes) — the one real gap was the `/history` route's nav label, which was renamed "Historial" → "Movimientos" in 2.5.1 without the route, template, or `PROJECT.md`'s table being touched. There are 7 web pages total, matching `PROJECT.md`.
+> Initially verified in Phase 0 and updated through Phase 8. The application now
+> has the original seven product pages plus auth/legal/family/linking surfaces,
+> the three Phase 7 pages and the Phase 8 superadmin panel. `PROJECT.md` carries
+> the canonical current route inventory.
 
 ### Current (verified)
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `landing.html` | Public product landing: explains the first-expense workflow, family sharing and tenant privacy; authenticated users continue to `/dashboard` | Phase 6 complete; production verification pending merge/deploy |
+| `/` | `landing.html` | Public product landing: explains the first-expense workflow, family sharing and tenant privacy; authenticated users continue to `/dashboard` | complete |
 | `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | verified in production |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | public; Google OAuth published |
-| `/dashboard` | `index.html` | Dashboard: self-dismissing onboarding checklist, designed empty states, month total, KPI strip, Top 3, charts and per-member filter | Phase 6 complete; production verification pending merge/deploy |
+| `/dashboard` | `index.html` | Dashboard: self-dismissing onboarding checklist, designed empty states, month total, KPI strip, Top 3, charts, income totals and per-member filter | complete |
 | `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart | verified |
 | `/resumenes`, `/resumenes/<period>` | `resumenes.html` | Monthly AI-generated report (2.3.0) — uses `claude-opus-4-8` by default (`REPORT_ANTHROPIC_MODEL`), separate from the Haiku model used elsewhere; see PROJECT.md → Monthly AI report for the full prompt/cost breakdown | verified |
 | `/settings` | `settings.html` | Categories / subcategories / keywords CRUD | verified |
-| `/config` | `config.html` | Backup status + "Backup ahora", restore DB from URL | verified |
+| `/ingresos` | `incomes.html` | Tenant-scoped ARS/USD income history, filters, CRUD and independent taxonomy | Phase 7a complete |
+| `/lista` | `shopping.html` | Shared shopping list grouped by category, pending/recent-bought flows and nav count | Phase 7b complete |
+| `/exportar` | `export.html` | Individual portable CSVs plus complete ZIP exit path | Phase 7c complete |
+| `/config` | `config.html` | Backup status + "Backup ahora"; restore is SSH-only | verified |
 | `/unirme/<token>` | `join_family.html` | Public single-use invitation acceptance through Google or email OTP | Phase 4 |
 | `/familia` | `family.html` | Members, invitations, rename, logical removal, ownership transfer, leave/delete | Phase 4 |
 | `/vincular-telegram` | `telegram_link.html` | One-tap Telegram deep link + QR + live connected state | Phase 5 |
-| `/superadmin` | `superadmin.html` | Cross-family activity, expense/LLM metrics, operating costs, quota overrides and recent errors | Phase 8 complete |
+| `/superadmin` | `superadmin.html` | Cross-family activity, expense/LLM metrics, operating costs, quota overrides and recent errors | Phase 8 complete; popup fix 7.5.1 |
 
 ### To be added
 
@@ -185,7 +212,7 @@ ARS/USD income totals; restore was removed from HTTP entirely in Phase 1.
 
 ---
 
-## 5. Target data model
+## 5. Final data model
 
 ### Platform tables (no `family_id`)
 
@@ -194,7 +221,7 @@ families(id, name, timezone default 'America/Argentina/Buenos_Aires',
          currency default 'ARS', created_at, created_by_user_id)
 
 users(id, email UNIQUE, name, is_superadmin bool default false,
-      telegram_chat_id UNIQUE NULL, created_at, last_login_at)
+      telegram_id UNIQUE NULL, color, created_at, last_login_at)
 
 memberships(id, user_id, family_id, role 'owner'|'member', active,
             deactivated_at, created_at,
@@ -213,17 +240,29 @@ sessions(id, user_id, token_hash, expires_at, created_at, user_agent, ip)
 invitations(id, family_id, token_hash, role, created_by_user_id,
             expires_at, consumed_at, consumed_by_user_id, revoked_at, created_at)
 telegram_link_tokens(id, user_id, token_hash, expires_at, consumed_at, created_at)
+
+infrastructure_cost_settings(provider PK, unit_label, unit_rate_usd,
+                             monthly_volume, notes, updated_at)
 ```
 
 ### Domain tables (all carry `family_id NOT NULL` + RLS)
 
 Existing: `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`
 
-New: `llm_calls`, `incomes`, `income_categories`, `shopping_items`
+Added by the roadmap: `llm_calls`, `incomes`, `income_categories`,
+`shopping_items`, `family_quota_overrides`, `system_errors`
 
 Phase 8 adds tenant-scoped `family_quota_overrides` and `system_errors`.
 Global `infrastructure_cost_settings` is administrative installation metadata,
 not family domain data, and is accessible only through `gastos_superadmin`.
+
+```
+family_quota_overrides(family_id PK, routine_daily_limit NULL,
+                       summary_monthly_limit NULL, updated_at)
+
+system_errors(id, family_id, user_id NULL, source, error_type,
+              message, details NULL, created_at)
+```
 
 ```
 llm_calls(id, family_id, user_id NULL, created_at, module,
@@ -273,7 +312,6 @@ Any refactor. Any schema change. Any new feature.
 **Deliberately not done (out of scope for Phase 0, per its own rules):**
 - No retention *configuration* was added (7 days is hardcoded in `backup.py`'s `RETENTION_DAYS`) — proper backup strategy (off-device, R2, tested restore) is explicitly Phase 1 scope.
 - Did not touch `gastos/DOCS.md` — grepped it for "backup" and found zero mentions, so no update was needed there (it never described the Telegram-send behavior to end users).
-- Did not touch the legacy `Blueprint.md` (per AGENTS.md, it's deprecated and not maintained).
 
 **Nothing surprising found** — `PROJECT.md` was in noticeably better shape than the plan's own §4 assumed (written before someone had apparently already resynced it, or the "six screens" note was simply stale by the time this session ran). The SQL inventory didn't turn up anything alarming for Phase 1 either — the SQLite-specific surface (date functions, `mode=ro` guardrails in `sqlro.py`) is exactly where the plan already expected the risk to concentrate.
 
@@ -717,6 +755,11 @@ Before sending the link:
 - [ ] Privacy policy and terms published
 - [ ] An honest conversation: this runs on a Raspberry Pi in my living room; if the power goes out it goes down; treat it as a beta
 
+This checklist is an **operational launch checklist**, not unfinished roadmap
+scope. Privacy/terms routes and error-alert code exist; unchecked items mean
+real-world delivery/communication was not independently confirmed in the phase
+handoffs.
+
 ---
 
 ## Phase 7 — New features
@@ -810,7 +853,8 @@ Impersonation. Editing another family's data. Billing.
 
 ### Handoff Notes
 
-**Implemented on `feat/mt-p8-superadmin` (version 7.5.0):**
+**Implemented on `feat/mt-p8-superadmin` (version 7.5.0), with popup clipping
+fixed in `fix/account-menu-clipping` (version 7.5.1):**
 
 - `/superadmin` is visible only to `users.is_superadmin` and reads cross-family
   metrics exclusively with the existing `gastos_superadmin` `BYPASSRLS` role.
@@ -833,6 +877,19 @@ Impersonation. Editing another family's data. Billing.
 **Deliberately not done:** impersonation, business-data editing and billing,
 matching the phase's explicit out-of-scope list.
 
+**Additional scope delivered with Phase 8:**
+
+- Navigation was simplified even though it was not part of the original panel
+  bullet list: Dashboard moved to the logo-only entry point and account/admin
+  actions moved into the avatar popup.
+- Web and Telegram exceptions gained durable tenant-scoped storage in
+  `system_errors`; the original scope only required a recent-errors view.
+- Infrastructure assumptions are explicitly separated from measured
+  `llm_calls` cost so manual figures cannot silently replace telemetry.
+- Formula-safe exports, duplicate-shopping consolidation and the deterministic
+  `Ingreso:` fast path are Phase 7 hardening delivered beyond the terse
+  high-level feature bullets.
+
 ---
 
 ## 8. Deferred decisions, and why
@@ -851,7 +908,8 @@ matching the phase's explicit out-of-scope list.
 
 ## 9. Base taxonomy for new families
 
-To be finalized in Phase 2. Generic, Argentina-oriented, deliberately small — families extend it themselves, and `add_keyword` learns per family.
+Finalized in Phase 2. It is generic, Argentina-oriented and deliberately small
+— families extend it themselves, and `add_keyword` learns per family.
 
 **Expense categories (with representative subcategories):**
 
@@ -872,21 +930,25 @@ To be finalized in Phase 2. Generic, Argentina-oriented, deliberately small — 
 
 ---
 
-## 10. Open decisions
+## 10. Recorded decisions
 
 | # | Decision | Status |
 |---|---|---|
 | D1 | **Restore endpoint.** Removed from the web; SSH-only `pg_restore`, with scratch restore first. | Decided in Phase 1 |
-| D2 | **Income taxonomy** — own table (proposed) vs. reusing expense categories | Proposed, unconfirmed |
+| D2 | **Income taxonomy** — own `income_categories` table, separate from expenses | Decided and implemented in Phase 7a |
 | D3 | **Resúmenes quota** — 15/family/month, with remaining balance shown before generation | Decided in Phase 5 |
 | D4 | **Off-device backup target** — private Cloudflare R2 bucket, 90-day lifecycle | Decided in Phase 1 |
 
 ---
 
-## 11. Timeline
+## 11. Timeline (historical)
 
-Phases 0–2 are the hard part and carry the real risk: the Postgres port touches every query, and the RLS work has to be right. Phases 3–5 are more work but better understood. Phase 6 is the one that satisfies the primary requirement and cannot be compressed — it is exactly what "no tengo que explicar nada" means in practice.
+The roadmap ran from 2026-07-24 through 2026-07-28. Phases 0–2 carried the main
+technical risk because the PostgreSQL port touched every query and RLS had to
+contain both handwritten and model-generated SQL. `docs/SQL_INVENTORY.md`
+turned that surface into a concrete checklist.
 
-A one-week target covers Phases 0–3 with sustained effort. Phases 4–6 are the following week. Phase 7 and 8 come after Fede is already using the app.
-
-The main risk to that schedule is Phase 1 — the SQL dialect surface is larger than it looks, and the LLM-generated SQL prompt is a genuinely subtle piece of it. `docs/SQL_INVENTORY.md` from Phase 0 is what turns that unknown into an estimate.
+Phases 3–6 then delivered identity, family lifecycle, Telegram linking and the
+self-service experience. Phase 6 satisfied the primary “no tengo que explicar
+nada” requirement. Phases 7–8 completed the new product surfaces and
+operational administration. Version 7.5.1 is the final roadmap release.

@@ -83,6 +83,26 @@ En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/te
 
 Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, Sistema y **Cerrar sesión**. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú muestra el acceso al panel operativo global.
 
+### Panel de superadmin
+
+El acceso **Superadmin** aparece solamente para la cuenta configurada mediante
+`SUPERADMIN_EMAIL`. El panel permite observar la operación completa sin entrar
+como otra familia ni editar sus datos:
+
+- familias, miembros activos, actividad de 7/30 días y volumen de gastos;
+- llamadas, fallas y costo estimado de IA por familia, módulo, modelo y día;
+- límites diarios/mensuales de IA, con overrides opcionales por familia;
+- supuestos manuales de costo para Anthropic, OpenAI, Resend y Cloudflare R2;
+- errores recientes de web, Telegram e IA asociados a una familia.
+
+Vaciar un override restaura los límites generales: 100 llamadas rutinarias por
+día y 15 Resúmenes por mes. Los costos manuales son estimaciones operativas
+(`tarifa × volumen`); el costo medido de los modelos se calcula por separado a
+partir de las llamadas registradas.
+
+El panel no permite impersonar usuarios, facturar ni modificar gastos,
+ingresos, categorías u otras configuraciones de otra familia.
+
 Una familia nueva ve una checklist de primeros pasos en el Dashboard: crear la cuenta, cargar el primer gasto, conectar Telegram (opcional) e invitar a alguien. Cada paso lleva directamente a la pantalla correspondiente y la tarjeta desaparece cuando todos están completos. Las pantallas sin datos muestran qué va a aparecer ahí y un botón para empezar.
 
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
