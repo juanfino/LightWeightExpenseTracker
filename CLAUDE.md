@@ -15,6 +15,8 @@ A family expense tracker that records spending via Telegram and shows it in a we
 cd gastos
 pip install -r requirements.txt
 export TELEGRAM_TOKEN=<token>
+export TELEGRAM_BOT_USERNAME=<bot_username_without_at>
+export PUBLIC_DASHBOARD_URL=https://mangoteca.juampifinochietto.com
 export USERS_JSON='[{"telegram_id": "123456", "name": "Juampi"}]'
 export ANTHROPIC_API_KEY=<key>   # only needed for OCR
 export DATABASE_URL=postgresql://gastos:password@localhost:5432/gastos
@@ -51,13 +53,14 @@ python3 gastos/app/categorizer.py
 - `db.py` — Raw PostgreSQL operations. `get_conn()` selects the RLS-bound application role and transaction-local `app.family_id`, then auto-commits/rolls back. Fixed-expense link helpers remain the single write choke point.
 - `dashboard.py` — Flask app. Timestamps stored as UTC in DB; `dashboard.py` converts to Buenos Aires time (UTC-3) for display.
 - `auth.py` — web identity and family-access layer: opaque server-side sessions, hashed one-time codes, Resend delivery, Turnstile verification, rate limiting, Google identity linking, invitation lifecycle, logical member removal, ownership transfer, and account/family creation. Platform lookups use transaction-local `gastos_superadmin`; `dashboard.py` resolves the authenticated active membership once per request.
+- `llm_limits.py` — per-family LLM admission control: 100 routine calls/day, 15 report generations/month and at most two concurrent LLM calls. Calendar boundaries use the family's configured timezone.
 - `ocr.py` — Uses `claude-haiku-4-5-20251001` via the Anthropic SDK to extract `{comercio, monto, fecha}` from ticket images.
 - `audio.py` — Voice pipeline. `transcribe()` (OpenAI Whisper `whisper-1`, `es`) → `extract_expenses()` (Claude `claude-haiku-4-5-20251001`) returns `[{concept, amount, confidence}]`. `confidence` (0–1) drives auto-save: `bot.py` registers voice expenses ≥ `AUTOSAVE_CONFIDENCE` (0.9) directly and only queues the rest for inline confirmation.
 - `dolar.py` — Uses `claude-haiku-4-5-20251001` to interpret natural-language dollar operations (`parse_dolar` → `{tipo: venta|compra, monto_usd, cotizacion, confidence}` or `None`). Gated by `looks_like_dolar()` (cheap keyword regex). Routed from both `handle_message` (text) and `handle_voice` (audio); high confidence registers directly, low confidence asks inline confirmation (`pending_dolar`). Legacy `CambioDolar <usd> <cotizacion>` command still works and records a sale.
 - `backup.py` — Runs a custom-format `pg_dump`, uploads it to private R2 and verifies the remote object. Called daily and by the admin endpoint; restore is SSH-only.
 - `seed.py` — `create_family_defaults(conn, family_id)` creates generic taxonomy for a new family. Schema changes are Alembic-only.
 
-**DB schema:** platform tables `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`; tenant tables `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`, `llm_calls`. Membership removals are logical (`active=false`) because expenses retain a composite reference to the historical membership; a partial unique index permits only one active family per user. Tenant tables carry `family_id NOT NULL` with forced RLS and composite foreign keys preventing cross-family references.
+**DB schema:** platform tables `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `telegram_link_tokens`; tenant tables `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications`, `llm_calls`. Membership removals are logical (`active=false`) because expenses retain a composite reference to the historical membership; a partial unique index permits only one active family per user. Telegram linking stores only SHA-256 token hashes. Tenant tables carry `family_id NOT NULL` with forced RLS and composite foreign keys preventing cross-family references.
 
 ## Config
 
@@ -66,6 +69,8 @@ Config is loaded exclusively from environment variables at startup — there is 
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
+| `TELEGRAM_BOT_USERNAME` | Yes | Bot username without `@`; used for one-tap linking deep links |
+| `PUBLIC_DASHBOARD_URL` | No | Public dashboard base URL sent to unlinked chats; defaults to Mangoteca |
 | `USERS_JSON` | Yes | JSON array `[{"telegram_id": "...", "name": "...", "email": "optional@example.com"}]`; optional email links a legacy Telegram identity to web auth, NULL-only |
 | `AUTH_SECRET_KEY` | Yes | Random secret for OAuth/pre-auth signed state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Initial web email for the existing family-1 owner; only fills a NULL email |
@@ -87,7 +92,7 @@ On the Pi these live in `~/.env`, loaded by Docker Compose via `env_file: ~/.env
 
 The Docker image is published to `ghcr.io/juanfino/lightweightexpensetracker` on every push to `main` via `.github/workflows/docker-publish.yml`. The workflow builds `linux/arm64` and `linux/amd64` images using QEMU. **Deploy to the Pi is manual** — GitHub Actions does not auto-pull.
 
-**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. Data persisted at `~/gastos-data/gastos.db`. Dashboard exposed at `https://expenses.juampifinochietto.com` via Cloudflare Tunnel → `localhost:8090` (the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up port 5000 for Frigate; the code's own default, if unset, is 5000).
+**Pi:** user `juanfino`, hostname `rbp-casaribera`, IP `192.168.68.72`. Docker Compose at `~/docker-compose.yml`. PostgreSQL data persisted at `~/postgres-data`. Dashboard exposed at `https://mangoteca.juampifinochietto.com` via Cloudflare Tunnel → `localhost:8090` (the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up port 5000 for Frigate; the code's own default, if unset, is 5000).
 
 On the Pi, the app runs as a Docker Compose service alongside `homeassistant` and `cloudflared` (all `network_mode: host`). The canonical service definition is `docker-compose.yml` in this repo. Env vars for all services live in `~/.env`.
 
@@ -117,7 +122,7 @@ Make sure to fully understand what is being asked before writing any code. If an
 - OCR flow is two-step: bot sends extracted data back to the user for confirmation before saving.
 - Confidence-based auto-save: voice expenses and natural-language dollar operations are registered without confirmation when the LLM-reported `confidence` ≥ `AUTOSAVE_CONFIDENCE` (0.9 in `bot.py`); otherwise the user confirms via inline buttons. Auto-saved voice expenses still get an edit/category keyboard so nothing is unrecoverable.
 - Dollar operations are detected in both text and voice by a cheap `dolar.looks_like_dolar()` keyword gate before spending an LLM call; `parse_dolar` returns `None` for non-dollar messages so they fall through to normal expense handling.
-- User authorization is enforced per-request via `_get_authorized_user()` in `bot.py` — only `telegram_id`s in config are allowed.
+- Telegram identity is resolved once per update by `_get_authorized_user()` in `bot.py`; self-service links and legacy `USERS_JSON` identities both resolve through the active database membership.
 - `categorizer.categorize()` returns `(category_id, subcategory_id)` — both can be `None`. All expense creation flows must pass both values.
 - Dockerfile build context is the **repo root** (not the `gastos/` subdirectory): `docker build -f gastos/Dockerfile .`
 - Fixed-expense linking always forces the expense's `category_id`/`subcategory_id` to the fixed expense's own (`db.link_expense_to_fixed`), overriding whatever the categorizer/NL/OCR guessed — one rule, applied everywhere a link is written, so a recurring bill can't drift category depending on which path registered it.
