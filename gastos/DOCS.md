@@ -79,7 +79,7 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Movimientos (`/history`), Ingresos (`/ingresos`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`) y Sistema (`/config`).
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard`. **Cerrar sesión** revoca la sesión del servidor y vuelve al login. Las demás pantallas siguen en Movimientos (`/history`), Ingresos (`/ingresos`), Lista (`/lista`), Categorías (`/settings`), Gastos Fijos (`/fijos`), Dólares (`/dolares`), Resúmenes (`/resumenes`), Exportar (`/exportar`) y Sistema (`/config`).
 
 Una familia nueva ve una checklist de primeros pasos en el Dashboard: crear la cuenta, cargar el primer gasto, conectar Telegram (opcional) e invitar a alguien. Cada paso lleva directamente a la pantalla correspondiente y la tarjeta desaparece cuando todos están completos. Las pantallas sin datos muestran qué va a aparecer ahí y un botón para empezar.
 
