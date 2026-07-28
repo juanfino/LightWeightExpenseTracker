@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.5.1
+- Se corrige el popup del avatar, que quedaba recortado por el `overflow` de la barra superior aunque tuviera un `z-index` alto.
+
 ## 7.5.0
 - **Fase 8 — Superadmin:** nuevo panel global con familias, actividad, gastos, uso y costo de IA por familia/módulo/modelo, costos operativos y errores recientes.
 - Las consultas cruzadas usan exclusivamente el rol `gastos_superadmin` con `BYPASSRLS`; las políticas tenant no se debilitan.
