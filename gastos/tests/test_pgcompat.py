@@ -8,6 +8,24 @@ sys.path.insert(0, str(APP_DIR))
 import pgcompat  # noqa: E402
 
 
+class _FakeCursor:
+    rowcount = 2
+
+    def __init__(self):
+        self.call = None
+
+    def executemany(self, statement, params_seq):
+        self.call = (statement, params_seq)
+
+
+class _FakePsycopgConnection:
+    def __init__(self):
+        self.cursor_instance = _FakeCursor()
+
+    def cursor(self):
+        return self.cursor_instance
+
+
 class PgCompatInsertTests(unittest.TestCase):
     def test_conflict_do_nothing_does_not_request_missing_id(self):
         statement, wants_id = pgcompat._sql(
@@ -26,6 +44,21 @@ class PgCompatInsertTests(unittest.TestCase):
         )
         self.assertTrue(wants_id)
         self.assertTrue(statement.endswith("RETURNING id"))
+
+    def test_executemany_uses_cursor_api(self):
+        raw = _FakePsycopgConnection()
+        connection = pgcompat.Connection(raw)
+        params = [(1, "uno"), (2, "dos")]
+
+        result = connection.executemany(
+            "INSERT INTO expense_classifications (report_id, label) VALUES (?, ?)",
+            params,
+        )
+
+        statement, passed_params = raw.cursor_instance.call
+        self.assertIn("VALUES (%s, %s)", statement)
+        self.assertEqual(passed_params, params)
+        self.assertEqual(result.rowcount, 2)
 
 
 if __name__ == "__main__":

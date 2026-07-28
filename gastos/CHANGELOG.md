@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.5.3
+- Se corrige el guardado por lote de clasificaciones del resumen usando la API de cursor de psycopg 3.
+
 ## 7.5.2
 - Se corrige la regeneración de resúmenes con timestamps nativos de PostgreSQL.
 - La lista de compras oculta correctamente el mensaje “No falta nada” cuando hay pendientes.

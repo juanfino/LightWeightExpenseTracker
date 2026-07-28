@@ -108,7 +108,9 @@ class Connection:
 
     def executemany(self, sql, params_seq):
         statement, _ = _sql(sql)
-        return Cursor(self._connection.executemany(statement, params_seq))
+        cursor = self._connection.cursor()
+        cursor.executemany(statement, params_seq)
+        return Cursor(cursor)
 
 
 def pool(name: str = "app") -> ConnectionPool:
