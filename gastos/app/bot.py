@@ -387,6 +387,7 @@ async def handle_bot_error(update: object, context: ContextTypes.DEFAULT_TYPE):
         "Excepción no manejada family_id=%s user_id=%s\n%s",
         family_id, user_id, details,
     )
+    db.record_system_error("telegram", context.error, details)
     admin_chat = db.get_superadmin_telegram_id()
     if admin_chat:
         text = (

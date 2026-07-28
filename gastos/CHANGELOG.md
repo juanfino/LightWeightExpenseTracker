@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.5.0
+- **Fase 8 — Superadmin:** nuevo panel global con familias, actividad, gastos, uso y costo de IA por familia/módulo/modelo, costos operativos y errores recientes.
+- Las consultas cruzadas usan exclusivamente el rol `gastos_superadmin` con `BYPASSRLS`; las políticas tenant no se debilitan.
+- Las cuotas de IA admiten overrides opcionales por familia, manteniendo 100 llamadas rutinarias diarias y 15 resúmenes mensuales como valores globales.
+- El menú superior conserva solo las funciones cotidianas; Dashboard sale de la navegación y se abre desde el logo, mientras avatar agrupa Familia, Categorías, Telegram, Exportar, Sistema, Superadmin y cierre de sesión.
+
 ## 7.4.0
 - **Fase 7c — Exportación:** CSV individuales de movimientos, gastos fijos, dólares, ingresos, lista y taxonomía, más un ZIP con todo.
 - Los CSV cumplen RFC 4180, usan UTF-8 con BOM, fechas ISO y neutralizan fórmulas de planilla.

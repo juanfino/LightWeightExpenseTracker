@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Superadmin — Gastos Familiares{% endblock %}
+{% block nav_superadmin %}active{% endblock %}
+{% block extra_styles %}
+.admin-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:28px}
+.admin-section{margin-top:28px}.admin-section-head{display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:14px}
+.admin-table-wrap{overflow-x:auto}.admin-table{min-width:760px}.admin-table input{width:92px;padding:7px 9px}
+.admin-table .wide-input{width:180px}.admin-table .btn{padding:7px 10px}
+.cost-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.cost-card{display:grid;grid-template-columns:1fr 120px 120px auto;gap:10px;align-items:end}
+.cost-card label{display:flex;flex-direction:column;gap:5px;color:var(--text2);font-size:11px}
+.cost-card input{width:100%}.cost-total{font-size:22px;font-weight:700;margin-top:12px}
+.error-message{max-width:420px;white-space:normal;overflow-wrap:anywhere}
+.chart-wrap{height:220px}
+@media(max-width:900px){.admin-grid{grid-template-columns:repeat(2,1fr)}.cost-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.admin-grid{grid-template-columns:1fr 1fr}.cost-card{grid-template-columns:1fr 1fr}.cost-card label:first-child{grid-column:1/-1}.cost-card .btn{width:100%}}
+{% endblock %}
+{% block content %}
+<main class="container">
+  <div class="page-header">
+    <div><div class="page-title">Superadmin</div><div class="help-copy">Salud operativa, consumo y costos de toda la plataforma.</div></div>
+    <span class="badge"><i class="ti ti-shield-lock"></i> Vista global · BYPASSRLS</span>
+  </div>
+
+  <section class="admin-grid">
+    <div class="card"><div class="card-title">Familias</div><div class="card-value">{{ totals.families }}</div></div>
+    <div class="card"><div class="card-title">Usuarios</div><div class="card-value">{{ totals.users }}</div></div>
+    <div class="card"><div class="card-title">Activos 30 días</div><div class="card-value">{{ totals.active_30d }}</div></div>
+    <div class="card"><div class="card-title">Gastos históricos</div><div class="card-value">{{ totals.expenses }}</div></div>
+    <div class="card"><div class="card-title">IA · últimos 30 días</div><div class="card-value">US$ {{ "%.4f"|format(totals.llm_cost_30d) }}</div></div>
+  </section>
+
+  <section class="admin-section">
+    <div class="admin-section-head"><div><h2 class="section-title">Familias y cuotas</h2><div class="help-copy">Vaciar un límite restaura el valor global (100 rutinas / 15 resúmenes).</div></div></div>
+    <div class="card admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Familia</th><th>Usuarios</th><th>Activos 7 / 30d</th><th>Gastos mes / total</th><th>Rutina diaria</th><th>Resúmenes mes</th><th></th></tr></thead>
+        <tbody>
+        {% for family in data.families %}
+          <tr data-family-id="{{ family.id }}">
+            <td><strong>{{ family.name }}</strong></td>
+            <td>{{ family.users }}</td>
+            <td>{{ family.active_7d }} / {{ family.active_30d }}</td>
+            <td>{{ family.expenses_month }} / {{ family.expenses }}</td>
+            <td><input class="routine-limit" type="number" min="1" placeholder="100" value="{{ family.routine_limit if family.routine_overridden else '' }}"></td>
+            <td><input class="summary-limit" type="number" min="1" placeholder="15" value="{{ family.summary_limit if family.summary_overridden else '' }}"></td>
+            <td><button class="btn save-quota"><i class="ti ti-device-floppy"></i> Guardar</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-section grid-2">
+    <div>
+      <div class="admin-section-head"><div><h2 class="section-title">IA por familia · 30 días</h2><div class="help-copy">Quién consume y cuántas llamadas fallan.</div></div></div>
+      <div class="card admin-table-wrap">
+        <table><thead><tr><th>Familia</th><th>Llamadas</th><th>Fallidas</th><th>Costo</th></tr></thead><tbody>
+        {% for row in data.llm_by_family %}<tr><td>{{ row.family_name }}</td><td>{{ row.calls }}</td><td>{{ row.failures }}</td><td>US$ {{ "%.4f"|format(row.cost) }}</td></tr>{% endfor %}
+        </tbody></table>
+      </div>
+    </div>
+    <div>
+      <div class="admin-section-head"><div><h2 class="section-title">Evolución · 30 días</h2><div class="help-copy">Costo y cantidad de llamadas por día.</div></div></div>
+      <div class="card chart-wrap"><canvas id="llm-trend"></canvas></div>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <div class="admin-section-head"><div><h2 class="section-title">IA por módulo y modelo · 30 días</h2><div class="help-copy">Detalle para entender qué función explica el costo.</div></div></div>
+    <div class="card admin-table-wrap">
+      <table><thead><tr><th>Módulo</th><th>Modelo</th><th>Llamadas</th><th>Tokens entrada</th><th>Tokens salida</th><th>Costo</th></tr></thead><tbody>
+      {% for row in data.llm_breakdown %}<tr><td>{{ row.module }}</td><td>{{ row.model }}</td><td>{{ row.calls }}</td><td>{{ row.tokens_in }}</td><td>{{ row.tokens_out }}</td><td>US$ {{ "%.4f"|format(row.cost) }}</td></tr>{% else %}<tr><td colspan="6" class="help-copy">Todavía no hay consumo registrado.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <div class="admin-section-head"><div><h2 class="section-title">Costos de infraestructura</h2><div class="help-copy">Tarifa × volumen mensual. Los costos medidos de IA aparecen arriba y no se duplican automáticamente acá.</div></div></div>
+    <div class="cost-grid">
+    {% for cost in data.costs %}
+      <form class="card cost-card" data-provider="{{ cost.provider }}">
+        <label><strong style="color:var(--text);font-size:15px">{{ cost.provider }}</strong>Unidad<input name="unit_label" value="{{ cost.unit_label }}"></label>
+        <label>Tarifa USD<input name="unit_rate_usd" type="number" min="0" step="0.000001" value="{{ cost.unit_rate_usd }}"></label>
+        <label>Volumen mes<input name="monthly_volume" type="number" min="0" step="0.001" value="{{ cost.monthly_volume }}"></label>
+        <button class="btn" type="submit">Guardar</button>
+        <div class="cost-total">US$ {{ "%.4f"|format(cost.estimated_monthly_cost) }}</div>
+        <label style="grid-column:span 3">Nota<input name="notes" value="{{ cost.notes or '' }}"></label>
+      </form>
+    {% endfor %}
+    </div>
+  </section>
+
+  <section class="admin-section">
+    <div class="admin-section-head"><div><h2 class="section-title">Errores recientes</h2><div class="help-copy">Excepciones web/Telegram y llamadas de IA fallidas.</div></div></div>
+    <div class="card admin-table-wrap">
+      <table><thead><tr><th>Cuándo</th><th>Origen</th><th>Familia</th><th>Usuario</th><th>Error</th></tr></thead><tbody>
+      {% for error in data.recent_errors %}
+        <tr><td>{{ error.created_at.strftime("%d/%m %H:%M") }}</td><td><span class="badge">{{ error.source }}</span></td><td>{{ error.family_name }}</td><td>{{ error.user_name or "—" }}</td><td class="error-message"><strong>{{ error.error_type }}</strong><br><span class="help-copy">{{ error.message }}</span></td></tr>
+      {% else %}<tr><td colspan="5" class="help-copy">No hay errores registrados.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+<script>
+const trend = {{ data.llm_daily|tojson }};
+new Chart(document.getElementById('llm-trend'), {
+  type:'line',
+  data:{labels:trend.map(x=>x.day),datasets:[
+    {label:'Costo USD',data:trend.map(x=>Number(x.cost)),borderColor:getComputedStyle(document.documentElement).getPropertyValue('--accent'),tension:.3,yAxisID:'y'},
+    {label:'Llamadas',data:trend.map(x=>x.calls),borderColor:getComputedStyle(document.documentElement).getPropertyValue('--green'),tension:.3,yAxisID:'y1'}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:getComputedStyle(document.documentElement).getPropertyValue('--text2')}}},scales:{x:{ticks:{color:getComputedStyle(document.documentElement).getPropertyValue('--text3')},grid:{display:false}},y:{beginAtZero:true,ticks:{color:getComputedStyle(document.documentElement).getPropertyValue('--text3')}},y1:{beginAtZero:true,position:'right',grid:{display:false},ticks:{color:getComputedStyle(document.documentElement).getPropertyValue('--text3')}}}}
+});
+document.querySelectorAll('.save-quota').forEach(button=>button.addEventListener('click',async()=>{
+  const row=button.closest('tr'),id=row.dataset.familyId;
+  const response=await fetch(`/admin/families/${id}/quotas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({routine_daily_limit:row.querySelector('.routine-limit').value,summary_monthly_limit:row.querySelector('.summary-limit').value})});
+  const data=await response.json(); if(!response.ok)return alert(data.error); button.textContent='Guardado ✓'; setTimeout(()=>button.innerHTML='<i class="ti ti-device-floppy"></i> Guardar',1400);
+}));
+document.querySelectorAll('.cost-card').forEach(form=>form.addEventListener('submit',async event=>{
+  event.preventDefault();const values=Object.fromEntries(new FormData(form));
+  const response=await fetch(`/admin/costs/${encodeURIComponent(form.dataset.provider)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
+  const data=await response.json();if(!response.ok)return alert(data.error);location.reload();
+}));
+</script>
+{% endblock %}

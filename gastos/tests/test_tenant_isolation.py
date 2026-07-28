@@ -98,7 +98,7 @@ class TenantIsolationTests(unittest.TestCase):
             "keywords", "expenses", "fixed_expenses", "cambios_dolar",
             "ipc_series", "reports", "expense_classifications", "llm_calls",
             "income_categories", "incomes",
-            "shopping_items",
+            "shopping_items", "family_quota_overrides", "system_errors",
         }
         with db.get_conn() as conn:
             rows = conn.execute(
@@ -120,6 +120,24 @@ class TenantIsolationTests(unittest.TestCase):
         self.assertEqual(len(sqlro.run_readonly("SELECT * FROM llm_calls")), 1)
         pgcompat.set_family_id(self.family_b)
         self.assertEqual(sqlro.run_readonly("SELECT * FROM llm_calls"), [])
+
+    def test_phase8_tenant_tables_are_isolated(self):
+        pgcompat.set_family_id(1)
+        pgcompat.set_user_id(self.user_a["id"])
+        with db.get_conn() as conn:
+            conn.execute(
+                "INSERT INTO family_quota_overrides "
+                "(routine_daily_limit, summary_monthly_limit) VALUES (?, ?)",
+                (7, 3),
+            )
+        db.record_system_error("test", RuntimeError("solo A"))
+
+        pgcompat.set_family_id(self.family_b)
+        pgcompat.set_user_id(self.user_b["id"])
+        self.assertEqual(
+            sqlro.run_readonly("SELECT * FROM family_quota_overrides"), []
+        )
+        self.assertEqual(sqlro.run_readonly("SELECT * FROM system_errors"), [])
 
 
 if __name__ == "__main__":
