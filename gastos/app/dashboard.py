@@ -57,27 +57,6 @@ def _report_web_exception(_sender, exception, **_extra):
         family_id, user_id, details,
     )
     db.record_system_error("web", exception, details)
-    token = os.environ.get("TELEGRAM_TOKEN")
-    if not token:
-        return
-    try:
-        import requests
-        admin_chat = db.get_superadmin_telegram_id()
-        if not admin_chat:
-            return
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={
-                "chat_id": admin_chat,
-                "text": (
-                    f"🚨 Error web\nfamily_id={family_id} user_id={user_id}\n"
-                    f"{details[-3000:]}"
-                ),
-            },
-            timeout=5,
-        ).raise_for_status()
-    except Exception:
-        app.logger.exception("No se pudo enviar la alerta web")
 
 
 @app.before_request

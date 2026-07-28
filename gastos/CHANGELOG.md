@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.5.2
+- Se corrige la regeneración de resúmenes con timestamps nativos de PostgreSQL.
+- La lista de compras oculta correctamente el mensaje “No falta nada” cuando hay pendientes.
+- Los errores dejan de enviarse al chat del superadmin: siguen visibles en Superadmin y en `docker logs`, ahora con rotación acotada en la Pi.
+
 ## 7.5.1
 - Se corrige el popup del avatar, que quedaba recortado por el `overflow` de la barra superior aunque tuviera un `z-index` alto.
 

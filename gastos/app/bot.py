@@ -388,16 +388,6 @@ async def handle_bot_error(update: object, context: ContextTypes.DEFAULT_TYPE):
         family_id, user_id, details,
     )
     db.record_system_error("telegram", context.error, details)
-    admin_chat = db.get_superadmin_telegram_id()
-    if admin_chat:
-        text = (
-            f"🚨 Error no manejado\nfamily_id={family_id} user_id={user_id}\n"
-            f"<pre>{details[-3500:].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</pre>"
-        )
-        try:
-            await context.bot.send_message(admin_chat, text, parse_mode="HTML")
-        except Exception:
-            logger.exception("No se pudo enviar la alerta de error")
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────

@@ -32,12 +32,19 @@ def _field(record, key: str, default=None):
         return default
 
 
-def expense_period(created_at_utc: str, tz) -> tuple[int, int]:
+def expense_period(created_at_utc: str | datetime, tz) -> tuple[int, int]:
     """(year, month) an expense's own date falls in, converted to `tz` — a fixed-expense
     link defaults to the month of the expense's own date, not "today" (an OCR receipt dated
     last month should land in last month's period). Shared by bot.py and dashboard.py so
     both compute the period the same way."""
-    dt = datetime.strptime(created_at_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    if isinstance(created_at_utc, datetime):
+        dt = created_at_utc
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = datetime.strptime(created_at_utc, "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc
+        )
     local = dt.astimezone(tz)
     return local.year, local.month
 

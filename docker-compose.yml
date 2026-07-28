@@ -60,6 +60,11 @@ services:
     dns:
       - 8.8.8.8
       - 1.1.1.1
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('https://api.telegram.org', timeout=5)"]
       interval: 2m

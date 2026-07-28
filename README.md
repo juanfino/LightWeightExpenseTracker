@@ -38,6 +38,10 @@ ssh juanfino@192.168.68.72 "docker compose pull gastos && docker compose up -d g
 ssh juanfino@192.168.68.72 "docker logs -f gastos"
 ```
 
+The `gastos` service uses Docker's local log driver with five rotated files of
+up to 10 MB each. Application exceptions remain available through `docker logs`
+without being sent to the family Telegram chat.
+
 ### Verifying
 
 - Logs show "Bot Telegram iniciando" and polling requests
