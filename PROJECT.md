@@ -50,7 +50,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Monthly AI-generated report** (2.3.0): `/resumenes` — see dedicated section below
 - **Users:** Juampi and Cele, both onboarded and actively using the app
 - **Family management:** `/familia` lets the owner generate/revoke seven-day single-use invitation links, rename the family, logically remove members, transfer ownership, or delete the family with exact-name confirmation. Invitees join as members through Google or email OTP. `SUPERADMIN_EMAIL` is startup-only; no HTTP path can change the flag.
-- **Telegram linking and LLM safeguards:** `/vincular-telegram` provides a 15-minute, one-use deep link and QR with live confirmation; unknown chats get linking help, groups are rejected, and unlinking lives in `/familia`. Routine AI calls default to 100/family/day, Resúmenes to 15 generations/family/month, and `llm_limits.py` permits at most two concurrent LLM calls per family. The superadmin may override either quota per family. Unhandled bot/web errors alert the linked superadmin Telegram with tenant/user context; tenant-attributed failures are also retained for the panel.
+- **Telegram linking and LLM safeguards:** `/vincular-telegram` provides a 15-minute, one-use deep link and QR with live confirmation; unknown chats get linking help, groups are rejected, and unlinking lives in `/familia`. Routine AI calls default to 100/family/day, Resúmenes to 15 generations/family/month, and `llm_limits.py` permits at most two concurrent LLM calls per family. The superadmin may override either quota per family. Unhandled bot/web errors are written to the rotated container log; tenant-attributed failures are also retained for the panel and are not sent through the family bot.
 - **Superadmin operations:** `/superadmin` shows cross-family adoption/activity, expense volume, LLM calls/cost by family/module/model/day, editable operating-cost assumptions, optional family quota overrides and recent web/Telegram/LLM failures. It does not provide impersonation, billing or business-data editing.
 - **Portable exit path:** `/exportar` produces tenant-scoped RFC 4180 CSVs (UTF-8 BOM, ISO dates, spreadsheet-formula neutralization) and a complete ZIP including movements, fixed expenses, dollars, incomes, shopping and taxonomy.
 
@@ -119,7 +119,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
   replaced or double-counted.
 - **Recent failures:** tenant-attributed unhandled web/Telegram exceptions are
   stored in `system_errors`; failed model calls come from `llm_calls`. Failures
-  before a family can be resolved are still logged/notified but cannot be
+  before a family can be resolved are still logged to container stdout but cannot be
   inserted into a tenant table.
 - **Mutations:** quota and cost changes require superadmin plus CSRF. There are
   intentionally no endpoints for impersonation, billing or editing another

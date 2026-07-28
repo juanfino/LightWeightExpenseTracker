@@ -95,6 +95,9 @@ como otra familia ni editar sus datos:
 - supuestos manuales de costo para Anthropic, OpenAI, Resend y Cloudflare R2;
 - errores recientes de web, Telegram e IA asociados a una familia.
 
+Las excepciones técnicas no se envían por el bot: quedan en esta vista y en los
+logs rotados del contenedor en la Pi.
+
 Vaciar un override restaura los límites generales: 100 llamadas rutinarias por
 día y 15 Resúmenes por mes. Los costos manuales son estimaciones operativas
 (`tarifa × volumen`); el costo medido de los modelos se calcula por separado a
