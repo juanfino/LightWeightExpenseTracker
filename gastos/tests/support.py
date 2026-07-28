@@ -9,6 +9,7 @@ def reset_database(users=None):
         conn.execute(
             "TRUNCATE TABLE oauth_identities, otp_codes, sessions, invitations, "
             "telegram_link_tokens, llm_calls, "
+            "incomes, income_categories, "
             "expense_classifications, reports, ipc_series, "
             "cambios_dolar, expenses, fixed_expenses, keywords, subcategories, "
             "categories, memberships, families, users RESTART IDENTITY CASCADE"

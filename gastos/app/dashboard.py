@@ -1373,6 +1373,96 @@ def resumenes_page():
     return render_template("resumenes.html", year=year, month=month)
 
 
+@app.route("/ingresos")
+def incomes_page():
+    now = datetime.now()
+    return render_template("incomes.html", categories=[dict(r) for r in db.get_income_categories()],
+                           year=now.year, month=now.month)
+
+
+@app.route("/api/incomes", methods=["GET", "POST"])
+def api_incomes():
+    if request.method == "GET":
+        try:
+            year = int(request.args["year"]) if request.args.get("year") else None
+            month = int(request.args["month"]) if request.args.get("month") else None
+        except ValueError:
+            return jsonify({"error": "Período inválido"}), 400
+        return jsonify([_row_to_dict(r) for r in db.get_incomes(year, month)])
+    payload = _validated_income_payload(request.get_json(silent=True) or {})
+    if payload is None:
+        return jsonify({"ok": False, "error": "Datos de ingreso inválidos"}), 400
+    return jsonify({"ok": True, "id": db.create_income(g.current_user["id"], *payload)}), 201
+
+
+def _validated_income_payload(data):
+    concept, date_str = (data.get("concept") or "").strip(), (data.get("date") or "").strip()
+    try:
+        amount = float(data.get("amount"))
+        if amount <= 0:
+            raise ValueError
+        datetime.strptime(date_str, "%Y-%m-%d")
+        currency = db.normalize_currency(data.get("currency"))
+        category_id = int(data["income_category_id"]) if data.get("income_category_id") else None
+    except (TypeError, ValueError):
+        return None
+    if not concept or (category_id and not db.get_income_category(category_id)):
+        return None
+    return concept, amount, currency, date_str, category_id
+
+
+@app.route("/api/incomes/<int:income_id>", methods=["PUT", "DELETE"])
+def api_income_mutate(income_id: int):
+    income = db.get_income(income_id)
+    if income is None:
+        return jsonify({"ok": False, "error": "Ingreso no encontrado"}), 404
+    if income["user_id"] != g.current_user["id"]:
+        return jsonify({"ok": False, "error": "Solo podés modificar tus propios ingresos"}), 403
+    if request.method == "DELETE":
+        return jsonify({"ok": db.delete_income(income_id, g.current_user["id"])})
+    payload = _validated_income_payload(request.get_json(silent=True) or {})
+    if payload is None:
+        return jsonify({"ok": False, "error": "Datos de ingreso inválidos"}), 400
+    return jsonify({"ok": db.update_income(income_id, g.current_user["id"], *payload)})
+
+
+@app.route("/api/income-categories", methods=["GET", "POST"])
+def api_income_categories():
+    if request.method == "GET":
+        return jsonify([dict(r) for r in db.get_income_categories()])
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Falta el nombre"}), 400
+    category_id = db.create_income_category(name, data.get("icon", "💵"), data.get("color", "#22c55e"))
+    if category_id is None:
+        return jsonify({"ok": False, "error": "Ya existe esa categoría"}), 409
+    return jsonify({"ok": True, "id": category_id}), 201
+
+
+@app.route("/api/income-categories/<int:category_id>", methods=["PUT", "DELETE"])
+def api_income_category_mutate(category_id: int):
+    if request.method == "DELETE":
+        ok, error = db.delete_income_category(category_id)
+        return jsonify({"ok": ok, "error": error}), 200 if ok else 400
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Falta el nombre"}), 400
+    ok = db.update_income_category(category_id, name, data.get("icon", "💵"), data.get("color", "#22c55e"))
+    return jsonify({"ok": ok}), 200 if ok else 409
+
+
+@app.route("/api/incomes/month-totals")
+def api_income_month_totals():
+    now = datetime.now()
+    try:
+        year, month = int(request.args.get("year", now.year)), int(request.args.get("month", now.month))
+    except ValueError:
+        return jsonify({"error": "Período inválido"}), 400
+    return jsonify(db.get_income_month_totals(year, month))
+
+
 @app.route("/resumenes/<period>")
 def resumenes_page_period(period: str):
     try:

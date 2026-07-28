@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Ingresos — Gastos Familiares{% endblock %}
+{% block nav_incomes %}active{% endblock %}
+{% block extra_styles %}
+.income-layout{display:grid;grid-template-columns:2fr 1fr;gap:16px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.field{display:flex;flex-direction:column;gap:4px}.actions{display:flex;gap:6px}.category-row{display:grid;grid-template-columns:42px 1fr 48px auto;gap:8px;margin:8px 0}.empty{text-align:center;color:var(--text2);padding:32px}@media(max-width:800px){.income-layout{grid-template-columns:1fr}}
+{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><div><div class="page-title">Ingresos</div><div class="help-copy">Por moneda, sin conversiones ni balances artificiales.</div></div><button class="btn btn-primary" onclick="openIncome()">+ Agregar ingreso</button></div>
+  <div class="grid-2" style="margin-bottom:16px"><div class="card"><div class="card-title">Ingresos ARS del mes</div><div class="card-value" id="total-ars">$ 0</div></div><div class="card"><div class="card-title">Ingresos USD del mes</div><div class="card-value" id="total-usd">US$ 0</div></div></div>
+  <div class="income-layout">
+    <div class="card">
+      <div class="toolbar" style="margin-bottom:16px"><label class="field">Año<input id="year" type="number" value="{{ year }}"></label><label class="field">Mes<input id="month" type="number" min="1" max="12" value="{{ month }}"></label><button class="btn" onclick="loadIncomes()">Aplicar</button></div>
+      <div style="overflow-x:auto"><table class="rtable"><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Monto</th><th>Persona</th><th></th></tr></thead><tbody id="income-body"></tbody></table></div>
+      <div id="income-empty" class="empty" hidden>Todavía no hay ingresos en este período.</div>
+    </div>
+    <div class="card"><div class="section-header"><div class="section-title">Categorías de ingresos</div><button class="btn" onclick="addCategory()">+ Nueva</button></div><div id="categories"></div></div>
+  </div>
+</div>
+<dialog id="income-dialog" style="margin:auto;border:0;border-radius:16px;background:var(--surface);color:var(--text);padding:24px;max-width:480px;width:calc(100% - 32px)">
+  <form id="income-form" style="display:grid;gap:12px"><input id="income-id" type="hidden"><label class="field">Concepto<input id="concept" required></label><label class="field">Monto<input id="amount" type="number" min=".01" step=".01" required></label><label class="field">Moneda<select id="currency"><option>ARS</option><option>USD</option></select></label><label class="field">Fecha<input id="income-date" type="date" required></label><label class="field">Categoría<select id="income-category"><option value="">Sin categoría</option></select></label><div class="actions"><button class="btn" type="button" onclick="incomeDialog.close()">Cancelar</button><button class="btn btn-primary">Guardar</button></div></form>
+</dialog>
+<script>
+let incomeRows=[],incomeCategories={{ categories|tojson }};const $=id=>document.getElementById(id),money=(n,c)=>(c==='USD'?'US$ ':'$ ')+Number(n).toLocaleString('es-AR',{maximumFractionDigits:2}),incomeDialog=$('income-dialog');
+function renderCategories(){$('categories').innerHTML=incomeCategories.map(c=>`<div class="category-row"><input value="${c.icon}"><input value="${c.name}"><input type="color" value="${c.color}"><span><button class="btn" onclick="saveCategory(${c.id},this)">Guardar</button> <button class="btn btn-danger" onclick="deleteCategory(${c.id})">×</button></span></div>`).join('');$('income-category').innerHTML='<option value="">Sin categoría</option>'+incomeCategories.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')}
+async function loadCategories(){incomeCategories=await fetch('/api/income-categories').then(r=>r.json());renderCategories()}
+async function saveCategory(id,b){const i=b.closest('.category-row').querySelectorAll('input');await fetch(`/api/income-categories/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({icon:i[0].value,name:i[1].value,color:i[2].value})});loadCategories()}
+async function addCategory(){const name=prompt('Nombre de la categoría');if(name){await fetch('/api/income-categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});loadCategories()}}
+async function deleteCategory(id){if(!confirm('¿Eliminar esta categoría?'))return;const r=await fetch(`/api/income-categories/${id}`,{method:'DELETE'}),d=await r.json();r.ok?loadCategories():alert(d.error)}
+async function loadIncomes(){const y=$('year').value,m=$('month').value;incomeRows=await fetch(`/api/incomes?year=${y}&month=${m}`).then(r=>r.json());$('income-body').innerHTML=incomeRows.map(r=>`<tr><td data-label="Fecha">${r.date}</td><td data-label="Concepto">${r.concept}</td><td data-label="Categoría">${r.category_icon||'💵'} ${r.category_name||'Sin categoría'}</td><td data-label="Monto">${money(r.amount,r.currency)}</td><td data-label="Persona">${r.user_name}</td><td data-label="Acciones"><div class="actions"><button class="btn" onclick="editIncome(${r.id})">Editar</button><button class="btn btn-danger" onclick="removeIncome(${r.id})">Eliminar</button></div></td></tr>`).join('');$('income-empty').hidden=incomeRows.length>0;const t=await fetch(`/api/incomes/month-totals?year=${y}&month=${m}`).then(r=>r.json());$('total-ars').textContent=money(t.ARS||0,'ARS');$('total-usd').textContent=money(t.USD||0,'USD')}
+function openIncome(r={}){$('income-id').value=r.id||'';$('concept').value=r.concept||'';$('amount').value=r.amount||'';$('currency').value=r.currency||'ARS';$('income-date').value=r.date||new Date().toISOString().slice(0,10);$('income-category').value=r.income_category_id||'';incomeDialog.showModal()}function editIncome(id){openIncome(incomeRows.find(r=>r.id===id))}
+async function removeIncome(id){if(!confirm('¿Eliminar este ingreso?'))return;const r=await fetch(`/api/incomes/${id}`,{method:'DELETE'});r.status===403?alert('Solo podés eliminar tus propios ingresos.'):loadIncomes()}
+$('income-form').addEventListener('submit',async e=>{e.preventDefault();const id=$('income-id').value,p={concept:$('concept').value,amount:$('amount').value,currency:$('currency').value,date:$('income-date').value,income_category_id:$('income-category').value||null},r=await fetch(id?`/api/incomes/${id}`:'/api/incomes',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});if(r.ok){incomeDialog.close();loadIncomes()}else alert((await r.json()).error)});
+renderCategories();loadIncomes();
+</script>
+{% endblock %}

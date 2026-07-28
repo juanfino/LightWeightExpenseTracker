@@ -657,6 +657,12 @@ a.onboarding-step:hover { background:var(--surface2); }
       </div>
     </div>
 
+    <a class="card mt-24" href="/ingresos" style="display:block">
+      <div class="section-header"><div class="section-title">Ingresos del mes</div><span style="font-size:12px;color:var(--text2)">Ver ingresos →</span></div>
+      <div class="card-value" id="month-incomes">—</div>
+      <div class="card-sub">ARS y USD se muestran separados, sin convertir.</div>
+    </a>
+
     <!-- Charts -->
     <div class="charts-grid mt-24">
       <div class="card">
@@ -973,6 +979,11 @@ a.onboarding-step:hover { background:var(--surface2); }
       fetch(`/api/monthly?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`).then(r => r.json()),
       fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`).then(r => r.json()),
     ]);
+    const incomeTotals = await fetch(`/api/incomes/month-totals?year=${currentYear}&month=${currentMonth}`).then(r => r.json());
+    const incomeParts = [];
+    if (incomeTotals.ARS) incomeParts.push(fmtAmount(incomeTotals.ARS, 'ARS'));
+    if (incomeTotals.USD) incomeParts.push(fmtAmount(incomeTotals.USD, 'USD'));
+    document.getElementById('month-incomes').textContent = incomeParts.join(' · ') || 'Sin ingresos';
 
     loadFijosWidget(currentYear, currentMonth);
     loadGastosPorCategoria(mes, usuario);

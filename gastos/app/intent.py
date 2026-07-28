@@ -45,6 +45,25 @@ BAIRES = timezone(timedelta(hours=-3))  # America/Argentina/Buenos_Aires (fixed 
 
 _TOOLS = [
     {
+        "name": "log_income",
+        "description": (
+            "Registrar un ingreso NUEVO solo cuando hay una señal inequívoca de dinero recibido "
+            "(ej. 'cobré 300000 de un freelance', 'me depositaron el sueldo', "
+            "'recibí un reintegro'). Un texto neutro 'concepto monto' es siempre gasto."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "concept": {"type": "string"},
+                "amount": {"type": "number"},
+                "currency": {"type": "string", "enum": ["ARS", "USD"]},
+                "date": {"type": "string", "description": "YYYY-MM-DD en zona ART; omitir si es hoy."},
+                "category": {"type": "string", "description": "Categoría de ingreso existente."},
+            },
+            "required": ["concept", "amount"],
+        },
+    },
+    {
         "name": "log_expense",
         "description": (
             "Registrar un gasto NUEVO cuando el usuario describe un gasto en lenguaje "
@@ -164,6 +183,8 @@ _SCHEMA_DOC = (
     "  users(id, telegram_id, name, color)\n"
     "  categories(id, name, color, icon)\n"
     "  subcategories(id, category_id, name)\n"
+    "  incomes(id, user_id, income_category_id, concept, amount, currency, date, created_at)\n"
+    "  income_categories(id, name, color, icon)\n"
     "Notas:\n"
     "  - created_at es TIMESTAMPTZ almacenado en UTC. Para día/semana/mes argentino usá "
     "(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires').\n"
@@ -178,11 +199,13 @@ _SCHEMA_DOC = (
 def _build_system_prompt(user) -> str:
     now = datetime.now(BAIRES)
     cats = db.get_all_categories()
+    income_cats = db.get_income_categories()
     subs = db.get_all_subcategories()
     users = db.get_all_users()
     recent = db.get_recent_expenses_for_user(user["id"], limit=30)
 
     cat_lines = "\n".join(f"  - id={c['id']}: {c['name']}" for c in cats) or "  (ninguna)"
+    income_cat_lines = "\n".join(f"  - id={c['id']}: {c['name']}" for c in income_cats) or "  (ninguna)"
     sub_lines = "\n".join(
         f"  - id={s['id']}: {s['name']} (categoría: {s['category_name']}, category_id={s['category_id']})"
         for s in subs
@@ -211,11 +234,15 @@ def _build_system_prompt(user) -> str:
         "En reportes SQL, NUNCA sumes monedas mezcladas: filtrá por currency o GROUP BY currency.\n\n"
         f"El usuario que escribe es: id={user['id']}, nombre={user['name']}.\n\n"
         "Categorías:\n" + cat_lines + "\n\n"
+        "Categorías de ingresos:\n" + income_cat_lines + "\n\n"
         "Subcategorías:\n" + sub_lines + "\n\n"
         "Usuarios de la familia:\n" + user_lines + "\n\n"
         "Últimos gastos de este usuario (para resolver 'el último', etc.):\n" + recent_block + "\n\n"
         + _SCHEMA_DOC + "\n\n"
         "Reglas:\n"
+        "  - Para registrar dinero recibido inequívocamente: log_income. El formato neutro "
+        "'concepto monto' sigue siendo gasto; nunca lo conviertas en ingreso sin verbos como "
+        "'cobré', 'recibí', 'me pagaron', 'me depositaron' o el prefijo 'Ingreso:'.\n"
         "  - Para registrar un gasto nuevo: log_expense.\n"
         "  - Para modificar un gasto ya registrado: edit_expense, con un target_sql que devuelva "
         "el/los id candidatos SIEMPRE filtrado por user_id=" + str(user["id"]) + " (un usuario solo "
@@ -325,6 +352,8 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
 
             if name == "log_expense":
                 return _handle_log(args)
+            if name == "log_income":
+                return _handle_log_income(args)
             if name == "edit_expense":
                 return _handle_edit(args, user)
             if name == "create_category":
@@ -373,6 +402,26 @@ def _handle_log(args: dict) -> dict:
         "date": (args.get("date") or "").strip() or None,
         "category": (args.get("category") or "").strip() or None,
         "subcategory": (args.get("subcategory") or "").strip() or None,
+    }
+
+
+def _handle_log_income(args: dict) -> dict:
+    try:
+        amount = float(args.get("amount"))
+        if amount <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return _reply("🤔 No me quedó claro el monto del ingreso.")
+    concept = (args.get("concept") or "").strip()
+    if not concept:
+        return _reply("🤔 ¿Qué concepto le pongo al ingreso?")
+    return {
+        "kind": "income",
+        "concept": concept,
+        "amount": amount,
+        "currency": db.normalize_currency(args.get("currency")),
+        "date": (args.get("date") or "").strip() or None,
+        "category": (args.get("category") or "").strip() or None,
     }
 
 

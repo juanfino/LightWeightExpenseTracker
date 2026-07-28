@@ -244,6 +244,7 @@ _INTENT_TRIGGER_RE = re.compile(
     r"categor[ií]as?|subcategor[ií]as?|"                    # taxonomía
     r"agreg[aá]|agregar|cre[aá]|crear|"                     # taxonomía (verbos)
     r"anot[aá]|anotame|anotar|"                             # "anotame ..."
+    r"cobr[eé]|recib[ií]|depositaron|pagaron|reintegro|ingreso|"  # ingresos
     r"lucas?|palos?|"                                       # slang de montos
     r"trimestre|reporte|resumen"                            # períodos/reportes
     r")\b)"
@@ -826,6 +827,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Si el mensaje suena a operación de dólar, intentar interpretarlo como tal.
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
+
+    # Fast path explícito para ingresos. El formato neutro "concepto monto"
+    # conserva para siempre su significado histórico de gasto.
+    income_match = re.match(r"(?i)^ingreso\s*:\s*(.+)$", text)
+    if income_match:
+        parsed_income = msg_parser.parse_message(income_match.group(1))
+        if parsed_income is None:
+            await update.message.reply_text(
+                "❓ No pude entender el ingreso. Ejemplo: "
+                "<code>Ingreso: sueldo 1.500.000</code>",
+                parse_mode="HTML",
+            )
+            return
+        result = {
+            "concept": parsed_income["concept"],
+            "amount": parsed_income["amount"],
+            "currency": parsed_income.get("currency", "ARS"),
+            "date": datetime.now(BAIRES).strftime("%Y-%m-%d"),
+        }
+        await _nl_do_income(chat_id, context.bot, user, result)
+        return
+
     if anthropic_api_key and dolar_module.looks_like_dolar(text):
         if await _routine_quota_exhausted(update.effective_message):
             return
@@ -1936,6 +1959,8 @@ def _nl_summarize_result(kind: str, result: dict) -> str:
     flujo completo de confirmación en cada acceso."""
     if kind == "log":
         return f"Registré {result['concept']} por {fmt_amount(result['amount'], result.get('currency', 'ARS'))}."
+    if kind == "income":
+        return f"Registré el ingreso {result['concept']} por {fmt_amount(result['amount'], result.get('currency', 'ARS'))}."
     if kind == "edit":
         n = len(result.get("candidate_ids") or [])
         if n == 1:
@@ -1970,6 +1995,8 @@ async def _handle_intent_message(chat_id: int, bot, user, text: str, anthropic_a
 
     if kind == "log":
         await _nl_do_log(chat_id, bot, user, text, result)
+    elif kind == "income":
+        await _nl_do_income(chat_id, bot, user, result)
     elif kind == "edit":
         await _nl_start_edit(chat_id, bot, user, result)
     elif kind == "category":
@@ -2000,6 +2027,40 @@ def _resolve_log_category(concept: str, cat_name: str | None, subcat_name: str |
         keywords = db.get_all_keywords()
         category_id, subcategory_id = categorizer.categorize(concept, keywords)
     return category_id, subcategory_id
+
+
+def _resolve_income_category(concept: str, category_name: str | None = None):
+    if category_name:
+        category = db.find_income_category_normalized(category_name)
+        if category:
+            return category["id"]
+    normalized = categorizer.normalize(concept)
+    for category in db.get_income_categories():
+        if categorizer.normalize(category["name"]).split(" / ")[0] in normalized:
+            return category["id"]
+    other = db.find_income_category_normalized("Otros")
+    return other["id"] if other else None
+
+
+async def _nl_do_income(chat_id: int, bot, user, result: dict) -> None:
+    date_str = result.get("date") or datetime.now(BAIRES).strftime("%Y-%m-%d")
+    category_id = _resolve_income_category(result["concept"], result.get("category"))
+    income_id = db.create_income(
+        user["id"], result["concept"], result["amount"],
+        result.get("currency", "ARS"), date_str, category_id,
+    )
+    category = db.get_income_category(category_id) if category_id else None
+    await bot.send_message(
+        chat_id=chat_id,
+        text=(
+            f"✅ <b>Ingreso registrado</b>\n"
+            f"📋 {result['concept']}\n"
+            f"💰 {fmt_amount(result['amount'], result.get('currency', 'ARS'))}\n"
+            f"{category['icon'] if category else '💵'} {category['name'] if category else 'Sin categoría'}\n"
+            f"👤 {user['name']}\n<code>#ING{income_id}</code>"
+        ),
+        parse_mode="HTML",
+    )
 
 
 async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:

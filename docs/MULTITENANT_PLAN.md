@@ -739,7 +739,7 @@ incomes(id, family_id, user_id, concept, amount NUMERIC(14,2),
 
 - Own taxonomy, separate from expense categories. Base list: Sueldo, Freelance / Honorarios, Alquiler, Venta, Reintegro, Intereses / Inversiones, Regalo, Otros.
 - `/ingresos` screen: list, filters, add/edit/delete — mirrors the movements screen.
-- Dashboard: net balance for the month (income − expenses).
+- Dashboard: monthly income totals in ARS and USD, shown separately. A cross-currency balance was deliberately rejected because it is misleading for a family paid in USD that spends mostly in ARS; a future cash-flow view may incorporate recorded currency exchanges.
 - Bot: a `log_income` tool in the intent layer. The plain `concepto monto` fast path stays expense-only — it must not become ambiguous. A prefix (`Ingreso: sueldo 1500000`) serves as the fast path for income.
 - CSV export included.
 
@@ -775,7 +775,12 @@ shopping_items(id, family_id, name, quantity TEXT NULL,
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**7a implemented on `feat/p7a-incomes` (version 7.2.0):**
+
+- Independent income taxonomy and income rows are tenant-scoped with forced RLS and composite family foreign keys.
+- `/ingresos` provides filters, add/edit/delete and full category administration; members may mutate only their own income rows.
+- The Dashboard shows monthly ARS and USD income totals separately. It intentionally does not invent a cross-currency balance.
+- Telegram keeps plain `concept amount` expense-only, adds the deterministic `Ingreso:` prefix and supports unmistakable natural-language income phrases through `log_income`.
 
 ---
 

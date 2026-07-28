@@ -20,6 +20,7 @@ _user_id = ContextVar("user_id", default=None)
 _INSERT_WITH_ID = {
     "users", "categories", "subcategories", "keywords", "expenses",
     "fixed_expenses", "cambios_dolar", "reports", "expense_classifications",
+    "income_categories", "incomes",
 }
 
 

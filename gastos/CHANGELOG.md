@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.2.0
+- **Fase 7a — Ingresos:** nueva pantalla para registrar, filtrar, editar y eliminar ingresos en ARS o USD, con categorías propias administrables y reglas de propiedad por persona.
+- El Dashboard muestra los ingresos del mes separados por moneda, sin conversiones ni un balance engañoso entre monedas.
+- Telegram admite el formato rápido `Ingreso: concepto monto` y frases naturales inequívocas como “cobré” o “me depositaron”; el formato corto sin prefijo continúa siendo siempre un gasto.
+- Las tablas `income_categories` e `incomes` quedan protegidas por RLS, claves compuestas y pruebas de aislamiento entre familias.
+
 ## 7.1.0
 - **Fase 6 multi-tenant:** el dashboard guía a cada familia con una checklist automática para cargar el primer gasto, conectar Telegram e invitar a otra persona; desaparece al completar los pasos.
 - Todas las pantallas nuevas o vacías explican qué contenido aparecerá y ofrecen una acción concreta, sin gráficos o tablas que parezcan rotos.

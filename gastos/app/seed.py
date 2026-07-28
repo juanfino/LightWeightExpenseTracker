@@ -38,6 +38,17 @@ KEYWORDS = {
     "veterinaria": ("Mascotas", None),
 }
 
+INCOME_CATEGORIES = [
+    ("Sueldo", "💼", "#22c55e"),
+    ("Freelance / Honorarios", "🧑‍💻", "#06b6d4"),
+    ("Alquiler", "🏠", "#f59e0b"),
+    ("Venta", "🏷️", "#8b5cf6"),
+    ("Reintegro", "↩️", "#3b82f6"),
+    ("Intereses / Inversiones", "📈", "#14b8a6"),
+    ("Regalo", "🎁", "#ec4899"),
+    ("Otros", "💵", "#6b7280"),
+]
+
 
 def create_family_defaults(conn, family_id: int) -> None:
     """Seed an empty family idempotently using the active tenant transaction."""
@@ -88,4 +99,14 @@ def create_family_defaults(conn, family_id: int) -> None:
                 category_ids[category_name],
                 subcategory_ids.get((category_name, subcategory_name)),
             ),
+        )
+
+    for name, icon, color in INCOME_CATEGORIES:
+        conn.execute(
+            """
+            INSERT INTO income_categories (family_id, name, icon, color)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (family_id, name) DO NOTHING
+            """,
+            (family_id, name, icon, color),
         )
