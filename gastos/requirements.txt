@@ -9,3 +9,4 @@ psycopg[binary,pool]==3.2.9
 SQLAlchemy==2.0.41
 alembic==1.16.1
 boto3==1.38.46
+qrcode[pil]==8.2

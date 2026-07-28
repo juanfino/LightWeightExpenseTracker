@@ -7,7 +7,8 @@ def reset_database(users=None):
     db.init_db()
     with pgcompat.current_pool().connection() as conn:
         conn.execute(
-            "TRUNCATE TABLE oauth_identities, otp_codes, sessions, invitations, llm_calls, "
+            "TRUNCATE TABLE oauth_identities, otp_codes, sessions, invitations, "
+            "telegram_link_tokens, llm_calls, "
             "expense_classifications, reports, ipc_series, "
             "cambios_dolar, expenses, fixed_expenses, keywords, subcategories, "
             "categories, memberships, families, users RESTART IDENTITY CASCADE"

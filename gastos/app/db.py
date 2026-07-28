@@ -477,6 +477,43 @@ def record_llm_call(
         logger.exception("No se pudo registrar telemetría LLM de %s", module)
 
 
+def get_current_family_timezone() -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT timezone FROM families WHERE id = NULLIF(current_setting('app.family_id', true), '')::integer"
+        ).fetchone()
+    return row["timezone"] if row else "America/Argentina/Buenos_Aires"
+
+
+def count_routine_llm_calls_today() -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM llm_calls l
+            JOIN families f ON f.id = l.family_id
+            WHERE l.module <> 'resumen'
+              AND l.created_at >= date_trunc(
+                    'day', now() AT TIME ZONE f.timezone
+                  ) AT TIME ZONE f.timezone
+            """
+        ).fetchone()["count"]
+
+
+def count_reports_this_month() -> int:
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM reports r
+            JOIN families f ON f.id = r.family_id
+            WHERE r.generated_at >= date_trunc(
+                    'month', now() AT TIME ZONE f.timezone
+                  ) AT TIME ZONE f.timezone
+            """
+        ).fetchone()["count"]
+
+
 def _assign_default_user_colors():
     """Asigna un color distinto de la paleta a cada usuario que todavía tenga el
     color por defecto, para que se distingan bien en el dashboard. No pisa colores
@@ -519,6 +556,16 @@ def get_user_by_telegram_id(tg_id: str):
             """,
             (str(tg_id),),
         ).fetchone()
+
+
+def get_superadmin_telegram_id() -> str | None:
+    with pgcompat.current_pool().connection() as raw:
+        raw.execute("SET LOCAL ROLE gastos_superadmin")
+        row = raw.execute(
+            "SELECT telegram_id FROM users "
+            "WHERE is_superadmin AND telegram_id IS NOT NULL LIMIT 1"
+        ).fetchone()
+        return str(row[0]) if row else None
 
 
 # ── Gastos ────────────────────────────────────────────────────────────────────

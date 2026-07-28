@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 4 complete; Phase 5 is next
+**Status:** Phase 5 complete; Phase 6 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-27
@@ -56,7 +56,7 @@ Each phase has an explicit **Out of scope** list. Those items are not oversights
 | 2 | Tenancy (single family, no auth yet) | DONE | `feat/mt-p2-tenancy` | Codex | 2026-07-25 |
 | 3 | Identity & authentication | DONE | `feat/mt-p3-auth` | Codex | 2026-07-27 |
 | 4 | Invitations, members, superadmin flag | DONE | `feat/mt-p4-family-members` | Codex | 2026-07-27 |
-| 5 | Telegram linking + quotas | NOT STARTED | | | |
+| 5 | Telegram linking + quotas | DONE | `feat/mt-p5-telegram-quotas` | Codex | 2026-07-27 |
 | 6 | Self-service onboarding polish | NOT STARTED | | | |
 | 7 | New features (incomes, shopping list, CSV export) | NOT STARTED | | | |
 | 8 | Superadmin panel | NOT STARTED | | | |
@@ -170,12 +170,12 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 | `/config` | `config.html` | Backup status + "Backup ahora", restore DB from URL | verified |
 | `/unirme/<token>` | `join_family.html` | Public single-use invitation acceptance through Google or email OTP | Phase 4 |
 | `/familia` | `family.html` | Members, invitations, rename, logical removal, ownership transfer, leave/delete | Phase 4 |
+| `/vincular-telegram` | `telegram_link.html` | One-tap Telegram deep link + QR + live connected state | Phase 5 |
 
 ### To be added
 
 | Route | Phase | Purpose |
 |---|---|---|
-| `/vincular-telegram` | 5 | Deep link button + QR + live "connected" state |
 | `/ingresos` | 7 | Income entry and history |
 | `/lista` | 7 | Shopping list |
 | `/exportar` | 7 | CSV export |
@@ -597,7 +597,7 @@ friendly linking response defined by Phase 5.
 7. **Unlinking** from `/familia`.
 8. **Per-family LLM quotas**, enforced against `llm_calls`:
    - Daily quota for routine calls (intent, OCR, voice) — generous, e.g. 200/day. No legitimate user will ever reach it.
-   - Separate, much smaller quota for Resúmenes (Opus/Sonnet) — e.g. 5/family/day. See Open Decision D3.
+   - Separate quota for Resúmenes (Opus/Sonnet): 15 generations/family/month, with the remaining balance shown before generation (D3).
    - Friendly Spanish message when exhausted, telling the user when it resets.
 9. **Per-family concurrency semaphore on LLM calls** (invariant I6). Whisper and summary calls take seconds; without a per-family cap one family can occupy every worker.
 10. **Error reporting:** unhandled exceptions log `family_id` and `user_id`, and send a message with the traceback to Juampi's Telegram. Cheap, and it turns "che, no me anda" into something diagnosable.
@@ -615,7 +615,43 @@ Group chat support. Multiple Telegram accounts per user.
 
 ### Handoff Notes
 
-*(to be filled by the agent)*
+**Implemented on `feat/mt-p5-telegram-quotas` (version 7.0.0):**
+
+- Alembic `0005` adds platform table `telegram_link_tokens`. Only token hashes
+  are stored; links expire after 15 minutes, are single-use, and issuing a new
+  link invalidates older pending links for that user.
+- `/vincular-telegram` renders a `t.me/<bot>?start=<token>` button and local QR,
+  then polls `/api/telegram-link/status` every two seconds. `/start <token>`
+  atomically links the private chat and sends a welcome plus
+  `Supermercado 15000`. `/familia` shows connected state and supports unlinking.
+- Unknown or inactive chats always receive the dashboard linking URL. Group
+  messages stop before all other handlers and receive a private-chat
+  explanation. Multiple Telegram accounts per user and group support remain
+  deliberately out of scope.
+- `llm_limits.py` enforces 100 routine calls per family/day, 15 report
+  generations per family/month, and two concurrent LLM calls per family.
+  Calendar boundaries use `families.timezone`; direct deterministic expense
+  entry remains available after routine quota exhaustion. Resúmenes shows the
+  remaining monthly balance before generation.
+- All Anthropic and OpenAI call sites use the shared per-family semaphore.
+  Unhandled bot and web exceptions log `family_id`/`user_id` and send the
+  traceback to the Telegram account linked to the sole superadmin.
+- Verification used a disposable PostgreSQL 17 container. Clean migrations
+  through `0005` succeeded and all 34 unit/integration/isolation tests passed,
+  including single-use/conflicting Telegram identities, quota exhaustion and
+  deliberate saturation of one family while another entered immediately.
+
+**Production requirement:** add `TELEGRAM_BOT_USERNAME` (without `@`) to
+`~/.env` before deploying 7.0.0. `PUBLIC_DASHBOARD_URL` is optional and defaults
+to the current production URL.
+
+**Deliberately not done:** Telegram group support, multiple Telegram accounts
+per user, simultaneous multi-family membership, email-sent invitations and the
+superadmin panel.
+
+**For Phase 6:** Telegram linking is now a complete optional onboarding step.
+The Phase 6 checklist can query the existing linked state; it should not create
+a second linking flow.
 
 ---
 
@@ -784,7 +820,7 @@ To be finalized in Phase 2. Generic, Argentina-oriented, deliberately small — 
 |---|---|---|
 | D1 | **Restore endpoint.** Removed from the web; SSH-only `pg_restore`, with scratch restore first. | Decided in Phase 1 |
 | D2 | **Income taxonomy** — own table (proposed) vs. reusing expense categories | Proposed, unconfirmed |
-| D3 | **Resúmenes quota** — 5/family/day proposed. Also: show remaining count before generating, or only message on exhaustion? | Open |
+| D3 | **Resúmenes quota** — 15/family/month, with remaining balance shown before generation | Decided in Phase 5 |
 | D4 | **Off-device backup target** — private Cloudflare R2 bucket, 90-day lifecycle | Decided in Phase 1 |
 
 ---

@@ -50,3 +50,14 @@ Ante la duda de si algo quedó desactualizado, mejor pecar de revisar de más �
 | [gastos/config.yaml](gastos/config.yaml) | Fuente canónica del número de versión de la app (`version`), más metadata legacy de Home Assistant add-on (arch, puertos, schema de opciones). | Build/versionado. | Al bumpear versión. |
 
 **Nota aparte — `Telegram.md`:** existe un archivo en la raíz con ese nombre que contiene un token vivo de bot de Telegram en texto plano. No está trackeado por git (confirmado con `git ls-files`), así que no es parte de este mapa de documentación ni se sube al repo — es un archivo de scratch local del usuario. No editarlo ni commitearlo como si fuera doc del proyecto.
+
+---
+
+## 4. Credenciales de GitHub dentro del sandbox
+
+El keyring del host no siempre es visible desde el sandbox. Si `gh auth status`,
+`git push` u otro comando de GitHub informa credenciales ausentes, vencidas o
+inválidas dentro del sandbox, **ese resultado no es concluyente**: repetir el
+comando con permisos escalados antes de pedirle al usuario que vuelva a iniciar
+sesión. Sólo solicitar `gh auth login` si la comprobación fuera del sandbox
+también falla.

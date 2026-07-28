@@ -36,6 +36,8 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
+| `TELEGRAM_BOT_USERNAME` | Yes | Bot username without `@`; used to build one-tap linking URLs |
+| `PUBLIC_DASHBOARD_URL` | No | Public dashboard base URL used in linking help |
 | `USERS_JSON` | Yes | Authorized users; optional `email` links a legacy Telegram identity to web login without duplication |
 | `AUTH_SECRET_KEY` | Yes | Random secret used to sign short-lived OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |

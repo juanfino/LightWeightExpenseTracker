@@ -5,6 +5,7 @@ from datetime import date
 
 import anthropic
 import llm_usage
+import llm_limits
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,9 @@ def extract_ticket_data(image_bytes: bytes, api_key: str) -> dict | None:
 
         call_started = llm_usage.started()
         try:
-            message = client.messages.create(
-                model=_MODEL,
-                max_tokens=256,
-                messages=[
+            with llm_limits.routine_call():
+                message = client.messages.create(
+                    model=_MODEL, max_tokens=256, messages=[
                     {
                         "role": "user",
                         "content": [
@@ -81,8 +81,8 @@ def extract_ticket_data(image_bytes: bytes, api_key: str) -> dict | None:
                             {"type": "text", "text": _PROMPT},
                         ],
                     }
-                ],
-            )
+                    ],
+                )
         except Exception as e:
             llm_usage.record("ocr", _MODEL, call_started, error=e)
             raise

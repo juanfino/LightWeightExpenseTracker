@@ -3,10 +3,11 @@ import logging
 import os
 import re
 import time
+import traceback
 from datetime import datetime, timezone, timedelta
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, ApplicationHandlerStop, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 import db
 import parser as msg_parser
@@ -17,6 +18,8 @@ import dolar as dolar_module
 import intent as intent_module
 import fixed_matcher
 import pgcompat
+import auth
+import llm_limits
 
 logger = logging.getLogger(__name__)
 
@@ -307,7 +310,13 @@ async def _get_authorized_user(update: Update):
     telegram_id = str(update.effective_chat.id)
     user = db.get_user_by_telegram_id(telegram_id)
     if user is None:
-        await message.reply_text("⛔ No estás autorizado para usar este bot.")
+        dashboard_url = os.environ.get(
+            "PUBLIC_DASHBOARD_URL", "https://expenses.juampifinochietto.com"
+        ).rstrip("/")
+        await message.reply_text(
+            "👋 Para usar este bot, primero conectá tu cuenta desde el dashboard:\n"
+            f"{dashboard_url}/vincular-telegram"
+        )
     else:
         pgcompat.select_pool("bot")
         pgcompat.set_family_id(user["family_id"])
@@ -315,11 +324,86 @@ async def _get_authorized_user(update: Update):
     return user
 
 
+async def _routine_quota_exhausted(message) -> bool:
+    usage = llm_limits.routine_usage()
+    if usage["remaining"] > 0:
+        return False
+    await message.reply_text(
+        "⏳ Tu familia alcanzó el límite diario de IA. "
+        "Se habilita de nuevo mañana a las 00:00. "
+        "Mientras tanto podés seguir cargando gastos como: Supermercado 15000"
+    )
+    return True
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        await update.effective_message.reply_text(
+            "👋 Por ahora funciono solamente en chats privados. Abrime directamente y conectá tu cuenta desde el dashboard."
+        )
+        return
+    token = context.args[0] if context.args else ""
+    if token:
+        try:
+            linked = auth.consume_telegram_link_token(token, str(update.effective_chat.id))
+        except ValueError as exc:
+            await update.effective_message.reply_text(f"⚠️ {exc}")
+            return
+        pgcompat.select_pool("bot")
+        pgcompat.set_family_id(linked["family_id"])
+        pgcompat.set_user_id(linked["id"])
+        await update.effective_message.reply_text(
+            f"✅ ¡Listo, {linked['name']}! Tu Telegram quedó conectado.\n\n"
+            "Probá ahora con:\nSupermercado 15000"
+        )
+        return
+    user = await _get_authorized_user(update)
+    if user:
+        await update.effective_message.reply_text(
+            "👋 Ya estás conectado. Probá cargar un gasto así:\nSupermercado 15000"
+        )
+
+
+async def reject_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(
+        "👋 Todavía no admito grupos. Escribime por privado para que cada gasto quede asociado a la persona correcta."
+    )
+    raise ApplicationHandlerStop
+
+
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _get_authorized_user(update)
+
+
+async def handle_bot_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    family_id = pgcompat.current_family_id()
+    user_id = pgcompat.current_user_id()
+    details = "".join(
+        traceback.format_exception(type(context.error), context.error, context.error.__traceback__)
+    )
+    logger.error(
+        "Excepción no manejada family_id=%s user_id=%s\n%s",
+        family_id, user_id, details,
+    )
+    admin_chat = db.get_superadmin_telegram_id()
+    if admin_chat:
+        text = (
+            f"🚨 Error no manejado\nfamily_id={family_id} user_id={user_id}\n"
+            f"<pre>{details[-3500:].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}</pre>"
+        )
+        try:
+            await context.bot.send_message(admin_chat, text, parse_mode="HTML")
+        except Exception:
+            logger.exception("No se pudo enviar la alerta de error")
+
+
 # ── Handlers ──────────────────────────────────────────────────────────────────
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
+        return
+    if await _routine_quota_exhausted(update.effective_message):
         return
 
     api_key = context.bot_data.get("anthropic_api_key", "")
@@ -587,6 +671,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await _get_authorized_user(update)
     if user is None:
         return
+    if await _routine_quota_exhausted(update.effective_message):
+        return
 
     openai_api_key = context.bot_data.get("openai_api_key", "")
     if not openai_api_key:
@@ -741,6 +827,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Si el mensaje suena a operación de dólar, intentar interpretarlo como tal.
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
     if anthropic_api_key and dolar_module.looks_like_dolar(text):
+        if await _routine_quota_exhausted(update.effective_message):
+            return
         op = dolar_module.parse_dolar(text, anthropic_api_key)
         if op is not None:
             await _handle_dolar_operation(chat_id, context.bot, user, op)
@@ -752,6 +840,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # conversacional → se guarda al instante (comportamiento histórico). Todo lo demás
     # (ediciones, taxonomía, consultas, frases más ricas) pasa por la capa de intención.
     if anthropic_api_key and (parsed is None or _needs_intent(text)):
+        if await _routine_quota_exhausted(update.effective_message):
+            return
         await _handle_intent_message(chat_id, context.bot, user, text, anthropic_api_key)
         return
 
@@ -2181,6 +2271,8 @@ async def _nl_apply_edit(query, user, expense_id: int, changes: dict) -> None:
 def build_app():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS, reject_group), group=-1)
+    app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("gastos",      cmd_gastos))
     app.add_handler(CommandHandler("semana",      cmd_semana))
     app.add_handler(CommandHandler("hoy",         cmd_hoy))
@@ -2200,5 +2292,7 @@ def build_app():
     _cambiodolar_filter = filters.TEXT & filters.Regex(r'(?i)^cambiodolar\b')
     app.add_handler(MessageHandler(_cambiodolar_filter, handle_cambiodolar))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~_cambiodolar_filter, handle_message))
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    app.add_error_handler(handle_bot_error)
 
     return app

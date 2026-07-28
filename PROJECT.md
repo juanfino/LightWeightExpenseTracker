@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 6.0.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.0.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://expenses.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -21,6 +21,8 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
 **Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities` and `invitations`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
+
+Phase 5 adds the platform table `telegram_link_tokens` (no `family_id`): only SHA-256 token hashes are stored, tokens expire after 15 minutes and are single-use.
 
 **Backup:** Daily at 21:00 ART via APScheduler — custom-format `pg_dump` uploaded to private Cloudflare R2 and remotely size-verified. R2 retains 90 days. Restore is SSH-only (`docs/RUNBOOK.md`) and was tested from production.
 
@@ -48,6 +50,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - **Monthly AI-generated report** (2.3.0): `/resumenes` — see dedicated section below
 - **Users:** Juampi and Cele, both onboarded and actively using the app
 - **Family management:** `/familia` lets the owner generate/revoke seven-day single-use invitation links, rename the family, logically remove members, transfer ownership, or delete the family with exact-name confirmation. Invitees join as members through Google or email OTP. `SUPERADMIN_EMAIL` is startup-only; no HTTP path can change the flag.
+- **Telegram linking and LLM safeguards:** `/vincular-telegram` provides a 15-minute, one-use deep link and QR with live confirmation; unknown chats get linking help, groups are rejected, and unlinking lives in `/familia`. Routine AI calls are capped at 100/family/day, Resúmenes at 15 generations/family/month, and `llm_limits.py` permits at most two concurrent LLM calls per family. Unhandled bot/web errors alert the linked superadmin Telegram with tenant/user context.
 
 ## Monthly AI report
 
@@ -67,7 +70,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 
 **Telegram** is the primary input surface — no separate "screens," just chat plus inline keyboards (category picker, edit/confirm buttons, fixed-expense payment buttons, OCR/voice confirmation, NL edit candidate picker).
 
-**Web application** (Flask, public auth/legal pages plus 8 private product pages):
+**Web application** (Flask, public auth/legal pages plus 9 private product pages):
 
 | Route | Template | Purpose |
 |---|---|---|
@@ -83,6 +86,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | `/resumenes` | `resumenes.html` | Monthly AI-generated report (2.3.0) — see dedicated section above. Most recent report with a month selector; `/resumenes/YYYY-MM` deep link; Generate button when a period has none; understated Regenerate always available |
 | `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only |
 | `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |
+| `/vincular-telegram` | `telegram_link.html` | Telegram deep link, desktop QR and live connected status |
 
 All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark).
 
@@ -139,6 +143,8 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 | Variable | Required | Description |
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
+| `TELEGRAM_BOT_USERNAME` | Yes | Bot username without `@`, used for deep links |
+| `PUBLIC_DASHBOARD_URL` | No | Base URL sent to unlinked chats; defaults to the production URL |
 | `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "...", "email": "optional@example.com"}]`; optional email is a NULL-only legacy identity link |
 | `AUTH_SECRET_KEY` | Yes | Random secret for OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |

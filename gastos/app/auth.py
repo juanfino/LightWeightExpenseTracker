@@ -118,7 +118,7 @@ def resolve_session(token: str | None):
     with platform_transaction() as raw:
         row = raw.execute(
             """
-            SELECT u.id, u.email, u.name, u.color, u.is_superadmin,
+            SELECT u.id, u.email, u.name, u.color, u.is_superadmin, u.telegram_id,
                    s.csrf_token, s.expires_at,
                    m.family_id, m.role, f.name AS family_name, f.timezone
             FROM sessions s
@@ -133,9 +133,10 @@ def resolve_session(token: str | None):
             return None
         return {
             "id": row[0], "email": row[1], "name": row[2], "color": row[3],
-            "is_superadmin": row[4], "csrf_token": row[5], "expires_at": row[6],
-            "family_id": row[7], "role": row[8], "family_name": row[9],
-            "timezone": row[10],
+            "is_superadmin": row[4], "telegram_id": row[5],
+            "csrf_token": row[6], "expires_at": row[7],
+            "family_id": row[8], "role": row[9], "family_name": row[10],
+            "timezone": row[11],
         }
 
 
@@ -553,6 +554,79 @@ def get_family_management(family_id: int):
             for r in members
         ],
     }
+
+
+def create_telegram_link_token(user_id: int) -> str:
+    """Create a 15-minute, single-use token and invalidate older pending tokens."""
+    raw_token = secrets.token_urlsafe(24)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    with platform_transaction() as raw:
+        raw.execute(
+            "UPDATE telegram_link_tokens SET consumed_at = now() "
+            "WHERE user_id = %s AND consumed_at IS NULL",
+            (user_id,),
+        )
+        raw.execute(
+            """
+            INSERT INTO telegram_link_tokens (user_id, token_hash, expires_at)
+            VALUES (%s, %s, now() + interval '15 minutes')
+            """,
+            (user_id, token_hash),
+        )
+    return raw_token
+
+
+def telegram_link_status(user_id: int) -> bool:
+    with platform_transaction() as raw:
+        row = raw.execute(
+            "SELECT telegram_id FROM users WHERE id = %s", (user_id,)
+        ).fetchone()
+    return bool(row and row[0])
+
+
+def consume_telegram_link_token(raw_token: str, telegram_id: str) -> dict:
+    """Atomically bind one private Telegram chat to the logged-in web identity."""
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    with platform_transaction() as raw:
+        token = raw.execute(
+            """
+            SELECT t.id, t.user_id, u.name, m.family_id
+            FROM telegram_link_tokens t
+            JOIN users u ON u.id = t.user_id
+            JOIN memberships m ON m.user_id = u.id AND m.active
+            WHERE t.token_hash = %s AND t.consumed_at IS NULL
+              AND t.expires_at > now()
+            FOR UPDATE OF t
+            """,
+            (token_hash,),
+        ).fetchone()
+        if not token:
+            raise ValueError("Este enlace venció o ya fue utilizado.")
+        conflict = raw.execute(
+            "SELECT id FROM users WHERE telegram_id = %s AND id <> %s",
+            (str(telegram_id), token[1]),
+        ).fetchone()
+        if conflict:
+            raise ValueError("Este Telegram ya está conectado a otra cuenta.")
+        raw.execute(
+            "UPDATE users SET telegram_id = %s WHERE id = %s",
+            (str(telegram_id), token[1]),
+        )
+        raw.execute(
+            "UPDATE telegram_link_tokens SET consumed_at = now() WHERE id = %s",
+            (token[0],),
+        )
+    return {"id": token[1], "name": token[2], "family_id": token[3]}
+
+
+def unlink_telegram(user_id: int) -> None:
+    with platform_transaction() as raw:
+        raw.execute("UPDATE users SET telegram_id = NULL WHERE id = %s", (user_id,))
+        raw.execute(
+            "UPDATE telegram_link_tokens SET consumed_at = now() "
+            "WHERE user_id = %s AND consumed_at IS NULL",
+            (user_id,),
+        )
 
 
 def rename_family(family_id: int, name: str) -> None:
