@@ -19,6 +19,7 @@ import categorizer
 import report
 import pgcompat
 import llm_limits
+import export_data
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -1391,6 +1392,32 @@ def _shopping_category(name: str):
 @app.route("/lista")
 def shopping_page():
     return render_template("shopping.html")
+
+
+@app.route("/exportar")
+def export_page():
+    return render_template("export.html")
+
+
+@app.route("/exportar/<dataset>.csv")
+def export_csv(dataset: str):
+    files = export_data.datasets(g.current_user["timezone"])
+    if dataset not in files:
+        abort(404)
+    return app.response_class(
+        files[dataset], mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{dataset}.csv"'},
+    )
+
+
+@app.route("/exportar/todo.zip")
+def export_zip():
+    content = export_data.zip_bytes(export_data.datasets(g.current_user["timezone"]))
+    filename = f"mangoteca-export-{datetime.now().date().isoformat()}.zip"
+    return app.response_class(
+        content, mimetype="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.route("/api/shopping-items", methods=["GET", "POST"])

@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.4.0
+- **Fase 7c — Exportación:** CSV individuales de movimientos, gastos fijos, dólares, ingresos, lista y taxonomía, más un ZIP con todo.
+- Los CSV cumplen RFC 4180, usan UTF-8 con BOM, fechas ISO y neutralizan fórmulas de planilla.
+- Las horas se convierten a la zona familiar y las personas aparecen solo por nombre, sin emails ni IDs de Telegram.
+- Todos los endpoints están sujetos a RLS y una prueba hostil intenta exportar datos de otra familia.
+
 ## 7.3.0
 - **Fase 7b — Lista de compras:** nueva lista familiar compartida, agrupada por categoría, con cantidades libres, edición, comprados recientes y contador de pendientes.
 - Telegram permite agregar faltantes, marcar compras y consultar la lista; los mensajes con monto siguen tratándose como gastos.

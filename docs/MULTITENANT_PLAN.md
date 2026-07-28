@@ -1,6 +1,6 @@
 # LightWeightExpenseTracker — Multi-Tenant Migration Plan
 
-**Status:** Phase 6 complete; Phase 7 is next
+**Status:** Phase 7 complete; Phase 8 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
 **Last updated by:** Codex — 2026-07-27
@@ -787,6 +787,12 @@ shopping_items(id, family_id, name, quantity TEXT NULL,
 - Shared `/lista` groups pending items by the existing taxonomy, supports free-text quantities and retains bought items for 30 days with re-add.
 - Duplicate pending names are normalized and consolidated; every family member can operate the shared list.
 - Telegram tools add, complete and list items with the explicit amount-versus-missing-item rule.
+
+**7c implemented on `feat/p7c-data-export` (version 7.4.0):**
+
+- `/exportar` offers individual RFC 4180, UTF-8 BOM CSVs for movements, fixed expenses, dollars, incomes, shopping and taxonomy, plus a dated ZIP.
+- Timestamps are ISO 8601 in the family's timezone; member names are included without email or Telegram identifiers.
+- Formula-like cells are neutralized. Every read remains under RLS and an adversarial test asserts another family's rows never enter an export.
 
 ---
 

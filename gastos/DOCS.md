@@ -95,6 +95,8 @@ En **Lista** (`/lista`), toda la familia comparte los productos pendientes agrup
 
 Telegram entiende `falta detergente`, `necesitamos dos leches`, `compré el detergente` y `qué falta comprar`. Un mensaje con monto es un gasto; algo faltante o necesario sin monto pertenece a la lista.
 
+En **Exportar** (`/exportar`) cualquier miembro activo puede descargar CSV de Movimientos, Gastos fijos, Dólares, Ingresos, Lista y Taxonomía, o un ZIP con todo. Incluyen el nombre de la persona, pero no emails ni identificadores de Telegram. Para Excel en español, usar **Datos → Desde texto/CSV** y elegir coma.
+
 En **Fijos** se configuran gastos que se repiten, como alquiler, internet o cuotas. En **Resúmenes**, cada generación usa IA sobre los datos del grupo, consume una de las 15 generaciones mensuales disponibles y puede tardar cerca de un minuto.
 
 Desde el nombre de la familia en la barra superior se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.
