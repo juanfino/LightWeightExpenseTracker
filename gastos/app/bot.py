@@ -311,7 +311,7 @@ async def _get_authorized_user(update: Update):
     user = db.get_user_by_telegram_id(telegram_id)
     if user is None:
         dashboard_url = os.environ.get(
-            "PUBLIC_DASHBOARD_URL", "https://expenses.juampifinochietto.com"
+            "PUBLIC_DASHBOARD_URL", "https://mangoteca.juampifinochietto.com"
         ).rstrip("/")
         await message.reply_text(
             "👋 Para usar este bot, primero conectá tu cuenta desde el dashboard:\n"

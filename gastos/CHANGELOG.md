@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.0.1
+- Se establece `https://mangoteca.juampifinochietto.com` como dominio canónico en la aplicación y la documentación; el fallback de ayuda para vincular Telegram ya no apunta al hostname anterior.
+- Se completa la documentación técnica de la fase 5: `telegram_link_tokens`, `llm_limits.py`, variables de entorno y resolución de identidad Telegram.
+
 ## 7.0.0
 - **Fase 5 multi-tenant:** conexión web → Telegram mediante deep link o QR de un solo uso, con confirmación automática y bienvenida inmediata en el bot.
 - Los chats no vinculados reciben instrucciones claras, los grupos se rechazan amablemente y Telegram se puede desconectar desde Familia.

@@ -25,7 +25,7 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 ### Verifying
 
 - Logs show "Bot Telegram iniciando" and polling requests
-- Dashboard available at https://expenses.juampifinochietto.com
+- Dashboard available at https://mangoteca.juampifinochietto.com
 - An anonymous visit reaches the application's own login, not Cloudflare Access
 - Google always shows the account selector; email OTP reaches the verified sender
 - `/dashboard` redirects to `/login` without a session and private APIs return `401`
@@ -37,7 +37,7 @@ ssh juanfino@192.168.68.72 "docker logs -f gastos"
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token from @BotFather |
 | `TELEGRAM_BOT_USERNAME` | Yes | Bot username without `@`; used to build one-tap linking URLs |
-| `PUBLIC_DASHBOARD_URL` | No | Public dashboard base URL used in linking help |
+| `PUBLIC_DASHBOARD_URL` | No | Public dashboard base URL used in linking help; defaults to Mangoteca |
 | `USERS_JSON` | Yes | Authorized users; optional `email` links a legacy Telegram identity to web login without duplication |
 | `AUTH_SECRET_KEY` | Yes | Random secret used to sign short-lived OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |
@@ -63,4 +63,4 @@ in private Cloudflare R2 with 90-day retention; see `docs/RUNBOOK.md`.
 
 ### Exposing the dashboard
 
-The dashboard's own default port is 5000, but the Pi's `~/.env` sets `DASHBOARD_PORT=8090` (freeing port 5000 for Frigate). A Cloudflare Tunnel routes `expenses.juampifinochietto.com → localhost:8090` on the Pi. Cloudflare Access was removed after the application-owned authentication passed the Phase 3 production checks; the Tunnel and Turnstile remain active and must not be removed with it.
+The dashboard's own default port is 5000, but the Pi's `~/.env` sets `DASHBOARD_PORT=8090` (freeing port 5000 for Frigate). A Cloudflare Tunnel routes `mangoteca.juampifinochietto.com → localhost:8090` on the Pi. Cloudflare Access was removed after the application-owned authentication passed the Phase 3 production checks; the Tunnel and Turnstile remain active and must not be removed with it.

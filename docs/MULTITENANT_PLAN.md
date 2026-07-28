@@ -222,7 +222,7 @@ otp_codes(id, email, code_hash, expires_at, attempts, consumed_at, created_at)
 sessions(id, user_id, token_hash, expires_at, created_at, user_agent, ip)
 invitations(id, family_id, token_hash, role, created_by_user_id,
             expires_at, consumed_at, consumed_by_user_id, revoked_at, created_at)
-telegram_link_tokens(id, user_id, token, expires_at, consumed_at)
+telegram_link_tokens(id, user_id, token_hash, expires_at, consumed_at, created_at)
 ```
 
 ### Domain tables (all carry `family_id NOT NULL` + RLS)

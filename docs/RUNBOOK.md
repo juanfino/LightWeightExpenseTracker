@@ -28,10 +28,10 @@ intenta cambiar por variable de entorno.
 Orden obligatorio:
 
 1. Verificar el dominio/remitente de Resend mediante sus registros DNS.
-2. Crear Turnstile para `expenses.juampifinochietto.com`.
+2. Crear Turnstile para `juampifinochietto.com` (cubre el hostname canónico `mangoteca.juampifinochietto.com`).
 3. Publicar el consentimiento OAuth de Google con las URLs `/`, `/privacy`
    y `/terms`, y callback
-   `https://expenses.juampifinochietto.com/auth/google/callback`.
+   `https://mangoteca.juampifinochietto.com/auth/google/callback`.
 4. Desplegar con Cloudflare Access todavía activo.
 5. En incógnito y desde un teléfono, probar registro/login Google y email OTP,
    logout, expiración/reutilización del código y acceso a una ruta privada.

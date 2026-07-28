@@ -2,8 +2,8 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.0.0 (canonical source: `gastos/config.yaml`)
-- **Dashboard:** https://expenses.juampifinochietto.com
+- **Version:** 7.0.1 (canonical source: `gastos/config.yaml`)
+- **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
 ## Architecture
@@ -13,14 +13,14 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 **Services** (all `network_mode: host`):
 - `gastos` — Flask dashboard + Telegram bot (same process, separate thread)
 - `postgres` — PostgreSQL 17, healthchecked before `gastos` starts
-- `cloudflared` — Cloudflare Tunnel, exposes `localhost:8090` as `expenses.juampifinochietto.com` (dashboard's code default is port 5000; the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up 5000 for Frigate)
+- `cloudflared` — Cloudflare Tunnel, exposes `localhost:8090` as `mangoteca.juampifinochietto.com` (dashboard's code default is port 5000; the Pi's `~/.env` sets `DASHBOARD_PORT=8090` to free up 5000 for Frigate)
 - `homeassistant` — unrelated, colocated
 
 **Access:** application-owned Google OAuth/email OTP login. Phase 3 was deployed and verified behind Cloudflare Access, then the `expenses` Access application was deleted on 2026-07-27; the Cloudflare Tunnel and Turnstile remain active. Phase 4 was deployed and verified on 2026-07-27: `/familia` is live, Cele's legacy Telegram identity is linked to one web user/member without duplication, and exactly one user is bootstrapped as superadmin. Google OAuth is External/In production, requests only basic identity scopes (`openid`, `email`, `profile`) and always sends `prompt=select_account`. `cloudflared` exposes the Pi's host port 8090.
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities` and `invitations`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
+**Database:** PostgreSQL 17 with Alembic. Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations` and `telegram_link_tokens`; removing a member keeps an inactive historical membership, while a partial unique index permits only one active family per user. Tenant tables are `categories`, `subcategories`, `keywords`, `expenses`, `fixed_expenses`, `cambios_dolar`, `ipc_series`, `reports`, `expense_classifications` and `llm_calls`. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role. Amounts retain native ARS/USD and timestamps are UTC; families store their display timezone.
 
 Phase 5 adds the platform table `telegram_link_tokens` (no `family_id`): only SHA-256 token hashes are stored, tokens expire after 15 minutes and are single-use.
 
@@ -126,6 +126,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 - `db.py` — raw PostgreSQL operations through psycopg pools. `get_conn()` applies the RLS-bound role and transaction-local tenant before each domain transaction; platform identity resolution uses the dedicated bypass role.
 - `dashboard.py` — Flask app; UTC → Buenos Aires conversion for all display
 - `auth.py` — opaque server-side sessions, hashed OTPs, Resend, Google identity linking, Turnstile/rate limits, invitation lifecycle, active/historical memberships, ownership transfer, and account/family creation. Platform access uses transaction-local `gastos_superadmin`.
+- `llm_limits.py` — per-family admission control for all Anthropic/OpenAI calls: 100 routine calls/day, 15 report generations/month and two concurrent calls; calendar limits use `families.timezone`.
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
 - `dolar.py` — natural-language USD buy/sell parsing (`looks_like_dolar` gate + `parse_dolar`); confidence-based auto-save
@@ -144,7 +145,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 |---|---|---|
 | `TELEGRAM_TOKEN` | Yes | Bot token |
 | `TELEGRAM_BOT_USERNAME` | Yes | Bot username without `@`, used for deep links |
-| `PUBLIC_DASHBOARD_URL` | No | Base URL sent to unlinked chats; defaults to the production URL |
+| `PUBLIC_DASHBOARD_URL` | No | Base URL sent to unlinked chats; defaults to `https://mangoteca.juampifinochietto.com` |
 | `USERS_JSON` | Yes | `[{"telegram_id": "...", "name": "...", "email": "optional@example.com"}]`; optional email is a NULL-only legacy identity link |
 | `AUTH_SECRET_KEY` | Yes | Random secret for OAuth/pre-auth state |
 | `AUTH_BOOTSTRAP_EMAIL` | Yes | Email attached once to the existing family-1 owner |
