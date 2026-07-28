@@ -3,7 +3,7 @@
 **Status:** Phase 7 complete; Phase 8 is next
 **Owner:** Juampi
 **Target repo path:** `docs/MULTITENANT_PLAN.md`
-**Last updated by:** Codex — 2026-07-27
+**Last updated by:** Codex — 2026-07-28
 
 ---
 
@@ -717,9 +717,9 @@ remaining production-readiness checklist below is confirmed by Juampi.
 Before sending the link:
 
 - [x] Off-device backups verified with an actual restore
-- [ ] Isolation test suite green
+- [x] Isolation test suite green
 - [ ] Error alerts arriving at Juampi's Telegram
-- [ ] Quotas active
+- [x] Quotas active
 - [ ] Privacy policy and terms published
 - [ ] An honest conversation: this runs on a Raspberry Pi in my living room; if the power goes out it goes down; treat it as a beta
 
@@ -749,7 +749,7 @@ incomes(id, family_id, user_id, concept, amount NUMERIC(14,2),
 
 ```
 shopping_items(id, family_id, name, quantity TEXT NULL,
-               category_id NULL, subcategory_id NULL,
+               category_id NULL,
                status 'pending'|'bought',
                created_by_user_id, created_at,
                bought_by_user_id NULL, bought_at NULL)
@@ -782,11 +782,12 @@ shopping_items(id, family_id, name, quantity TEXT NULL,
 - The Dashboard shows monthly ARS and USD income totals separately. It intentionally does not invent a cross-currency balance.
 - Telegram keeps plain `concept amount` expense-only, adds the deterministic `Ingreso:` prefix and supports unmistakable natural-language income phrases through `log_income`.
 
-**7b implemented on `feat/p7b-shopping-list` (version 7.3.0):**
+**7b implemented on `feat/p7b-shopping-list` (version 7.3.1):**
 
 - Shared `/lista` groups pending items by the existing taxonomy, supports free-text quantities and retains bought items for 30 days with re-add.
 - Duplicate pending names are normalized and consolidated; every family member can operate the shared list.
 - Telegram tools add, complete and list items with the explicit amount-versus-missing-item rule.
+- Version 7.3.1 fixes idempotent income-category seeding when the migration already populated the base taxonomy.
 
 **7c implemented on `feat/p7c-data-export` (version 7.4.0):**
 

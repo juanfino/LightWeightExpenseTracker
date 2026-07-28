@@ -134,6 +134,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`
 - `dolar.py` — natural-language USD buy/sell parsing (`looks_like_dolar` gate + `parse_dolar`); confidence-based auto-save
 - `backup.py` — custom-format `pg_dump` to private R2 with remote size verification and 90-day lifecycle
+- `export_data.py` — tenant-scoped RFC 4180 CSV and ZIP generation with UTF-8 BOM, family-local ISO timestamps, spreadsheet-formula neutralization, and no authentication identifiers
 - `seed.py` — `create_family_defaults(conn, family_id)` creates generic taxonomy for a new family; schema changes are Alembic-only
 - `dossier.py` — deterministic aggregation for the monthly report (2.3.0); no LLM involved. `build_dossier(year, month)` reads via `db.py` (ART-adjusted cash-basis queries) plus `inflation.py`, returns the full structured snapshot — totals, contrasts, delta attribution, outliers, fixed-expense status, dollars, registration coverage, taxonomy, recurrence evidence, hard facts
 - `inflation.py` — IPC Nacional fetch/cache/estimate/deflate (2.3.0); `refresh()` hits `apis.datos.gob.ar`, `deflate()` converts a nominal amount between two periods' prices, returning `None` (not a silent nominal fallback) when an index is missing
