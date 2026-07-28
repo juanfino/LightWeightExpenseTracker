@@ -158,10 +158,10 @@ Any agent adding a table or a query from Phase 2 onward extends this suite in th
 
 | Route | Template | Purpose | Status |
 |---|---|---|---|
-| `/` | `landing.html` | Public landing; authenticated users continue to `/dashboard` | verified in production |
+| `/` | `landing.html` | Public product landing: explains the first-expense workflow, family sharing and tenant privacy; authenticated users continue to `/dashboard` | Phase 6 complete; production verification pending merge/deploy |
 | `/login`, `/registro` | `login.html`, `register.html` | Google OAuth or six-digit email OTP; registration creates a family | verified in production |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages for OAuth publication; Spanish aliases remain available | public; Google OAuth published |
-| `/dashboard` | `index.html` | Dashboard: month total, KPI strip, Top 3, charts, per-member filter | route moved from `/` in Phase 3 |
+| `/dashboard` | `index.html` | Dashboard: self-dismissing onboarding checklist, designed empty states, month total, KPI strip, Top 3, charts and per-member filter | Phase 6 complete; production verification pending merge/deploy |
 | `/history` | `history.html` | Movements list — **nav label is "Movimientos"** (route/template name unchanged since the rename); filters (concept, month/year, category/subcategory, fixed/variable, user), inline edit, "Agregar gasto" modal (user + date fields, currency selector, subcategory picker) | verified |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD, monthly paid/pending status, register-payment modal, "ya lo pagué" candidate search | verified |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart | verified |
