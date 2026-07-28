@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.3.1
+- Se corrige el seed idempotente de categorías de ingresos: los inserts con `ON CONFLICT DO NOTHING` ya no intentan leer un ID inexistente, evitando la falla de arranque y CI al aplicar la migración sobre una familia ya inicializada.
+
 ## 7.3.0
 - **Fase 7b — Lista de compras:** nueva lista familiar compartida, agrupada por categoría, con cantidades libres, edición, comprados recientes y contador de pendientes.
 - Telegram permite agregar faltantes, marcar compras y consultar la lista; los mensajes con monto siguen tratándose como gastos.
