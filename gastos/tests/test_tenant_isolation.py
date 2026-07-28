@@ -98,6 +98,7 @@ class TenantIsolationTests(unittest.TestCase):
             "keywords", "expenses", "fixed_expenses", "cambios_dolar",
             "ipc_series", "reports", "expense_classifications", "llm_calls",
             "income_categories", "incomes",
+            "shopping_items",
         }
         with db.get_conn() as conn:
             rows = conn.execute(

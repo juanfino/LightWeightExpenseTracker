@@ -64,6 +64,23 @@ _TOOLS = [
         },
     },
     {
+        "name": "add_shopping_item",
+        "description": "Agregar algo faltante a la lista familiar. Sin monto es lista; con monto es gasto.",
+        "input_schema": {"type": "object", "properties": {
+            "name": {"type": "string"}, "quantity": {"type": "string"},
+        }, "required": ["name"]},
+    },
+    {
+        "name": "mark_shopping_item_bought",
+        "description": "Marcar un pendiente comprado (ej. 'compré el detergente'). Con monto es gasto.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    },
+    {
+        "name": "list_shopping_items",
+        "description": "Listar lo que falta comprar.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "log_expense",
         "description": (
             "Registrar un gasto NUEVO cuando el usuario describe un gasto en lenguaje "
@@ -243,6 +260,9 @@ def _build_system_prompt(user) -> str:
         "  - Para registrar dinero recibido inequívocamente: log_income. El formato neutro "
         "'concepto monto' sigue siendo gasto; nunca lo conviertas en ingreso sin verbos como "
         "'cobré', 'recibí', 'me pagaron', 'me depositaron' o el prefijo 'Ingreso:'.\n"
+        "  - Lista: con monto siempre es gasto. Algo faltante/necesario sin monto usa "
+        "add_shopping_item; 'compré X' sin monto usa mark_shopping_item_bought; una pregunta "
+        "por lo pendiente usa list_shopping_items.\n"
         "  - Para registrar un gasto nuevo: log_expense.\n"
         "  - Para modificar un gasto ya registrado: edit_expense, con un target_sql que devuelva "
         "el/los id candidatos SIEMPRE filtrado por user_id=" + str(user["id"]) + " (un usuario solo "
@@ -354,6 +374,13 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
                 return _handle_log(args)
             if name == "log_income":
                 return _handle_log_income(args)
+            if name == "add_shopping_item":
+                return {"kind": "shopping_add", "name": (args.get("name") or "").strip(),
+                        "quantity": (args.get("quantity") or "").strip() or None}
+            if name == "mark_shopping_item_bought":
+                return {"kind": "shopping_bought", "name": (args.get("name") or "").strip()}
+            if name == "list_shopping_items":
+                return {"kind": "shopping_list"}
             if name == "edit_expense":
                 return _handle_edit(args, user)
             if name == "create_category":

@@ -2148,3 +2148,109 @@ def get_income_month_totals(year: int, month: int) -> dict[str, float]:
             (year, month),
         ).fetchall()
     return {row["currency"]: float(row["total"]) for row in rows}
+
+
+# ── Lista de compras ─────────────────────────────────────────────────────────
+
+def purge_old_shopping_items() -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM shopping_items WHERE status='bought' "
+            "AND bought_at < CURRENT_TIMESTAMP - INTERVAL '30 days'"
+        )
+        return cur.rowcount
+
+
+def get_shopping_items(include_recent: bool = True):
+    purge_old_shopping_items()
+    status_filter = "" if include_recent else "WHERE si.status='pending'"
+    with get_conn() as conn:
+        return conn.execute(
+            f"""
+            SELECT si.*, c.name AS category_name, c.icon AS category_icon, c.color AS category_color,
+                   creator.name AS created_by_name, buyer.name AS bought_by_name
+            FROM shopping_items si
+            LEFT JOIN categories c ON c.id=si.category_id
+            JOIN users creator ON creator.id=si.created_by_user_id
+            LEFT JOIN users buyer ON buyer.id=si.bought_by_user_id
+            {status_filter}
+            ORDER BY CASE WHEN si.status='pending' THEN 0 ELSE 1 END,
+                     COALESCE(c.name, 'ZZZ'), si.created_at DESC
+            """
+        ).fetchall()
+
+
+def get_shopping_item(item_id: int):
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM shopping_items WHERE id=?", (item_id,)).fetchone()
+
+
+def find_pending_shopping_item(name: str):
+    from categorizer import normalize
+    target = normalize(name)
+    return next(
+        (r for r in get_shopping_items(False) if normalize(r["name"]) == target),
+        None,
+    )
+
+
+def add_shopping_item(user_id: int, name: str, quantity: str | None = None,
+                      category_id: int | None = None) -> tuple[int, bool]:
+    existing = find_pending_shopping_item(name)
+    if existing:
+        if quantity:
+            with get_conn() as conn:
+                conn.execute("UPDATE shopping_items SET quantity=? WHERE id=?", (quantity.strip(), existing["id"]))
+        return existing["id"], False
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO shopping_items (name, quantity, category_id, created_by_user_id) "
+            "VALUES (?, ?, ?, ?)",
+            (_normalize_concept(name), (quantity or "").strip() or None, category_id, user_id),
+        )
+        return cur.lastrowid, True
+
+
+def update_shopping_item(item_id: int, name: str, quantity: str | None,
+                         category_id: int | None) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE shopping_items SET name=?, quantity=?, category_id=? WHERE id=? AND status='pending'",
+            (_normalize_concept(name), (quantity or "").strip() or None, category_id, item_id),
+        )
+        return cur.rowcount > 0
+
+
+def mark_shopping_item_bought(item_id: int, user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE shopping_items SET status='bought', bought_by_user_id=?, bought_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND status='pending'",
+            (user_id, item_id),
+        )
+        return cur.rowcount > 0
+
+
+def mark_shopping_item_bought_by_name(name: str, user_id: int):
+    item = find_pending_shopping_item(name)
+    return item if item and mark_shopping_item_bought(item["id"], user_id) else None
+
+
+def readd_shopping_item(item_id: int, user_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE shopping_items SET status='pending', created_by_user_id=?, created_at=CURRENT_TIMESTAMP, "
+            "bought_by_user_id=NULL, bought_at=NULL WHERE id=? AND status='bought'",
+            (user_id, item_id),
+        )
+        return cur.rowcount > 0
+
+
+def clear_bought_shopping_items() -> int:
+    with get_conn() as conn:
+        return conn.execute("DELETE FROM shopping_items WHERE status='bought'").rowcount
+
+
+def shopping_pending_count() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM shopping_items WHERE status='pending'").fetchone()[0]

@@ -91,6 +91,10 @@ En **Ingresos** se registran sueldos, honorarios, alquileres, ventas, reintegros
 
 En Telegram, `Ingreso: sueldo 1.500.000` usa el camino rápido. También se entienden frases inequívocas como `cobré 300.000 de un freelance` o `me depositaron el sueldo`. El formato corto `concepto monto` sin prefijo continúa registrando un gasto.
 
+En **Lista** (`/lista`), toda la familia comparte los productos pendientes agrupados por categoría. Se puede agregar una cantidad libre (`2 paquetes`, `1 kg`), editar, marcar comprado, reagregar desde los últimos 30 días o limpiar los comprados. Un producto pendiente repetido no se duplica: la cantidad nueva lo actualiza.
+
+Telegram entiende `falta detergente`, `necesitamos dos leches`, `compré el detergente` y `qué falta comprar`. Un mensaje con monto es un gasto; algo faltante o necesario sin monto pertenece a la lista.
+
 En **Fijos** se configuran gastos que se repiten, como alquiler, internet o cuotas. En **Resúmenes**, cada generación usa IA sobre los datos del grupo, consume una de las 15 generaciones mensuales disponibles y puede tardar cerca de un minuto.
 
 Desde el nombre de la familia en la barra superior se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.

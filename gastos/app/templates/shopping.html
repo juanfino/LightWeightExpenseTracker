@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Lista de compras — Gastos Familiares{% endblock %}
+{% block nav_shopping %}active{% endblock %}
+{% block extra_styles %}
+.quick-add{display:grid;grid-template-columns:2fr 1fr auto;gap:10px}.category-group{margin-top:16px}.category-title{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:6px}.item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border)}.item-copy small{display:block;color:var(--text2)}.recent{opacity:.75}@media(max-width:600px){.quick-add{grid-template-columns:1fr}.item{grid-template-columns:auto 1fr}.item .actions{grid-column:2}}
+{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><div><div class="page-title">Lista de compras</div><div class="help-copy">Compartida por toda la familia y ordenada por categoría.</div></div></div>
+  <div class="card"><form id="add-form" class="quick-add"><input id="item-name" placeholder="¿Qué falta?" required><input id="item-quantity" placeholder="Cantidad (opcional)"><button class="btn btn-primary">Agregar</button></form></div>
+  <div class="card mt-24"><div class="section-header"><div class="section-title">Pendientes <span id="pending-count"></span></div></div><div id="pending"></div><div id="empty" class="empty-state" hidden><div class="empty-state-icon"><i class="ti ti-basket-check"></i></div><div class="empty-state-title">No falta nada</div><p class="empty-state-copy">Agregá un producto desde acá o escribile al bot “falta detergente”.</p></div></div>
+  <div class="card mt-24"><div class="section-header"><div class="section-title">Comprados recientemente</div><button id="clear" class="btn">Limpiar comprados</button></div><div id="recent"></div></div>
+</div>
+<script>
+let items=[];const $=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function render(){const pending=items.filter(i=>i.status==='pending'),groups={};for(const i of pending){const key=i.category_name||'Sin categoría';(groups[key]??=[]).push(i)}$('pending').innerHTML=Object.entries(groups).map(([name,list])=>`<div class="category-group"><div class="category-title">${list[0].category_icon||'❓'} ${esc(name)}</div>${list.map(itemHtml).join('')}</div>`).join('');$('pending-count').textContent=`(${pending.length})`;$('empty').hidden=pending.length>0;const recent=items.filter(i=>i.status==='bought');$('recent').innerHTML=recent.map(i=>`<div class="item recent"><i class="ti ti-check"></i><div class="item-copy">${esc(i.name)}${i.quantity?` <small>${esc(i.quantity)} · comprado por ${esc(i.bought_by_name||'la familia')}</small>`:''}</div><button class="btn" onclick="readd(${i.id})">Reagregar</button></div>`).join('')||'<div style="color:var(--text2);padding:16px 0">Todavía no hay comprados recientes.</div>';$('clear').disabled=!recent.length}
+function itemHtml(i){return `<div class="item"><button class="btn" title="Marcar comprado" onclick="bought(${i.id})">✓</button><div class="item-copy"><b>${esc(i.name)}</b><small>${esc(i.quantity||'Sin cantidad')} · agregó ${esc(i.created_by_name)}</small></div><div class="actions"><button class="btn" onclick="editItem(${i.id})">Editar</button></div></div>`}
+async function load(){items=await fetch('/api/shopping-items').then(r=>r.json());render()}async function bought(id){await fetch(`/api/shopping-items/${id}/bought`,{method:'POST'});load()}async function readd(id){await fetch(`/api/shopping-items/${id}/readd`,{method:'POST'});load()}
+async function editItem(id){const i=items.find(x=>x.id===id),name=prompt('Producto',i.name);if(!name)return;const quantity=prompt('Cantidad (opcional)',i.quantity||'');await fetch(`/api/shopping-items/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,quantity})});load()}
+$('add-form').addEventListener('submit',async e=>{e.preventDefault();await fetch('/api/shopping-items',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('item-name').value,quantity:$('item-quantity').value})});$('item-name').value='';$('item-quantity').value='';load()});$('clear').onclick=async()=>{if(confirm('¿Borrar definitivamente todos los comprados?')){await fetch('/api/shopping-items/clear-bought',{method:'POST'});load()}};load();
+</script>
+{% endblock %}

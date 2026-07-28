@@ -21,6 +21,7 @@ _INSERT_WITH_ID = {
     "users", "categories", "subcategories", "keywords", "expenses",
     "fixed_expenses", "cambios_dolar", "reports", "expense_classifications",
     "income_categories", "incomes",
+    "shopping_items",
 }
 
 
@@ -81,9 +82,14 @@ def _sql(sql: str) -> tuple[str, bool]:
     statement = re.sub(r"\bfe\.active\s*=\s*1\b", "fe.active IS TRUE", statement)
     statement = re.sub(r"\bactive\s*=\s*0\b", "active = FALSE", statement)
     match = re.match(r"(?is)^INSERT\s+INTO\s+([a-z_]+)", statement)
+    conflict_do_nothing = bool(
+        re.search(r"(?is)\bON\s+CONFLICT\b.*\bDO\s+NOTHING\b", statement)
+    )
     wants_id = bool(
         match and match.group(1).lower() in _INSERT_WITH_ID
-        and "RETURNING" not in statement.upper() and not ignore_conflict
+        and "RETURNING" not in statement.upper()
+        and not ignore_conflict
+        and not conflict_do_nothing
     )
     if wants_id:
         statement += " RETURNING id"

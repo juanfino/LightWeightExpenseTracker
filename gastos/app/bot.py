@@ -246,7 +246,8 @@ _INTENT_TRIGGER_RE = re.compile(
     r"anot[aá]|anotame|anotar|"                             # "anotame ..."
     r"cobr[eé]|recib[ií]|depositaron|pagaron|reintegro|ingreso|"  # ingresos
     r"lucas?|palos?|"                                       # slang de montos
-    r"trimestre|reporte|resumen"                            # períodos/reportes
+    r"trimestre|reporte|resumen|"                           # períodos/reportes
+    r"falta|faltan|comprar|compr[eé]|necesito|necesitamos|lista"  # compras
     r")\b)"
     r"|pon[eé]\s+que"                                       # "poné que ..."
     r"|\bgasto\s+\d+"                                       # "el gasto 124"
@@ -1961,6 +1962,12 @@ def _nl_summarize_result(kind: str, result: dict) -> str:
         return f"Registré {result['concept']} por {fmt_amount(result['amount'], result.get('currency', 'ARS'))}."
     if kind == "income":
         return f"Registré el ingreso {result['concept']} por {fmt_amount(result['amount'], result.get('currency', 'ARS'))}."
+    if kind == "shopping_add":
+        return f"Agregué {result.get('name', '')} a la lista."
+    if kind == "shopping_bought":
+        return f"Marqué {result.get('name', '')} como comprado."
+    if kind == "shopping_list":
+        return "Mostré la lista de compras."
     if kind == "edit":
         n = len(result.get("candidate_ids") or [])
         if n == 1:
@@ -1997,6 +2004,12 @@ async def _handle_intent_message(chat_id: int, bot, user, text: str, anthropic_a
         await _nl_do_log(chat_id, bot, user, text, result)
     elif kind == "income":
         await _nl_do_income(chat_id, bot, user, result)
+    elif kind == "shopping_add":
+        await _nl_shopping_add(chat_id, bot, user, result)
+    elif kind == "shopping_bought":
+        await _nl_shopping_bought(chat_id, bot, user, result)
+    elif kind == "shopping_list":
+        await _nl_shopping_list(chat_id, bot)
     elif kind == "edit":
         await _nl_start_edit(chat_id, bot, user, result)
     elif kind == "category":
@@ -2061,6 +2074,45 @@ async def _nl_do_income(chat_id: int, bot, user, result: dict) -> None:
         ),
         parse_mode="HTML",
     )
+
+
+async def _nl_shopping_add(chat_id: int, bot, user, result: dict) -> None:
+    name = (result.get("name") or "").strip()
+    if not name:
+        await bot.send_message(chat_id=chat_id, text="🤔 ¿Qué agrego a la lista?")
+        return
+    category_id, _ = categorizer.categorize(name, db.get_all_keywords())
+    _, created = db.add_shopping_item(user["id"], name, result.get("quantity"), category_id)
+    text = ("🛒 Agregué" if created else "🛒 Ya estaba pendiente") + f": <b>{name}</b>"
+    if result.get("quantity"):
+        text += f" · {result['quantity']}"
+    await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+
+
+async def _nl_shopping_bought(chat_id: int, bot, user, result: dict) -> None:
+    name = (result.get("name") or "").strip()
+    item = db.mark_shopping_item_bought_by_name(name, user["id"]) if name else None
+    text = (f"✅ Marqué <b>{item['name']}</b> como comprado." if item else
+            f"🤔 No encontré <b>{name}</b> entre los pendientes.")
+    await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+
+
+async def _nl_shopping_list(chat_id: int, bot) -> None:
+    items = db.get_shopping_items(False)
+    if not items:
+        await bot.send_message(chat_id=chat_id, text="✅ La lista está vacía.")
+        return
+    groups = {}
+    for item in items:
+        groups.setdefault(item["category_name"] or "Sin categoría", []).append(item)
+    lines = ["🛒 <b>Lista de compras</b>"]
+    for category_name, category_items in groups.items():
+        lines.append(f"\n{category_items[0]['category_icon'] or '❓'} <b>{category_name}</b>")
+        lines.extend(
+            f"• {item['name']}" + (f" — {item['quantity']}" if item["quantity"] else "")
+            for item in category_items
+        )
+    await bot.send_message(chat_id=chat_id, text="\n".join(lines), parse_mode="HTML")
 
 
 async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:

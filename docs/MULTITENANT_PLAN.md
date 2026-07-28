@@ -782,6 +782,12 @@ shopping_items(id, family_id, name, quantity TEXT NULL,
 - The Dashboard shows monthly ARS and USD income totals separately. It intentionally does not invent a cross-currency balance.
 - Telegram keeps plain `concept amount` expense-only, adds the deterministic `Ingreso:` prefix and supports unmistakable natural-language income phrases through `log_income`.
 
+**7b implemented on `feat/p7b-shopping-list` (version 7.3.0):**
+
+- Shared `/lista` groups pending items by the existing taxonomy, supports free-text quantities and retains bought items for 30 days with re-add.
+- Duplicate pending names are normalized and consolidated; every family member can operate the shared list.
+- Telegram tools add, complete and list items with the explicit amount-versus-missing-item rule.
+
 ---
 
 ## Phase 8 — Superadmin panel

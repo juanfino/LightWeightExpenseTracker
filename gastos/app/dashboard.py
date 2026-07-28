@@ -120,6 +120,9 @@ def _auth_template_context():
             else session["preauth_csrf"]
         ),
         "turnstile_site_key": TURNSTILE_SITE_KEY,
+        "shopping_pending_count": (
+            db.shopping_pending_count() if getattr(g, "current_user", None) else 0
+        ),
     }
 
 
@@ -1378,6 +1381,57 @@ def incomes_page():
     now = datetime.now()
     return render_template("incomes.html", categories=[dict(r) for r in db.get_income_categories()],
                            year=now.year, month=now.month)
+
+
+def _shopping_category(name: str):
+    category_id, _ = categorizer.categorize(name, db.get_all_keywords())
+    return category_id
+
+
+@app.route("/lista")
+def shopping_page():
+    return render_template("shopping.html")
+
+
+@app.route("/api/shopping-items", methods=["GET", "POST"])
+def api_shopping_items():
+    if request.method == "GET":
+        return jsonify([_row_to_dict(r) for r in db.get_shopping_items()])
+    data = request.get_json(silent=True) or {}
+    name, quantity = (data.get("name") or "").strip(), (data.get("quantity") or "").strip() or None
+    if not name:
+        return jsonify({"ok": False, "error": "Falta el producto"}), 400
+    item_id, created = db.add_shopping_item(
+        g.current_user["id"], name, quantity, _shopping_category(name)
+    )
+    return jsonify({"ok": True, "id": item_id, "created": created}), 201 if created else 200
+
+
+@app.route("/api/shopping-items/<int:item_id>", methods=["PUT"])
+def api_shopping_item_update(item_id: int):
+    data = request.get_json(silent=True) or {}
+    name, quantity = (data.get("name") or "").strip(), (data.get("quantity") or "").strip() or None
+    if not name:
+        return jsonify({"ok": False, "error": "Falta el producto"}), 400
+    ok = db.update_shopping_item(item_id, name, quantity, _shopping_category(name))
+    return jsonify({"ok": ok}), 200 if ok else 404
+
+
+@app.route("/api/shopping-items/<int:item_id>/bought", methods=["POST"])
+def api_shopping_item_bought(item_id: int):
+    ok = db.mark_shopping_item_bought(item_id, g.current_user["id"])
+    return jsonify({"ok": ok}), 200 if ok else 404
+
+
+@app.route("/api/shopping-items/<int:item_id>/readd", methods=["POST"])
+def api_shopping_item_readd(item_id: int):
+    ok = db.readd_shopping_item(item_id, g.current_user["id"])
+    return jsonify({"ok": ok}), 200 if ok else 404
+
+
+@app.route("/api/shopping-items/clear-bought", methods=["POST"])
+def api_shopping_items_clear():
+    return jsonify({"ok": True, "deleted": db.clear_bought_shopping_items()})
 
 
 @app.route("/api/incomes", methods=["GET", "POST"])
