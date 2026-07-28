@@ -620,6 +620,7 @@
           <a href="/resumenes" class="tab-link {% block nav_resumenes %}{% endblock %}">Resúmenes</a>
           <a href="/settings" class="tab-link {% block nav_settings %}{% endblock %}">Categorías</a>
           <a href="/config"   class="tab-link {% block nav_config %}{% endblock %}">Sistema</a>
+          <a href="/exportar" class="tab-link {% block nav_export %}{% endblock %}">Exportar</a>
         </nav>
       </div>
 
@@ -658,6 +659,7 @@
     <a href="/resumenes" class="tab-link {{ self.nav_resumenes() }}">Resúmenes</a>
     <a href="/settings" class="tab-link {{ self.nav_settings() }}">Categorías</a>
     <a href="/config"   class="tab-link {{ self.nav_config() }}">Sistema</a>
+    <a href="/exportar" class="tab-link {{ self.nav_export() }}">Exportar</a>
     <a href="{{ url_for('family') }}" class="tab-link">Familia</a>
   </nav>
 

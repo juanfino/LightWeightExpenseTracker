@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Exportar datos — Gastos Familiares{% endblock %}
+{% block nav_export %}active{% endblock %}
+{% block extra_styles %}
+.export-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.export-card{border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;align-items:center;justify-content:space-between;gap:12px}.export-copy b{display:block}.export-copy small{color:var(--text2)}@media(max-width:650px){.export-grid{grid-template-columns:1fr}}
+{% endblock %}
+{% block content %}
+<div class="container">
+  <div class="page-header"><div><div class="page-title">Exportar datos</div><div class="help-copy">Una copia portable de toda la información de la familia.</div></div><a class="btn btn-primary" href="/exportar/todo.zip">Descargar todo (.zip)</a></div>
+  <div class="card">
+    <div class="export-grid">
+      {% for slug, title, copy in [
+        ('movimientos','Movimientos','Gastos, categorías y persona'),
+        ('gastos_fijos','Gastos fijos','Definiciones y estado'),
+        ('dolares','Dólares','Compras y ventas registradas'),
+        ('ingresos','Ingresos','ARS y USD, sin conversiones'),
+        ('lista_compras','Lista de compras','Pendientes y comprados retenidos'),
+        ('taxonomia','Taxonomía','Categorías, subcategorías y palabras')
+      ] %}
+      <div class="export-card"><div class="export-copy"><b>{{ title }}</b><small>{{ copy }}</small></div><a class="btn" href="/exportar/{{ slug }}.csv">CSV</a></div>
+      {% endfor %}
+    </div>
+    <p class="help-copy" style="margin-top:20px">En Excel con configuración regional española: usá <b>Datos → Desde texto/CSV</b> y elegí coma como separador. Los archivos usan UTF-8 con BOM para conservar acentos y eñes.</p>
+  </div>
+</div>
+{% endblock %}
