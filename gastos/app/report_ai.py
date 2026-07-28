@@ -17,6 +17,7 @@ import os
 
 import anthropic
 import llm_usage
+import llm_limits
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,8 @@ def classify_expenses(dossier: dict, prior_classifications: list[dict]) -> list[
 
     try:
         call_started = llm_usage.started()
-        message = client.messages.create(
+        with llm_limits.summary_call():
+            message = client.messages.create(
             model=model_name(),
             max_tokens=16000,
             thinking={"type": "adaptive"},
@@ -181,7 +183,7 @@ def classify_expenses(dossier: dict, prior_classifications: list[dict]) -> list[
             },
             system=_CLASSIFY_SYSTEM,
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}],
-        )
+            )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:
         llm_usage.record("resumen", model_name(), call_started, error=e)
@@ -210,7 +212,8 @@ def analyze(dossier: dict, partition: dict) -> dict | None:
 
     try:
         call_started = llm_usage.started()
-        message = client.messages.create(
+        with llm_limits.summary_call():
+            message = client.messages.create(
             model=model_name(),
             max_tokens=8000,
             thinking={"type": "adaptive"},
@@ -220,7 +223,7 @@ def analyze(dossier: dict, partition: dict) -> dict | None:
             },
             system=_ANALYZE_SYSTEM,
             messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}],
-        )
+            )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:
         llm_usage.record("resumen", model_name(), call_started, error=e)

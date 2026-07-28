@@ -4,6 +4,7 @@ import re
 
 import anthropic
 import llm_usage
+import llm_limits
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +68,12 @@ def parse_dolar(text: str, anthropic_api_key: str) -> dict | None:
     try:
         client = anthropic.Anthropic(api_key=anthropic_api_key)
         call_started = llm_usage.started()
-        message = client.messages.create(
-            model=_MODEL,
-            max_tokens=256,
-            messages=[{
-                "role": "user",
-                "content": f"{_PARSE_PROMPT}\n\nMensaje: {text}",
-            }],
-        )
+        with llm_limits.routine_call():
+            message = client.messages.create(
+                model=_MODEL, max_tokens=256, messages=[{
+                    "role": "user", "content": f"{_PARSE_PROMPT}\n\nMensaje: {text}",
+                }],
+            )
         llm_usage.record("dolar", _MODEL, call_started, response=message)
         raw = message.content[0].text.strip()
         if raw.startswith("```"):

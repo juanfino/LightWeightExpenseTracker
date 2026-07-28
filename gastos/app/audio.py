@@ -5,6 +5,7 @@ import logging
 import anthropic
 import openai
 import llm_usage
+import llm_limits
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +58,11 @@ def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
 
     try:
         call_started = llm_usage.started()
-        transcript = oa_client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="es",
-            prompt=_WHISPER_PROMPT,
-            response_format="verbose_json",
-        )
+        with llm_limits.routine_call():
+            transcript = oa_client.audio.transcriptions.create(
+                model="whisper-1", file=audio_file, language="es",
+                prompt=_WHISPER_PROMPT, response_format="verbose_json",
+            )
         llm_usage.record("audio_whisper", "whisper-1", call_started, response=transcript)
         transcription = transcript.text.strip()
     except Exception as e:
@@ -87,14 +86,12 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     try:
         an_client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=15.0, max_retries=0)
         call_started = llm_usage.started()
-        message = an_client.messages.create(
-            model=_MODEL,
-            max_tokens=512,
-            messages=[{
-                "role": "user",
-                "content": f"{_EXTRACT_PROMPT}\n\nTranscripción: {transcription}",
-            }],
-        )
+        with llm_limits.routine_call():
+            message = an_client.messages.create(
+                model=_MODEL, max_tokens=512, messages=[{
+                    "role": "user", "content": f"{_EXTRACT_PROMPT}\n\nTranscripción: {transcription}",
+                }],
+            )
         llm_usage.record("audio_extract", _MODEL, call_started, response=message)
         raw = message.content[0].text.strip()
         if raw.startswith("```"):

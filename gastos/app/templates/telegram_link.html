@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Conectar Telegram · Gastos Familiares{% endblock %}
+{% block extra_styles %}
+.link-wrap{max-width:720px;margin:0 auto}.link-grid{display:grid;grid-template-columns:1fr 220px;gap:28px;align-items:center}.qr{width:220px;height:220px;border-radius:12px}.connected{text-align:center;padding:38px 20px}.connected-icon{font-size:48px}@media(max-width:650px){.link-grid{grid-template-columns:1fr}.qr{margin:auto}}
+{% endblock %}
+{% block content %}
+<main class="container link-wrap">
+  <div class="page-header"><div><h1 class="page-title">Conectar Telegram</h1><p class="muted">Cargá gastos desde el chat, sin códigos ni configuración.</p></div></div>
+  <section class="card" id="link-card">
+  {% if connected %}
+    <div class="connected"><div class="connected-icon">✅</div><h2>Telegram conectado</h2><p class="muted mt-8">Ya podés mandarle gastos al bot.</p></div>
+  {% else %}
+    <div class="link-grid">
+      <div><h2 class="section-title">Abrí Telegram y tocá INICIAR</h2><p class="muted mt-8">El enlace abre directamente el chat correcto. No tenés que copiar ningún código.</p><a class="btn btn-primary mt-16" href="{{ deep_link }}">Conectar mi Telegram</a></div>
+      <div><img class="qr" src="data:image/png;base64,{{ qr_data }}" alt="QR para conectar Telegram"><p class="muted" style="text-align:center">Escanealo desde el celular</p></div>
+    </div>
+  {% endif %}
+  </section>
+</main>
+{% if not connected %}
+<script>
+const timer = setInterval(async () => {
+  const response = await fetch("/api/telegram-link/status");
+  const data = await response.json();
+  if (data.connected) {
+    clearInterval(timer);
+    document.getElementById("link-card").innerHTML = '<div class="connected"><div class="connected-icon">✅</div><h2>Telegram conectado</h2><p class="muted mt-8">Ya podés mandarle gastos al bot.</p></div>';
+  }
+}, 2000);
+</script>
+{% endif %}
+{% endblock %}

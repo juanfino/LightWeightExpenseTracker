@@ -15,6 +15,8 @@ La app se configura mediante variables de entorno:
 | Variable | Requerida | Descripción |
 |----------|-----------|-------------|
 | `TELEGRAM_TOKEN` | Sí | Token del bot obtenido con @BotFather en Telegram |
+| `TELEGRAM_BOT_USERNAME` | Sí | Usuario del bot sin `@`, usado para el enlace de conexión |
+| `PUBLIC_DASHBOARD_URL` | No | URL pública que recibe un chat todavía no vinculado |
 | `USERS_JSON` | Sí | Lista JSON de usuarios autorizados, ej: `[{"telegram_id":"123","name":"Juampi","email":"opcional@ejemplo.com"}]`; el email opcional vincula una cuenta Telegram histórica con el acceso web |
 | `AUTH_SECRET_KEY` | Sí | Secreto aleatorio para el estado temporal de autenticación |
 | `AUTH_BOOTSTRAP_EMAIL` | Sí | Email inicial del dueño de la familia existente |
@@ -82,3 +84,7 @@ En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/te
 Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
 
 Desde el nombre de la familia en la barra superior se abre **Familia** (`/familia`). El owner puede generar un enlace para copiar y enviar por WhatsApp; vence a los 7 días y funciona una sola vez. Quien lo recibe se une con Google o código por email como miembro. El owner también puede renombrar la familia, remover miembros sin borrar sus gastos, transferir la propiedad y eliminar definitivamente la familia escribiendo su nombre exacto. Un miembro puede salir por su cuenta; sus gastos anteriores quedan visibles en la familia.
+
+Cada miembro puede elegir **Conectar mi Telegram**. En el celular se toca el botón; desde una computadora se escanea el QR. Telegram abre el bot directamente y alcanza con tocar **INICIAR**: la web confirma sola la conexión. El enlace vence a los 15 minutos y es de un solo uso. La cuenta se puede desconectar desde Familia. Los grupos todavía no están soportados.
+
+Las funciones de IA admiten 100 llamadas por familia por día. La carga directa `Supermercado 15000` no usa IA y sigue funcionando si se alcanza ese límite. Resúmenes admite 15 generaciones por familia por mes y muestra cuántas quedan.

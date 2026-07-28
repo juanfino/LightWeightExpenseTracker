@@ -15,6 +15,7 @@ def load_config() -> dict:
     missing = [
         v for v in (
             "TELEGRAM_TOKEN", "USERS_JSON", "AUTH_SECRET_KEY",
+            "TELEGRAM_BOT_USERNAME",
             "AUTH_BOOTSTRAP_EMAIL", "SUPERADMIN_EMAIL",
             "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
             "RESEND_API_KEY", "TURNSTILE_SECRET",

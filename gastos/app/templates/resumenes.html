@@ -182,6 +182,7 @@
 
   let selYear  = {{ year }};
   let selMonth = {{ month }};
+  let quota = {remaining: 0, limit: 15};
 
   const selMonthEl = document.getElementById('sel-month');
   const selYearEl  = document.getElementById('sel-year');
@@ -231,6 +232,7 @@
     regenBtn.style.display = "none";
     const res = await fetch(`/api/resumenes/${selYear}/${selMonth}`);
     const data = await res.json();
+    quota = data.quota || quota;
     render(data.report);
   }
 
@@ -240,6 +242,11 @@
     try {
       const res = await fetch(`/api/resumenes/${selYear}/${selMonth}/generate`, {method: "POST"});
       const data = await res.json();
+      quota = data.quota || quota;
+      if (!res.ok) {
+        root.innerHTML = `<div class="gen-status">${data.error || "No se pudo generar el resumen."}</div>`;
+        return;
+      }
       render(data.report);
     } catch (e) {
       root.innerHTML = '<div class="gen-status">No se pudo generar el resumen. Probá de nuevo.</div>';
@@ -252,14 +259,15 @@
       root.innerHTML = `
         <div class="card empty-state">
           <div class="section-title">Todavía no hay un resumen para ${MONTHS_ES[selMonth]} ${selYear}</div>
-          <div class="summary" style="margin-top:8px">Se genera en dos pasos con IA y tarda medio minuto aproximadamente.</div>
-          <button class="btn btn-primary" id="btn-generate">Generar resumen</button>
+          <div class="summary" style="margin-top:8px">Se genera en dos pasos con IA y tarda medio minuto aproximadamente. Quedan ${quota.remaining} de ${quota.limit} generaciones este mes.</div>
+          <button class="btn btn-primary" id="btn-generate" ${quota.remaining <= 0 ? "disabled" : ""}>Generar resumen</button>
         </div>`;
       document.getElementById('btn-generate').addEventListener('click', () => generateReport());
       return;
     }
 
-    regenBtn.style.display = "inline-flex";
+    regenBtn.style.display = quota.remaining > 0 ? "inline-flex" : "none";
+    regenBtn.textContent = `Regenerar · ${quota.remaining} restantes`;
     metaEl.textContent = `Versión generada el ${report.generated_at} con ${report.model || "?"}`
       + (report.llm_ok ? "" : " — análisis narrativo no disponible");
 

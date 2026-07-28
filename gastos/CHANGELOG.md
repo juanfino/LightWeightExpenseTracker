@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.0.0
+- **Fase 5 multi-tenant:** conexión web → Telegram mediante deep link o QR de un solo uso, con confirmación automática y bienvenida inmediata en el bot.
+- Los chats no vinculados reciben instrucciones claras, los grupos se rechazan amablemente y Telegram se puede desconectar desde Familia.
+- Las llamadas rutinarias de IA tienen una cuota de 100 por familia por día; Resúmenes admite 15 generaciones por familia por mes y muestra el saldo disponible.
+- Un semáforo limita a dos llamadas LLM simultáneas por familia para que una familia no degrade a las demás.
+- Las excepciones no manejadas incluyen `family_id` y `user_id` en logs y se notifican al Telegram del superadmin con el traceback.
+
 ## 6.0.0
 - **Fase 4 multi-tenant:** nueva pantalla Familia para listar miembros, renombrar la familia y administrar invitaciones copiables de un solo uso con vencimiento a los 7 días.
 - Las invitaciones se aceptan con Google o código por email y siempre crean miembros; una cuenta que ya pertenece a otra familia recibe un error claro.

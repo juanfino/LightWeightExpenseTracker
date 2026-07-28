@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 import anthropic
 import llm_usage
+import llm_limits
 
 import db
 import sqlro
@@ -303,13 +304,11 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
         for _ in range(_MAX_TOOL_TURNS):
             call_started = llm_usage.started()
             try:
-                message = client.messages.create(
-                    model=_MODEL,
-                    max_tokens=1024,
-                    system=system,
-                    tools=_TOOLS,
-                    messages=messages,
-                )
+                with llm_limits.routine_call():
+                    message = client.messages.create(
+                        model=_MODEL, max_tokens=1024, system=system,
+                        tools=_TOOLS, messages=messages,
+                    )
             except Exception as e:
                 llm_usage.record("intent", _MODEL, call_started, error=e)
                 raise

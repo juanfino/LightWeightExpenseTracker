@@ -1,11 +1,15 @@
 import os
 import secrets
+import base64
+import io
+import traceback
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urljoin, urlparse
 
 from authlib.integrations.flask_client import OAuth
-from flask import Flask, abort, g, render_template, request, jsonify, redirect, session, url_for
+from flask import Flask, abort, g, got_request_exception, render_template, request, jsonify, redirect, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
+import qrcode
 
 import db
 import auth
@@ -14,6 +18,7 @@ import fixed_matcher
 import categorizer
 import report
 import pgcompat
+import llm_limits
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -37,6 +42,39 @@ if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET")
     )
 
 BAIRES = timezone(timedelta(hours=-3))
+
+
+@got_request_exception.connect_via(app)
+def _report_web_exception(_sender, exception, **_extra):
+    current_user = getattr(g, "current_user", None) or {}
+    user_id = current_user.get("id")
+    family_id = current_user.get("family_id")
+    details = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+    app.logger.error(
+        "Excepción web no manejada family_id=%s user_id=%s\n%s",
+        family_id, user_id, details,
+    )
+    token = os.environ.get("TELEGRAM_TOKEN")
+    if not token:
+        return
+    try:
+        import requests
+        admin_chat = db.get_superadmin_telegram_id()
+        if not admin_chat:
+            return
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={
+                "chat_id": admin_chat,
+                "text": (
+                    f"🚨 Error web\nfamily_id={family_id} user_id={user_id}\n"
+                    f"{details[-3000:]}"
+                ),
+            },
+            timeout=5,
+        ).raise_for_status()
+    except Exception:
+        app.logger.exception("No se pudo enviar la alerta web")
 
 
 @app.before_request
@@ -508,6 +546,10 @@ def family():
                 response = redirect(url_for("register"))
                 response.delete_cookie(auth.SESSION_COOKIE, path="/")
                 return response
+            elif action == "unlink_telegram":
+                auth.unlink_telegram(g.current_user["id"])
+                g.current_user["telegram_id"] = None
+                success = "Telegram desconectado."
             elif action == "delete":
                 auth.delete_family(
                     g.current_user["family_id"], g.current_user["id"],
@@ -529,6 +571,28 @@ def family():
         "family.html", family=family_data, invitations=invitations,
         invitation_url=invitation_url, error=error, success=success,
     )
+
+
+@app.route("/vincular-telegram")
+def telegram_link():
+    if auth.telegram_link_status(g.current_user["id"]):
+        return render_template("telegram_link.html", connected=True)
+    token = auth.create_telegram_link_token(g.current_user["id"])
+    bot_username = os.environ["TELEGRAM_BOT_USERNAME"].lstrip("@")
+    deep_link = f"https://t.me/{bot_username}?start={token}"
+    qr = qrcode.make(deep_link)
+    image = io.BytesIO()
+    qr.save(image, format="PNG")
+    qr_data = base64.b64encode(image.getvalue()).decode()
+    return render_template(
+        "telegram_link.html", connected=False, deep_link=deep_link,
+        qr_data=qr_data,
+    )
+
+
+@app.route("/api/telegram-link/status")
+def api_telegram_link_status():
+    return jsonify({"connected": auth.telegram_link_status(g.current_user["id"])})
 
 
 @app.route("/history")
@@ -1325,12 +1389,23 @@ def api_resumenes_available_months():
 
 @app.route("/api/resumenes/<int:year>/<int:month>")
 def api_resumen_get(year: int, month: int):
-    return jsonify({"report": _serialize_report(report.get_report(year, month))})
+    return jsonify({
+        "report": _serialize_report(report.get_report(year, month)),
+        "quota": llm_limits.summary_usage(),
+    })
 
 
 @app.route("/api/resumenes/<int:year>/<int:month>/generate", methods=["POST"])
 def api_resumen_generate(year: int, month: int):
-    return jsonify({"report": _serialize_report(report.generate_report(year, month))})
+    try:
+        with llm_limits.summary_generation():
+            generated = report.generate_report(year, month)
+    except llm_limits.QuotaExceeded as exc:
+        return jsonify({"error": str(exc), "quota": llm_limits.summary_usage()}), 429
+    return jsonify({
+        "report": _serialize_report(generated),
+        "quota": llm_limits.summary_usage(),
+    })
 
 
 def run_dashboard():
