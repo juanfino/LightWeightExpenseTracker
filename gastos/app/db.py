@@ -1031,6 +1031,12 @@ def get_expense_count_by_category() -> dict:
     return {r["category_id"]: r["cnt"] for r in rows if r["category_id"] is not None}
 
 
+def has_expenses() -> bool:
+    """Return whether the current tenant has logged at least one expense."""
+    with get_conn() as conn:
+        return conn.execute("SELECT EXISTS (SELECT 1 FROM expenses)").fetchone()[0]
+
+
 def create_category(name: str, icon: str, color: str) -> int | None:
     try:
         with get_conn() as conn:

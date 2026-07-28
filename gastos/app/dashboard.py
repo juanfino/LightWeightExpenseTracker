@@ -205,8 +205,24 @@ def landing():
 @app.route("/dashboard")
 def index():
     now = datetime.now()
-    return render_template("index.html", year=now.year, month=now.month,
-                           month_label=_month_label(now.year, now.month))
+    family_data = auth.get_family_management(g.current_user["family_id"])
+    invitations = (
+        auth.list_family_invitations(g.current_user["family_id"])
+        if g.current_user["role"] == "owner" else []
+    )
+    onboarding = {
+        "has_expense": db.has_expenses(),
+        "telegram_connected": auth.telegram_link_status(g.current_user["id"]),
+        "family_invited": (
+            sum(1 for member in family_data["members"] if member["active"]) > 1
+            or bool(invitations)
+        ),
+    }
+    onboarding["complete"] = all(onboarding.values())
+    return render_template(
+        "index.html", year=now.year, month=now.month,
+        month_label=_month_label(now.year, now.month), onboarding=onboarding,
+    )
 
 
 def _client_ip() -> str:

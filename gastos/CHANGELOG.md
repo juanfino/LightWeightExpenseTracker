@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.1.0
+- **Fase 6 multi-tenant:** el dashboard guía a cada familia con una checklist automática para cargar el primer gasto, conectar Telegram e invitar a otra persona; desaparece al completar los pasos.
+- Todas las pantallas nuevas o vacías explican qué contenido aparecerá y ofrecen una acción concreta, sin gráficos o tablas que parezcan rotos.
+- La landing pública explica cómo se carga, ordena y comparte un gasto; Categorías, Fijos y Resúmenes incorporan ayuda contextual sobre palabras, recurrencia y uso de IA.
+- Se completa el pase responsive a 390 px, corrigiendo el encabezado móvil y el acceso directo desde la checklist al formulario de primer gasto.
+
 ## 7.0.1
 - Se establece `https://mangoteca.juampifinochietto.com` como dominio canónico en la aplicación y la documentación; el fallback de ayuda para vincular Telegram ya no apunta al hostname anterior.
 - Se completa la documentación técnica de la fase 5: `telegram_link_tokens`, `llm_limits.py`, variables de entorno y resolución de identidad Telegram.

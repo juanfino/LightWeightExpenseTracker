@@ -123,7 +123,12 @@ class AuthSecurityTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/dashboard")
-        self.assertEqual(self.client.get("/dashboard").status_code, 200)
+        dashboard_page = self.client.get("/dashboard")
+        self.assertEqual(dashboard_page.status_code, 200)
+        self.assertIn(b"Primeros pasos", dashboard_page.data)
+        self.assertIn(b"Cargar tu primer gasto", dashboard_page.data)
+        self.assertIn(b"Conectar Telegram", dashboard_page.data)
+        self.assertIn(b"Invitar a alguien", dashboard_page.data)
 
         with auth.platform_transaction() as raw:
             row = raw.execute(
@@ -138,6 +143,32 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertEqual(row[2], "Familia Nueva")
         pgcompat.set_family_id(row[1])
         self.assertTrue(db.get_all_categories())
+
+    def test_onboarding_card_disappears_when_every_step_is_complete(self):
+        client, _headers = authenticated_client(dashboard)
+        family = {
+            "id": 1,
+            "name": "Familia de prueba",
+            "members": [
+                {"active": True},
+                {"active": True},
+            ],
+        }
+        with (
+            patch.object(db, "has_expenses", return_value=True),
+            patch.object(auth, "telegram_link_status", return_value=True),
+            patch.object(auth, "get_family_management", return_value=family),
+            patch.object(auth, "list_family_invitations", return_value=[]),
+        ):
+            page = client.get("/dashboard")
+        self.assertEqual(page.status_code, 200)
+        self.assertNotIn(b"Primeros pasos", page.data)
+
+    def test_public_landing_explains_the_first_expense_path(self):
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Supermercado 15000", page.data)
+        self.assertIn(b"Crear mi cuenta", page.data)
 
     def test_google_login_always_requests_account_selection(self):
         google = MagicMock()

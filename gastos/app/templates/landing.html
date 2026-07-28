@@ -3,10 +3,16 @@
 {% block content %}
 <main class="hero">
   <h1>Los gastos de tu familia, claros y en un solo lugar.</h1>
-  <p>Registrá movimientos desde Telegram o la web, compartí la información con tu familia y entendé en qué se va la plata.</p>
+  <p>Anotá un gasto en segundos desde Telegram o la web. El resto se ordena solo para que todos en casa entiendan en qué se va la plata.</p>
   <div class="hero-actions">
     <a class="button" href="{{ url_for('register') }}">Crear mi cuenta</a>
     <a class="button secondary" href="{{ url_for('login') }}">Ya tengo cuenta</a>
   </div>
 </main>
+<section class="feature-grid" aria-label="Cómo funciona">
+  <article class="feature"><strong>1. Cargá como te resulte cómodo</strong><p>Escribí “Supermercado 15000” en Telegram o usá el formulario desde el teléfono.</p></article>
+  <article class="feature"><strong>2. Mirá todo ordenado</strong><p>Movimientos, categorías, gastos fijos y dólares quedan reunidos en un dashboard compartido.</p></article>
+  <article class="feature"><strong>3. Sumá a tu familia</strong><p>Invitá a otra persona con un enlace privado. Cada grupo ve únicamente sus propios datos.</p></article>
+</section>
+<p class="trust">Empezás gratis y sin tarjeta. Es una beta familiar: tus datos se guardan en infraestructura privada administrada por Juampi.</p>
 {% endblock %}
