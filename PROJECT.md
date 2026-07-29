@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.5.1 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.6.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -127,7 +127,7 @@ All screens share the amber/orange design system (Plus Jakarta Sans, borderless 
 
 Phase 8 also shipped a navigation cleanup beyond the original panel scope:
 daily product areas remain in the main header, Dashboard is reached through the
-logo, and administration/export/logout live in the avatar popup. Version 7.5.1
+logo, appearance selector, and administration/export/logout live in the avatar popup. Version 7.6.0
 fixes ancestor overflow clipping so that popup can render below the sticky
 header.
 

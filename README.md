@@ -1,10 +1,10 @@
-# LightWeightExpenseTracker
+# mangoteca
 
 A family expense tracker: send a message like `Supermercado 150000` to a Telegram bot and it records, categorizes, and displays your spending in a web dashboard. Runs as a Docker container on a Raspberry Pi 4.
 
 ## Current product
 
-The multi-tenant roadmap (Phases 0–8) is complete as of version **7.5.1**.
+The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.6.0**.
 The application now provides:
 
 - PostgreSQL tenancy enforced with forced Row-Level Security.

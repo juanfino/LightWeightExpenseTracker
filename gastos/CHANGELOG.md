@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.6.0
+- La interfaz web adopta universalmente la identidad de **mangoteca**: nuevo logomark de mango, wordmark, favicon y paletas oficiales clara y oscura.
+- Se agrega un selector persistente de apariencia (Sistema, Oscuro o Claro) tanto en el menú de cuenta como en las pantallas públicas.
+- El dashboard aprovecha mejor las pantallas anchas, integra los ingresos en la franja de métricas y conserva una adaptación específica para mobile.
+
 ## 7.5.4
 - Se restringe la página "Sistema" (backup/restauración de la base) y sus endpoints (`/admin/backup-now`, `/api/backup-status`) a superadmin — antes cualquier usuario logueado podía disparar un backup completo de todas las familias.
 
