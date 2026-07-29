@@ -81,7 +81,7 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **Gastos Familiares** arriba a la izquierda. El menú principal contiene Movimientos, Ingresos, Lista, Gastos Fijos, Dólares y Resúmenes.
 
-Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, Sistema y **Cerrar sesión**. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú muestra el acceso al panel operativo global.
+Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos y **Cerrar sesión**. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú agrega Sistema (backup/restauración global de la base) y el acceso al panel operativo global.
 
 ### Panel de superadmin
 

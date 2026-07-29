@@ -1184,6 +1184,7 @@ def fijos_page():
 
 @app.route("/config")
 def config_page():
+    _require_superadmin()
     return render_template("config.html")
 
 
@@ -1331,6 +1332,7 @@ def api_fixed_expenses_pay():
 
 @app.route("/admin/backup-now", methods=["POST"])
 def admin_backup_now():
+    _require_superadmin()
     ts = backup_module.create_backup()
     if ts is None:
         return jsonify({"success": False, "error": "Backup fallido — revisá los logs"}), 500
@@ -1339,6 +1341,7 @@ def admin_backup_now():
 
 @app.route("/api/backup-status")
 def api_backup_status():
+    _require_superadmin()
     path = backup_module.LAST_BACKUP_PATH
     if not os.path.exists(path):
         return jsonify({"last_backup": None})

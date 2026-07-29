@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.5.4
+- Se restringe la página "Sistema" (backup/restauración de la base) y sus endpoints (`/admin/backup-now`, `/api/backup-status`) a superadmin — antes cualquier usuario logueado podía disparar un backup completo de todas las familias.
+
 ## 7.5.3
 - Se corrige el guardado por lote de clasificaciones del resumen usando la API de cursor de psycopg 3.
 

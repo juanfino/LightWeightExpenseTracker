@@ -654,7 +654,7 @@
             <a href="/settings" class="account-link {{ 'active' if request.path == '/settings' else '' }}"><i class="ti ti-category"></i> Categorías</a>
             <a href="{{ url_for('telegram_link') }}" class="account-link"><i class="ti ti-brand-telegram"></i> Conectar Telegram</a>
             <a href="/exportar" class="account-link {{ 'active' if request.path.startswith('/exportar') else '' }}"><i class="ti ti-file-export"></i> Exportar datos</a>
-            <a href="/config" class="account-link {{ 'active' if request.path == '/config' else '' }}"><i class="ti ti-settings"></i> Sistema</a>
+            {% if current_user.is_superadmin %}<a href="/config" class="account-link admin-only {{ 'active' if request.path == '/config' else '' }}"><i class="ti ti-settings"></i> Sistema</a>{% endif %}
             {% if current_user.is_superadmin %}<a href="/superadmin" class="account-link admin-only {{ 'active' if request.path == '/superadmin' else '' }}"><i class="ti ti-shield-lock"></i> Superadmin</a>{% endif %}
           </div>
           <div class="account-logout">

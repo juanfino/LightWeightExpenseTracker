@@ -45,6 +45,21 @@ class SuperadminIntegrationTests(unittest.TestCase):
         self.assertIn(b"Vista global", page.data)
         self.assertIn(b"Familia de prueba", page.data)
 
+    def test_backup_routes_are_superadmin_only(self):
+        import dashboard
+
+        client, headers = authenticated_client(dashboard)
+        self.assertEqual(client.get("/config").status_code, 403)
+        self.assertEqual(client.get("/api/backup-status").status_code, 403)
+        self.assertEqual(
+            client.post("/admin/backup-now", headers=headers).status_code, 403
+        )
+
+        self._set_superadmin()
+        client, headers = authenticated_client(dashboard)
+        self.assertEqual(client.get("/config").status_code, 200)
+        self.assertEqual(client.get("/api/backup-status").status_code, 200)
+
     def test_quota_override_is_tenant_visible_and_resettable(self):
         import dashboard
 

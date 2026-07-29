@@ -88,7 +88,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead. As of 2.3.0, accepts `?year=&month=` to open a specific period directly (used by the monthly report's "unlinked fixed expense" question links) |
 | `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
 | `/resumenes` | `resumenes.html` | Monthly AI-generated report (2.3.0) — see dedicated section above. Most recent report with a month selector; `/resumenes/YYYY-MM` deep link; Generate button when a period has none; understated Regenerate always available |
-| `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only |
+| `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only. Superadmin-only (7.5.4) — a global full-DB backup trigger, not a per-family feature |
 | `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |
 | `/vincular-telegram` | `telegram_link.html` | Telegram deep link, desktop QR and live connected status |
 | `/superadmin` | `superadmin.html` | Superadmin-only cross-family operational metrics, AI/cost analysis, quota overrides and recent failures |
