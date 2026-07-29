@@ -3,8 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Gastos Familiares{% endblock %}</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23f4b23c'/><stop offset='1' stop-color='%23e8843a'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><rect x='9' y='16' width='3.6' height='9' rx='1.5' fill='%23241a10'/><rect x='14.2' y='11' width='3.6' height='14' rx='1.5' fill='%23241a10'/><rect x='19.4' y='7' width='3.6' height='18' rx='1.5' fill='%23241a10'/></svg>">
+  <title>{% block title %}mangoteca{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 14C74 14 87 34 87 55C87 79 66 93 44 90C24 87 12 71 14 51C16 29 29 14 50 14Z' fill='%23F0A84B' transform='rotate(-8 50 50)'/><ellipse cx='60' cy='18' rx='8' ry='14' fill='%236FBE8D' transform='rotate(28 60 18)'/></svg>">
+  <script>
+    (function () {
+      const preference = localStorage.getItem('mangoteca-theme') || 'system';
+      const theme = preference === 'system'
+        ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+        : preference;
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.dataset.themePreference = preference;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,56 +24,52 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      oklch(0.15 0.012 55);
-      --bg2:     oklch(0.17 0.012 55);
-      --bg3:     oklch(0.19 0.013 55);
-      --surface: oklch(0.19 0.013 55);
-      --surface2:oklch(0.24 0.015 55);
-      --border:  oklch(1 0 0 / 0.07);
-      --border-soft: oklch(1 0 0 / 0.06);
-      --border2: oklch(1 0 0 / 0.10);
-      --text:    oklch(0.96 0.004 55);
-      --text2:   oklch(0.60 0.010 55);
-      --text3:   oklch(0.50 0.010 55);
-      --accent:  oklch(0.78 0.15 75);
-      --accent-grad: linear-gradient(135deg, oklch(0.78 0.15 75), oklch(0.68 0.15 45));
-      --on-accent: oklch(0.15 0.02 60);
-      --green:   oklch(0.72 0.14 155);
-      --red:     oklch(0.68 0.17 25);
-      --amber:   oklch(0.78 0.15 75);
-      --track:   oklch(1 0 0 / 0.06);
+      --bg: #1E1712;
+      --bg2: #251C15;
+      --bg3: #2A2118;
+      --surface: #2A2118;
+      --surface2: #352A20;
+      --border: rgba(255,255,255,.07);
+      --border-soft: rgba(255,255,255,.06);
+      --border2: rgba(255,255,255,.10);
+      --text: #F5EFE6;
+      --text2: #B3A28D;
+      --text3: #8A7A68;
+      --accent: #F0A84B;
+      --on-accent: #1E1712;
+      --green: #6FBE8D;
+      --red: #E8806A;
+      --amber: #E8BE6B;
+      --track: rgba(255,255,255,.06);
       --font-sans: 'Plus Jakarta Sans', sans-serif;
       /* backward-compat aliases */
-      --muted:     oklch(0.60 0.010 55);
-      --danger:    oklch(0.68 0.17 25);
-      --success:   oklch(0.72 0.14 155);
+      --muted: #B3A28D;
+      --danger: #E8806A;
+      --success: #6FBE8D;
       --font-mono: 'Plus Jakarta Sans', sans-serif;
     }
 
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg:      oklch(0.97 0.006 75);
-        --bg2:     oklch(0.95 0.006 75);
-        --bg3:     oklch(0.93 0.007 75);
-        --surface: #ffffff;
-        --surface2:oklch(0.96 0.007 75);
-        --border:  oklch(0 0 0 / 0.08);
-        --border-soft: oklch(0 0 0 / 0.06);
-        --border2: oklch(0 0 0 / 0.12);
-        --text:    oklch(0.25 0.010 55);
-        --text2:   oklch(0.48 0.012 55);
-        --text3:   oklch(0.60 0.012 55);
-        --accent:  oklch(0.70 0.15 70);
-        --accent-grad: linear-gradient(135deg, oklch(0.74 0.15 70), oklch(0.64 0.15 45));
-        --on-accent: oklch(0.20 0.02 60);
-        --green:   oklch(0.58 0.14 155);
-        --red:     oklch(0.58 0.19 25);
-        --amber:   oklch(0.70 0.15 70);
-        --track:   oklch(0 0 0 / 0.06);
-        --muted:   oklch(0.48 0.012 55);
-        --danger:  oklch(0.58 0.19 25);
-        --success: oklch(0.58 0.14 155);
-      }
+    :root[data-theme="light"] {
+      --bg: #FAF6F0;
+      --bg2: #F4EEE6;
+      --bg3: #EDE5DC;
+      --surface: #FFFFFF;
+      --surface2: #F2EBE3;
+      --border: rgba(43,33,24,.08);
+      --border-soft: rgba(43,33,24,.06);
+      --border2: rgba(43,33,24,.12);
+      --text: #2B2118;
+      --text2: #8A7A68;
+      --text3: #A49685;
+      --accent: #E08A2E;
+      --on-accent: #2B2118;
+      --green: #4C9A6A;
+      --red: #D45B45;
+      --amber: #D9A441;
+      --track: rgba(43,33,24,.06);
+      --muted: #8A7A68;
+      --danger: #D45B45;
+      --success: #4C9A6A;
     }
 
     body {
@@ -82,7 +89,7 @@
 
     /* ── Topbar ── */
     .topbar {
-      height: 72px;
+      height: 76px;
       background: var(--bg);
       border-bottom: 1px solid var(--border);
       position: sticky;
@@ -90,12 +97,12 @@
       z-index: 50;
       display: flex;
       align-items: center;
-      padding: 0 20px;
+      padding: 0 48px;
       overflow: visible;
     }
 
     .topbar-inner {
-      max-width: 1100px;
+      max-width: 1440px;
       margin: 0 auto;
       width: 100%;
       display: flex;
@@ -115,8 +122,8 @@
       display: flex;
       align-items: center;
       gap: 11px;
-      font-size: 17px;
-      font-weight: 700;
+      font-size: 19px;
+      font-weight: 800;
       letter-spacing: -0.01em;
       white-space: nowrap;
       flex-shrink: 0;
@@ -124,26 +131,18 @@
     }
 
     .brand-logo {
-      width: 30px;
-      height: 30px;
-      border-radius: 9px;
-      background: var(--accent-grad);
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--surface);
       flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 2.5px;
+      padding: 6px;
     }
 
-    .brand-logo i {
-      width: 3.5px;
-      border-radius: 2px;
-      background: var(--on-accent);
-      opacity: 0.9;
-    }
-    .brand-logo i:nth-child(1) { height: 9px; }
-    .brand-logo i:nth-child(2) { height: 14px; }
-    .brand-logo i:nth-child(3) { height: 18px; }
+    .brand-logo svg { width: 100%; height: 100%; display: block; }
 
     .topbar-tabs {
       display: flex;
@@ -174,25 +173,25 @@
       width: 38px;
       height: 38px;
       border-radius: 50%;
-      background: var(--accent-grad);
-      border: 2px solid color-mix(in oklch,var(--accent) 55%,var(--border2));
+      background: var(--accent);
+      border: 1px solid var(--border2);
       color: var(--on-accent);
       display:grid;
       place-items:center;
       font:700 13px var(--font-sans);
       cursor:pointer;
-      transition:transform .15s,box-shadow .15s;
+      transition:transform .15s;
     }
-    .account-trigger:hover,.account-trigger[aria-expanded="true"]{transform:scale(1.04);box-shadow:0 0 0 4px color-mix(in oklch,var(--accent) 15%,transparent)}
+    .account-trigger:hover,.account-trigger[aria-expanded="true"]{transform:scale(1.04)}
     .account-popover {
       position:absolute;right:0;top:48px;width:310px;padding:10px;
       background:var(--bg2);border:1px solid var(--border2);border-radius:22px;
-      box-shadow:0 20px 60px rgba(0,0,0,.32);opacity:0;visibility:hidden;
+      opacity:0;visibility:hidden;
       transform:translateY(-6px);transition:opacity .16s,transform .16s,visibility .16s;z-index:80;
     }
     .account-popover.open{opacity:1;visibility:visible;transform:translateY(0)}
     .account-profile{text-align:center;padding:15px 12px 18px;border-bottom:1px solid var(--border)}
-    .account-profile-avatar{width:58px;height:58px;border-radius:50%;margin:0 auto 10px;background:var(--accent-grad);color:var(--on-accent);display:grid;place-items:center;font-size:20px;font-weight:800}
+    .account-profile-avatar{width:58px;height:58px;border-radius:50%;margin:0 auto 10px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-size:20px;font-weight:800}
     .account-profile-name{font-size:17px;font-weight:700}.account-profile-family{font-size:12px;color:var(--text2);margin-top:2px}
     .account-links{padding:8px 0;display:grid;gap:2px}
     .account-link{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:var(--text2);font-weight:600}
@@ -200,12 +199,18 @@
     .account-link.admin-only{color:var(--accent)}
     .account-logout{border-top:1px solid var(--border);padding-top:8px}
     .account-logout form{display:block}.account-logout button{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
+    .theme-picker{padding:10px 12px 12px;border-top:1px solid var(--border)}
+    .theme-picker-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px}
+    .theme-options{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--surface);padding:3px;border-radius:10px}
+    .theme-option{border:0;background:transparent;color:var(--text2);border-radius:7px;padding:7px 4px;font:600 12px var(--font-sans);cursor:pointer}
+    .theme-option:hover{color:var(--text)}
+    .theme-option.active{background:var(--accent);color:var(--on-accent)}
 
     /* ── Layout ── */
     .container {
-      max-width: 1100px;
+      max-width: 1440px;
       margin: 0 auto;
-      padding: 40px 24px 72px;
+      padding: 44px 48px 72px;
     }
 
     /* ── Cards ── */
@@ -501,7 +506,6 @@
       z-index: 60;
       background: var(--bg2);
       border-left: 1px solid var(--border);
-      box-shadow: -8px 0 28px rgba(0,0,0,0.28);
       display: flex;
       flex-direction: column;
       padding: 8px;
@@ -562,6 +566,11 @@
       .account-menu  { margin-left:auto; }
     }
 
+    @media (max-width: 1100px) {
+      .topbar { padding-inline: 24px; }
+      .container { padding-inline: 24px; }
+    }
+
     /* ── Tabla responsive: filas como tarjetas en mobile ── */
     @media (max-width: 640px) {
       .rtable thead { display: none; }
@@ -607,6 +616,10 @@
       /* Ganar ancho útil en pantallas chicas */
       .container { padding: 20px 14px; }
       .topbar    { padding: 0 14px; }
+      .topbar-brand { font-size: 17px; gap: 9px; }
+      .brand-logo { width: 30px; height: 30px; }
+      .account-trigger { width: 34px; height: 34px; }
+      .account-popover { position:fixed;top:68px;right:12px;left:12px;width:auto;max-height:calc(100vh - 80px);overflow:auto; }
       .card      { padding: 16px; }
       .page-header { align-items: flex-start; gap: 14px; flex-wrap: wrap; }
       .page-header .btn { width: 100%; justify-content: center; }
@@ -625,8 +638,8 @@
     <div class="topbar-inner">
       <div class="topbar-left">
         <a href="{{ url_for('index') }}" class="topbar-brand">
-          <span class="brand-logo" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Gastos Familiares</span>
+          <span class="brand-logo" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M50,14 C74,14 87,34 87,55 C87,79 66,93 44,90 C24,87 12,71 14,51 C16,29 29,14 50,14 Z" fill="var(--accent)" transform="rotate(-8 50 50)"></path><ellipse cx="60" cy="18" rx="8" ry="14" fill="var(--green)" transform="rotate(28 60 18)"></ellipse></svg></span>
+          <span>mangoteca</span>
         </a>
 
         <nav class="topbar-tabs">
@@ -657,6 +670,14 @@
             {% if current_user.is_superadmin %}<a href="/config" class="account-link admin-only {{ 'active' if request.path == '/config' else '' }}"><i class="ti ti-settings"></i> Sistema</a>{% endif %}
             {% if current_user.is_superadmin %}<a href="/superadmin" class="account-link admin-only {{ 'active' if request.path == '/superadmin' else '' }}"><i class="ti ti-shield-lock"></i> Superadmin</a>{% endif %}
           </div>
+          <div class="theme-picker">
+            <div class="theme-picker-label">Apariencia</div>
+            <div class="theme-options" role="group" aria-label="Elegir apariencia">
+              <button type="button" class="theme-option" data-theme-choice="system">Sistema</button>
+              <button type="button" class="theme-option" data-theme-choice="dark">Oscuro</button>
+              <button type="button" class="theme-option" data-theme-choice="light">Claro</button>
+            </div>
+          </div>
           <div class="account-logout">
             <form method="post" action="{{ url_for('logout') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -677,8 +698,8 @@
   <nav class="mobile-menu" id="mobile-menu">
     <div class="mobile-menu-header">
       <span class="mobile-menu-brand" style="display:flex; align-items:center; gap:10px;">
-        <span class="brand-logo" aria-hidden="true"><i></i><i></i><i></i></span>
-        Gastos Familiares
+        <span class="brand-logo" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M50,14 C74,14 87,34 87,55 C87,79 66,93 44,90 C24,87 12,71 14,51 C16,29 29,14 50,14 Z" fill="var(--accent)" transform="rotate(-8 50 50)"></path><ellipse cx="60" cy="18" rx="8" ry="14" fill="var(--green)" transform="rotate(28 60 18)"></ellipse></svg></span>
+        mangoteca
       </span>
       <button class="mobile-menu-close" id="menu-close" aria-label="Cerrar menú">
         <i class="ti ti-x"></i>
@@ -726,6 +747,7 @@
       const close  = document.getElementById('menu-close');
       const accountTrigger = document.getElementById('account-trigger');
       const accountPopover = document.getElementById('account-popover');
+      const themeOptions = document.querySelectorAll('[data-theme-choice]');
 
       function openMenu() {
         menu.classList.add('open');
@@ -762,6 +784,23 @@
       document.addEventListener('keydown', function(event) {
         if (event.key === 'Escape') { closeAccount(); closeMenu(); }
       });
+
+      function syncThemeOptions() {
+        const preference = localStorage.getItem('mangoteca-theme') || 'system';
+        themeOptions.forEach(function(option) {
+          const selected = option.dataset.themeChoice === preference;
+          option.classList.toggle('active', selected);
+          option.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        });
+      }
+      themeOptions.forEach(function(option) {
+        option.addEventListener('click', function(event) {
+          event.stopPropagation();
+          localStorage.setItem('mangoteca-theme', option.dataset.themeChoice);
+          window.location.reload();
+        });
+      });
+      syncThemeOptions();
 
       // Cerrar al tocar cualquier link del drawer
       menu.querySelectorAll('.tab-link').forEach(function(link) {

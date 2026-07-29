@@ -3,30 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}Gastos Familiares{% endblock %}</title>
+  <title>{% block title %}mangoteca{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 14C74 14 87 34 87 55C87 79 66 93 44 90C24 87 12 71 14 51C16 29 29 14 50 14Z' fill='%23F0A84B' transform='rotate(-8 50 50)'/><ellipse cx='60' cy='18' rx='8' ry='14' fill='%236FBE8D' transform='rotate(28 60 18)'/></svg>">
+  <script>
+    (function () {
+      const preference = localStorage.getItem('mangoteca-theme') || 'system';
+      const theme = preference === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : preference;
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root{color-scheme:dark;--bg:#171411;--card:#211d19;--text:#faf7f2;--muted:#aaa097;--line:#39322b;--accent:#f2ac3d;--danger:#ff8c82}
-    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 50% -10%,#3b2b19 0,transparent 38%),var(--bg);color:var(--text);font-family:"Plus Jakarta Sans",sans-serif;min-height:100vh}
-    a{color:inherit}.shell{width:min(100% - 32px,1080px);margin:auto}.header{height:76px;display:flex;align-items:center;justify-content:space-between}.brand{font-weight:800;text-decoration:none}.nav{display:flex;gap:20px;color:var(--muted);font-size:14px}
-    .auth-wrap{width:min(100%,440px);margin:56px auto}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:30px;box-shadow:0 24px 70px #0005}h1{font-size:28px;margin:0 0 8px}p{color:var(--muted);line-height:1.6}
-    label{display:block;font-size:13px;font-weight:700;margin:18px 0 7px}input{width:100%;background:#171411;border:1px solid var(--line);border-radius:11px;color:var(--text);padding:13px 14px;font:inherit}input:focus{outline:2px solid #f2ac3d66;border-color:var(--accent)}
-    .button{width:100%;display:flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;background:var(--accent);color:#261a0b;margin-top:20px}.button.secondary{background:transparent;color:var(--text);border:1px solid var(--line);margin-top:12px}
+    :root{--bg:#1E1712;--card:#2A2118;--text:#F5EFE6;--muted:#B3A28D;--line:rgba(255,255,255,.1);--accent:#F0A84B;--green:#6FBE8D;--danger:#E8806A;--input:#251C15;--on-accent:#1E1712}
+    :root[data-theme="light"]{--bg:#FAF6F0;--card:#FFFFFF;--text:#2B2118;--muted:#8A7A68;--line:rgba(43,33,24,.12);--accent:#E08A2E;--green:#4C9A6A;--danger:#D45B45;--input:#F4EEE6;--on-accent:#2B2118}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:"Plus Jakarta Sans",sans-serif;min-height:100vh}
+    a{color:inherit}.shell{width:min(100% - 48px,1344px);margin:auto}.header{height:76px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:11px;font-size:19px;font-weight:800;letter-spacing:-.02em;text-decoration:none}.brand-logo{width:34px;height:34px;border-radius:10px;background:var(--card);padding:6px}.brand-logo svg{width:100%;height:100%;display:block}.nav{display:flex;align-items:center;gap:20px;color:var(--muted);font-size:14px}.theme-select{width:auto;background:var(--card);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:7px 9px;font:600 12px inherit}
+    .auth-wrap{width:min(100%,440px);margin:56px auto}.card{background:var(--card);border:0;border-radius:22px;padding:30px}h1{font-size:28px;margin:0 0 8px}p{color:var(--muted);line-height:1.6}
+    label{display:block;font-size:13px;font-weight:700;margin:18px 0 7px}input{width:100%;background:var(--input);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:13px 14px;font:inherit}input:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);border-color:var(--accent)}
+    .button{width:100%;display:flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:13px 16px;font:inherit;font-weight:800;cursor:pointer;text-decoration:none;background:var(--accent);color:var(--on-accent);margin-top:20px}.button.secondary{background:transparent;color:var(--text);border:1px solid var(--line);margin-top:12px}
     .divider{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:12px;margin:20px 0}.divider:before,.divider:after{content:"";height:1px;background:var(--line);flex:1}.error{color:var(--danger);background:#ff5c4d14;border:1px solid #ff5c4d44;border-radius:10px;padding:11px 13px;font-size:13px}.foot{text-align:center;font-size:13px;margin-top:20px}.hero{padding:90px 0 110px;text-align:center}.hero h1{font-size:clamp(38px,7vw,72px);max-width:850px;margin:0 auto 24px;letter-spacing:-.045em}.hero p{font-size:18px;max-width:650px;margin:0 auto}.hero-actions{display:flex;justify-content:center;gap:12px;margin:32px auto}.hero-actions .button{width:auto;margin:0;padding-inline:22px}
-    .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 auto 90px}.feature{background:#211d1999;border:1px solid var(--line);border-radius:18px;padding:24px;text-align:left}.feature strong{display:block;margin-bottom:8px}.feature p{font-size:14px;margin:0}.trust{color:var(--muted);font-size:13px;text-align:center;margin:-60px auto 80px}
-    .legal{width:min(100%,760px);margin:40px auto 90px}.legal h1{font-size:38px}.legal h2{margin-top:32px}.legal p,.legal li{color:var(--muted);line-height:1.75}@media(max-width:700px){.feature-grid{grid-template-columns:1fr;margin-bottom:70px}}@media(max-width:560px){.nav{gap:10px;font-size:12px}.card{padding:22px}.auth-wrap{margin-top:28px}.hero{padding:56px 0 70px}.hero p{font-size:16px}.hero-actions{flex-direction:column}.hero-actions .button{width:100%}}
+    .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:0 auto 90px}.feature{background:var(--card);border:0;border-radius:18px;padding:24px;text-align:left}.feature strong{display:block;margin-bottom:8px}.feature p{font-size:14px;margin:0}.trust{color:var(--muted);font-size:13px;text-align:center;margin:-60px auto 80px}
+    .legal{width:min(100%,760px);margin:40px auto 90px}.legal h1{font-size:38px}.legal h2{margin-top:32px}.legal p,.legal li{color:var(--muted);line-height:1.75}@media(max-width:700px){.feature-grid{grid-template-columns:1fr;margin-bottom:70px}}@media(max-width:560px){.shell{width:min(100% - 28px,1344px)}.brand{font-size:17px}.brand-logo{width:30px;height:30px}.nav{gap:8px;font-size:12px}.nav>a{display:none}.theme-select{max-width:96px}.card{padding:22px}.auth-wrap{margin-top:28px}.hero{padding:56px 0 70px}.hero p{font-size:16px}.hero-actions{flex-direction:column}.hero-actions .button{width:100%}}
   </style>
   {% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
 </head>
 <body>
   <div class="shell">
     <header class="header">
-      <a class="brand" href="{{ url_for('landing') }}">Gastos Familiares</a>
-      <nav class="nav"><a href="{{ url_for('privacy') }}">Privacidad</a><a href="{{ url_for('terms') }}">Términos</a></nav>
+      <a class="brand" href="{{ url_for('landing') }}"><span class="brand-logo" aria-hidden="true"><svg viewBox="0 0 100 100"><path d="M50,14 C74,14 87,34 87,55 C87,79 66,93 44,90 C24,87 12,71 14,51 C16,29 29,14 50,14 Z" fill="var(--accent)" transform="rotate(-8 50 50)"></path><ellipse cx="60" cy="18" rx="8" ry="14" fill="var(--green)" transform="rotate(28 60 18)"></ellipse></svg></span><span>mangoteca</span></a>
+      <nav class="nav"><a href="{{ url_for('privacy') }}">Privacidad</a><a href="{{ url_for('terms') }}">Términos</a><select class="theme-select" id="public-theme" aria-label="Apariencia"><option value="system">Sistema</option><option value="dark">Oscuro</option><option value="light">Claro</option></select></nav>
     </header>
     {% block content %}{% endblock %}
   </div>
+  <script>
+    const publicTheme = document.getElementById('public-theme');
+    publicTheme.value = localStorage.getItem('mangoteca-theme') || 'system';
+    publicTheme.addEventListener('change', function () {
+      localStorage.setItem('mangoteca-theme', publicTheme.value);
+      window.location.reload();
+    });
+  </script>
 </body>
 </html>

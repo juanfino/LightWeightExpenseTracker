@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — Gastos Familiares{% endblock %}
+{% block title %}Inicio — mangoteca{% endblock %}
 {% block nav_dashboard %}active{% endblock %}
 
 {% block extra_styles %}
@@ -47,7 +47,7 @@
 }
 
 .hero-total {
-  font-size: 52px;
+  font-size: 56px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -57,7 +57,7 @@
 .hero-dec { color: var(--text3); }
 
 .hero-secondary {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 700;
   color: var(--accent);
   letter-spacing: -0.02em;
@@ -189,9 +189,9 @@
 /* ── Charts grid ── */
 .charts-grid {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: minmax(380px, 1fr) minmax(0, 1.35fr);
+  gap: 24px;
+  align-items: stretch;
 }
 
 @media (max-width: 800px) {
@@ -421,6 +421,14 @@ a.onboarding-step:hover { background:var(--surface2); }
 .onboarding-step span { flex:1; }
 .onboarding-step small { color:var(--text3); }
 .onboarding-step b { color:var(--accent); font-size:12px; }
+.stat-cell-income {
+  background: color-mix(in srgb, var(--green) 7%, transparent);
+  border-right: 0;
+}
+.stat-cell-income .stat-label,
+.stat-cell-income .stat-value { color: var(--green); }
+.income-secondary { color:var(--green);font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;opacity:.85 }
+.income-link { display:block;color:var(--text2);font-size:12px;margin-top:6px }
 @media (max-width:700px) {
   .onboarding-card { grid-template-columns:1fr; gap:18px; }
   .hero-total { font-size:42px; }
@@ -655,13 +663,12 @@ a.onboarding-step:hover { background:var(--surface2); }
         <div class="stat-label">Top del mes</div>
         <div class="top3-list" id="card-top3"></div>
       </div>
+      <a class="stat-cell stat-cell-income" href="/ingresos">
+        <div class="stat-label">Ingresos del mes</div>
+        <div class="stat-value" id="month-incomes">—</div>
+        <span class="income-link">Ver ingresos →</span>
+      </a>
     </div>
-
-    <a class="card mt-24" href="/ingresos" style="display:block">
-      <div class="section-header"><div class="section-title">Ingresos del mes</div><span style="font-size:12px;color:var(--text2)">Ver ingresos →</span></div>
-      <div class="card-value" id="month-incomes">—</div>
-      <div class="card-sub">ARS y USD se muestran separados, sin convertir.</div>
-    </a>
 
     <!-- Charts -->
     <div class="charts-grid mt-24">
@@ -817,7 +824,7 @@ a.onboarding-step:hover { background:var(--surface2); }
   // stay in sync with light/dark theme automatically.
   const _css = getComputedStyle(document.documentElement);
   const cssVar = (n, fallback) => (_css.getPropertyValue(n).trim() || fallback);
-  const isDark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+  const isDark = document.documentElement.dataset.theme === 'dark';
 
   const CHART_GRID  = cssVar('--track', 'oklch(1 0 0 / 0.06)');
   const CHART_TICK  = cssVar('--text3', '#5a5a6a');
