@@ -19,8 +19,9 @@ import report_ai
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_VERSION = "2"
+_PROMPT_VERSION = "3"
 _CLASSIFICATION_LOOKBACK_MONTHS = 6
+_CURRENCIES = ("ARS", "USD")
 
 
 def generate_report(year: int, month: int) -> dict:
@@ -29,18 +30,20 @@ def generate_report(year: int, month: int) -> dict:
     has fixed-section data to render."""
     inflation.refresh()
     dossier = dossier_module.build_dossier(year, month)
+    all_variable = [e for cur in _CURRENCIES for e in dossier["currencies"][cur]["variable_expenses"]]
 
     prior_classifications = db.get_recent_classifications_before(
         year, month, lookback_months=_CLASSIFICATION_LOOKBACK_MONTHS
     )
-    classifications = report_ai.classify_expenses(dossier, prior_classifications)
+    classifications = report_ai.classify_expenses(dossier, all_variable, prior_classifications)
 
-    partition = _build_partition(dossier, classifications)
-    dossier["partition"] = partition
+    partitions = _build_partitions(dossier, all_variable, classifications)
+    for cur in _CURRENCIES:
+        dossier["currencies"][cur]["partition"] = partitions[cur]
 
     output = None
     if classifications is not None:
-        output = report_ai.analyze(dossier, partition)
+        output = report_ai.analyze(dossier)
     llm_ok = output is not None
 
     fp = fingerprint(year, month)
@@ -56,7 +59,7 @@ def generate_report(year: int, month: int) -> dict:
     )
 
     if classifications:
-        by_id = {e["expense_id"]: e for e in dossier["variable_expenses"]}
+        by_id = {e["expense_id"]: e for e in all_variable}
         rows = [
             {
                 "expense_id": c["expense_id"],
@@ -75,36 +78,43 @@ def generate_report(year: int, month: int) -> dict:
     return get_report(year, month)
 
 
-def _build_partition(dossier: dict, classifications: list[dict] | None) -> dict:
-    """Aggregates the model's per-expense labels into the three-way split — the one
-    piece of arithmetic the classification call itself never does."""
-    fixed_total = dossier["fixed_expenses"]["total_paid"]
+def _build_partitions(dossier: dict, all_variable: list[dict], classifications: list[dict] | None) -> dict:
+    """Aggregates the model's per-expense labels into a three-way split, one per
+    currency — the one piece of arithmetic the classification call itself never does.
+    A USD expense never contributes to the ARS partition or vice versa."""
+    by_id = {e["expense_id"]: e for e in all_variable}
+    fixed_totals = {cur: dossier["currencies"][cur]["fixed_expenses"]["total_paid"] for cur in _CURRENCIES}
 
     if classifications is None:
-        return {"available": False, "fixed_total": fixed_total}
+        return {cur: {"available": False, "fixed_total": fixed_totals[cur]} for cur in _CURRENCIES}
 
-    by_id = {e["expense_id"]: e for e in dossier["variable_expenses"]}
-    recurring_total = exceptional_total = 0.0
-    recurring_count = exceptional_count = 0
+    totals = {cur: {"recurring_total": 0.0, "recurring_count": 0,
+                     "exceptional_total": 0.0, "exceptional_count": 0} for cur in _CURRENCIES}
     for c in classifications:
         expense = by_id.get(c["expense_id"])
         if expense is None:
             continue
+        cur = expense.get("currency", "ARS")
+        bucket = totals.setdefault(cur, {"recurring_total": 0.0, "recurring_count": 0,
+                                          "exceptional_total": 0.0, "exceptional_count": 0})
         if c["label"] == "recurring":
-            recurring_total += expense["amount"]
-            recurring_count += 1
+            bucket["recurring_total"] += expense["amount"]
+            bucket["recurring_count"] += 1
         else:
-            exceptional_total += expense["amount"]
-            exceptional_count += 1
+            bucket["exceptional_total"] += expense["amount"]
+            bucket["exceptional_count"] += 1
 
     return {
-        "available": True,
-        "fixed_total": fixed_total,
-        "recurring_total": recurring_total,
-        "recurring_count": recurring_count,
-        "exceptional_total": exceptional_total,
-        "exceptional_count": exceptional_count,
-        "variable_total": sum(e["amount"] for e in dossier["variable_expenses"]),
+        cur: {
+            "available": True,
+            "fixed_total": fixed_totals[cur],
+            "recurring_total": totals[cur]["recurring_total"],
+            "recurring_count": totals[cur]["recurring_count"],
+            "exceptional_total": totals[cur]["exceptional_total"],
+            "exceptional_count": totals[cur]["exceptional_count"],
+            "variable_total": sum(e["amount"] for e in all_variable if e.get("currency", "ARS") == cur),
+        }
+        for cur in _CURRENCIES
     }
 
 
