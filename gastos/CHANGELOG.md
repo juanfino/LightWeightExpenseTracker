@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.7.0
+- **Resúmenes trata pesos y dólares como dos monedas de primera clase**, en vez de un informe de pesos con un apéndice de dólares: el total del mes, las tres clases de gasto (fijo/recurrente/excepcional), los gastos fijos, los contrastes contra meses anteriores y "quién registró" ahora tienen un bloque propio por moneda, con la misma jerarquía visual.
+- Se agrega una línea de **equivalencia de referencia** (el gasto en USD valuado a la cotización propia del mes) sólo para transmitir magnitud — nunca se suma a ningún total, contraste ni partición.
+- El análisis narrativo (IA) ahora está obligado a mencionar el gasto en dólares cuando es material (≥10% del equivalente combinado, o si hubo gasto en USD sin cotización para convertir), a etiquetar toda cifra con su símbolo de moneda y a no tratar montos en USD como ajustados por IPC.
+- Se corrigen dos gastos fijos en dólares que quedaban invisibles en el resumen (no sumaban al total fijo ni podían generar una alerta de "fijo sin vincular"), y una cobertura de dólares que podía superar el 100% por dividir contra un total sólo en pesos.
+- **Corrección de un bug preexistente no relacionado:** `get_expenses_for_period_art`, `get_expenses_excluding_period` y `get_months_with_data` aplicaban el ajuste a hora argentina dos veces, lo que podía excluir del mes correcto a cualquier gasto cargado entre la medianoche y las 3am (ART) del día 1 de un mes.
+
 ## 7.6.0
 - La interfaz web adopta universalmente la identidad de **mangoteca**: nuevo logomark de mango, wordmark, favicon y paletas oficiales clara y oscura.
 - Se agrega un selector persistente de apariencia (Sistema, Oscuro o Claro) tanto en el menú de cuenta como en las pantallas públicas.

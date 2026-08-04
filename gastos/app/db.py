@@ -1977,13 +1977,38 @@ def delete_cambio(cambio_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def get_latest_cotizacion_upto(year: int, month: int, lookback_months: int = 12) -> dict | None:
+    """Most recent dollar-operation cotización (either tipo) dated strictly before the
+    given period, looked up to ``lookback_months`` back — the report's equivalence
+    fallback for a period with no dollar operations of its own to derive a rate from."""
+    period_start = f"{year:04d}-{month:02d}-01"
+    lookback_total = year * 12 + (month - 1) - lookback_months
+    lookback_year, lookback_month = lookback_total // 12, lookback_total % 12 + 1
+    lookback_start = f"{lookback_year:04d}-{lookback_month:02d}-01"
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT fecha, cotizacion, tipo
+            FROM cambios_dolar
+            WHERE fecha < ? AND fecha >= ?
+            ORDER BY fecha DESC
+            LIMIT 1
+            """,
+            (period_start, lookback_start),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 # ── Resúmenes mensuales (IA) ────────────────────────────────────────────────
 
 def get_expenses_for_period_art(year: int, month: int, currency: str | None = None) -> list[dict]:
     """All expenses whose ART-adjusted date falls in (year, month) — the cash-basis
-    period the monthly report is built on. Uses date(datetime(created_at, '-3 hours'))
-    rather than raw UTC strftime (unlike some older dashboard queries), so a late-night
-    ART expense that crosses the UTC month boundary lands in the correct month."""
+    period the monthly report is built on. strftime() (see the Postgres compat shim in
+    migrations/0001) already converts its timestamptz argument via
+    `AT TIME ZONE 'America/Argentina/Buenos_Aires'` before formatting, so it must be
+    called on created_at directly — wrapping it in an extra datetime(created_at,
+    '-3 hours') double-applies the ART shift and misfiles any expense from the first
+    three hours of ART on the 1st of a month into the previous month."""
     period = f"{year:04d}-{month:02d}"
     currency_filter = " AND e.currency = ?" if currency else ""
     params = [period] + ([normalize_currency(currency)] if currency else [])
@@ -1999,7 +2024,7 @@ def get_expenses_for_period_art(year: int, month: int, currency: str | None = No
             JOIN users u ON u.id = e.user_id
             LEFT JOIN categories c ON c.id = e.category_id
             LEFT JOIN subcategories s ON s.id = e.subcategory_id
-            WHERE strftime('%Y-%m', datetime(e.created_at, '-3 hours')) = ?
+            WHERE strftime('%Y-%m', e.created_at) = ?
             {currency_filter}
             ORDER BY e.created_at
             """,
@@ -2022,7 +2047,7 @@ def get_expenses_excluding_period(year: int, month: int, currency: str | None = 
                    c.name AS category_name
             FROM expenses e
             LEFT JOIN categories c ON c.id = e.category_id
-            WHERE strftime('%Y-%m', datetime(e.created_at, '-3 hours')) != ?
+            WHERE strftime('%Y-%m', e.created_at) != ?
             {currency_filter}
             ORDER BY e.created_at
             """,
@@ -2033,7 +2058,10 @@ def get_expenses_excluding_period(year: int, month: int, currency: str | None = 
 
 def get_first_expense_date() -> str | None:
     """Date (ART) of the earliest expense ever recorded — a hard fact the report uses
-    to calibrate how much confidence a short history should carry."""
+    to calibrate how much confidence a short history should carry. date(timestamptz)
+    is native Postgres (no compat shim, no built-in TZ conversion), so it correctly
+    needs the explicit -3 hours ART shift here — unlike strftime() above, this one
+    isn't double-applying anything."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT MIN(date(datetime(created_at, '-3 hours'))) AS d FROM expenses"
@@ -2047,7 +2075,7 @@ def get_months_with_data() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT DISTINCT strftime('%Y-%m', datetime(created_at, '-3 hours')) AS ym
+            SELECT DISTINCT strftime('%Y-%m', created_at) AS ym
             FROM expenses
             ORDER BY ym
             """

@@ -203,11 +203,12 @@
     selYearEl.appendChild(opt);
   }
 
-  function fmtAmount(n) {
+  function fmtAmount(n, currency) {
     if (n === null || n === undefined) return "—";
+    const prefix = currency === "USD" ? "U$S " : "$";
     const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
-    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
+    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
   }
 
   function fmtPct(n) {
@@ -253,6 +254,40 @@
     }
   }
 
+  // Reports generated before this feature (prompt_version < 3) store the old
+  // shape: d.base/contrasts/partition/fixed_expenses/taxonomy/registration_coverage
+  // were ARS-only at the top level, and d.usd_expenses was just a bare
+  // {total, count, by_category}. Reshape those into today's currencies.{ARS,USD}
+  // form so old reports still render.
+  function normalizeDossier(d) {
+    if (d.currencies) return d;
+    const usd = d.usd_expenses || {total: 0, count: 0, daily_avg: 0, by_category: []};
+    const noContrast = {available: false};
+    return Object.assign({}, d, {
+      currencies: {
+        ARS: {
+          currency: "ARS", base: d.base, contrasts: d.contrasts,
+          partition: d.partition || {available: false},
+          fixed_expenses: d.fixed_expenses || {items: [], unpaid: [], total_paid: 0},
+          taxonomy: d.taxonomy, registration_coverage: d.registration_coverage || [],
+        },
+        USD: {
+          currency: "USD", base: usd,
+          contrasts: {prev_month: noContrast, avg_3m: noContrast, avg_6m: noContrast, same_month_last_year: noContrast},
+          partition: {available: false},
+          fixed_expenses: {items: [], unpaid: [], total_paid: 0},
+          taxonomy: {uncategorized_total: 0, uncategorized_count: 0, new_categories: [], absent_categories: []},
+          registration_coverage: [],
+        },
+      },
+      equivalence: {
+        available: false, usd_total: usd.total || 0,
+        ars_total: d.base ? d.base.total : 0,
+        combined_ars_equivalent: d.base ? d.base.total : 0, usd_share_pct: 0,
+      },
+    });
+  }
+
   function render(report) {
     if (!report) {
       metaEl.textContent = "—";
@@ -272,9 +307,11 @@
     metaEl.textContent = `Versión generada el ${report.generated_at} con ${report.model || "?"}`
       + (report.llm_ok ? "" : " — análisis narrativo no disponible");
 
-    const d = report.dossier;
+    const d = normalizeDossier(report.dossier);
     const out = report.output;
-    const partition = d.partition || {available: false};
+    const ars = d.currencies.ARS;
+    const usd = d.currencies.USD;
+    const hasUsd = !!(usd.base && usd.base.count);
 
     const parts = [];
 
@@ -282,38 +319,61 @@
       parts.push(`<div class="dossier-only-note">El análisis narrativo no se pudo generar esta vez (falló la llamada al modelo). Los datos numéricos de abajo sí están completos y son correctos.</div>`);
     }
 
-    parts.push(renderHero(d));
+    parts.push(renderHero(ars, usd, hasUsd, d.equivalence));
     if (out) parts.push(renderNarrative(out));
-    parts.push(renderKinds(partition, d));
-    parts.push(renderUsdExpenses(d.usd_expenses));
+    parts.push(renderKinds(ars, "ARS", "Las tres clases de gasto — pesos"));
+    if (hasUsd) parts.push(renderKinds(usd, "USD", "Las tres clases de gasto — dólares"));
     parts.push(renderDollars(d.dollars));
-    parts.push(renderCoverage(d.registration_coverage));
+    parts.push(renderCoverage(ars.registration_coverage, usd.registration_coverage));
     if (out && out.questions && out.questions.length) parts.push(renderQuestions(out.questions));
 
     root.innerHTML = parts.join("");
   }
 
-  function renderHero(d) {
-    const prev = d.contrasts.prev_month;
-    let trend = "";
-    if (prev.available) {
-      const cls = prev.nominal_delta >= 0 ? "trend-up" : "trend-down";
-      trend += `<span class="${cls}">${fmtPct(prev.nominal_delta_pct)} nominal vs. mes anterior</span>`;
+  function heroTrend(contrasts, currency) {
+    const prev = contrasts.prev_month;
+    if (!prev || !prev.available) return `<span>Sin mes anterior para comparar todavía</span>`;
+    const cls = prev.nominal_delta >= 0 ? "trend-up" : "trend-down";
+    let trend = `<span class="${cls}">${fmtPct(prev.nominal_delta_pct)} nominal vs. mes anterior</span>`;
+    if (currency === "ARS") {
       if (prev.real_delta_pct !== undefined) {
         const clsR = prev.real_delta >= 0 ? "trend-up" : "trend-down";
         trend += `<span class="${clsR}">${fmtPct(prev.real_delta_pct)} real vs. mes anterior</span>`;
       } else {
         trend += `<span>real no disponible (sin índice IPC)</span>`;
       }
-    } else {
-      trend = `<span>Sin mes anterior para comparar todavía</span>`;
     }
+    return trend;
+  }
+
+  function heroCard(cur, currency, label) {
+    return `
+      <div>
+        <div class="card-title">Total del mes · ${label}</div>
+        <div class="hero-total">${fmtAmount(cur.base.total, currency)}</div>
+        <div class="hero-trend">${heroTrend(cur.contrasts, currency)}</div>
+        <div class="card-sub" style="margin-top:8px">${cur.base.count} gastos · promedio diario ${fmtAmount(cur.base.daily_avg, currency)}</div>
+      </div>`;
+  }
+
+  function equivalenceLine(equivalence, hasUsd) {
+    if (!hasUsd || !equivalence || !equivalence.usd_total) return "";
+    if (!equivalence.available) {
+      return `<div class="card-sub mt-8">Sin cotización propia para estimar un equivalente en pesos de los ${fmtAmount(equivalence.usd_total, "USD")} de este mes.</div>`;
+    }
+    const rateLabel = equivalence.rate_source === "mes_anterior" && equivalence.rate_period
+      ? `a la última cotización registrada (${MONTHS_ES[equivalence.rate_period.month]} ${equivalence.rate_period.year}: ${fmtAmount(equivalence.rate, "ARS")})`
+      : `a tu cotización del mes (${fmtAmount(equivalence.rate, "ARS")})`;
+    return `<div class="card-sub mt-8">≈ ${fmtAmount(equivalence.usd_total_in_ars, "ARS")} si valuás los ${fmtAmount(equivalence.usd_total, "USD")} ${rateLabel}. Es sólo referencia — ningún otro número de esta página mezcla monedas.</div>`;
+  }
+
+  function renderHero(ars, usd, hasUsd, equivalence) {
+    const arsCard = heroCard(ars, "ARS", "pesos");
+    const usdCard = hasUsd ? heroCard(usd, "USD", "dólares") : "";
     return `
       <div class="card">
-        <div class="card-title">Total del mes</div>
-        <div class="hero-total">${fmtAmount(d.base.total)}</div>
-        <div class="hero-trend">${trend}</div>
-        <div class="card-sub" style="margin-top:8px">${d.base.count} gastos · promedio diario ${fmtAmount(d.base.daily_avg)}</div>
+        <div class="${hasUsd ? "grid-2" : ""}">${arsCard}${usdCard}</div>
+        ${equivalenceLine(equivalence, hasUsd)}
       </div>`;
   }
 
@@ -327,16 +387,22 @@
       </div>`;
   }
 
-  function renderKinds(partition, d) {
+  function renderKinds(cur, currency, title) {
+    const partition = cur.partition || {available: false};
     const fixed = partition.fixed_total || 0;
     const recurring = partition.available ? partition.recurring_total : 0;
     const exceptional = partition.available ? partition.exceptional_total : 0;
     const total = fixed + recurring + exceptional || 1;
     const note = partition.available ? "" :
       `<div class="dossier-only-note">La clasificación recurrente / excepcional no está disponible para este resumen.</div>`;
+    const categoryRows = (currency === "USD" && cur.base.by_category && cur.base.by_category.length)
+      ? `<div style="margin-top:16px">${cur.base.by_category.map(r =>
+          `<div class="card-sub">${escapeHtml(r.category)}: <b>${fmtAmount(r.total, "USD")}</b></div>`
+        ).join('')}</div>`
+      : '';
     return `
       <div class="card mt-24">
-        <div class="section-title" style="margin-bottom:16px">Las tres clases de gasto</div>
+        <div class="section-title" style="margin-bottom:16px">${title}</div>
         ${note}
         <div class="kinds-bar">
           <div class="kind-fixed" style="width:${fixed/total*100}%"></div>
@@ -346,61 +412,61 @@
         <div class="kinds-grid">
           <div class="kind-card">
             <div class="stat-label"><span class="kind-dot" style="background:var(--amber)"></span>Fijo — evento</div>
-            <div class="stat-value">${fmtAmount(fixed)}</div>
+            <div class="stat-value">${fmtAmount(fixed, currency)}</div>
           </div>
           <div class="kind-card">
             <div class="stat-label"><span class="kind-dot" style="background:var(--green)"></span>Recurrente — comportamiento</div>
-            <div class="stat-value">${partition.available ? fmtAmount(recurring) : "—"}</div>
+            <div class="stat-value">${partition.available ? fmtAmount(recurring, currency) : "—"}</div>
           </div>
           <div class="kind-card">
             <div class="stat-label"><span class="kind-dot" style="background:var(--red)"></span>Excepcional — ruido</div>
-            <div class="stat-value">${partition.available ? fmtAmount(exceptional) : "—"}</div>
+            <div class="stat-value">${partition.available ? fmtAmount(exceptional, currency) : "—"}</div>
           </div>
         </div>
+        ${categoryRows}
       </div>`;
   }
 
   function renderDollars(dollars) {
     const cov = dollars.coverage_ratio;
-    const covText = cov === null || cov === undefined ? "sin gastos este mes" : (cov * 100).toFixed(0) + "% del gasto del mes";
+    const covText = cov === null || cov === undefined
+      ? "Sin gastos este mes para calcular cobertura."
+      : `Cobertura: ${(cov * 100).toFixed(0)}% del gasto del mes (${dollars.coverage_basis}) vino de pesos obtenidos vendiendo dólares.`;
+    function opBlock(label, op) {
+      const range = op.cnt
+        ? `USD ${op.total_usd.toLocaleString("es-AR")} · cotización ${op.cotizacion_min.toFixed(0)}–${op.cotizacion_max.toFixed(0)}`
+        : "sin operaciones este mes";
+      return `
+        <div>
+          <div class="stat-label">${label}</div>
+          <div class="stat-value">${fmtAmount(op.total_ars, "ARS")}</div>
+          <div class="card-sub">${range}</div>
+        </div>`;
+    }
     return `
       <div class="card mt-24">
         <div class="section-title" style="margin-bottom:16px">Dólares</div>
         <div class="grid-2">
-          <div>
-            <div class="stat-label">Venta (obtención de pesos)</div>
-            <div class="stat-value">${fmtAmount(dollars.venta.total_ars)}</div>
-            <div class="card-sub">USD ${dollars.venta.total_usd.toLocaleString("es-AR")} · cotización ${dollars.venta.cotizacion_min.toFixed(0)}–${dollars.venta.cotizacion_max.toFixed(0)}</div>
-          </div>
-          <div>
-            <div class="stat-label">Compra</div>
-            <div class="stat-value">${fmtAmount(dollars.compra.total_ars)}</div>
-            <div class="card-sub">USD ${dollars.compra.total_usd.toLocaleString("es-AR")} · cotización ${dollars.compra.cotizacion_min.toFixed(0)}–${dollars.compra.cotizacion_max.toFixed(0)}</div>
-          </div>
+          ${opBlock("Venta (obtención de pesos)", dollars.venta)}
+          ${opBlock("Compra", dollars.compra)}
         </div>
-        <div class="card-sub mt-8">Cobertura: ${covText} vino de pesos obtenidos vendiendo dólares.</div>
+        <div class="card-sub mt-8">${covText}</div>
       </div>`;
   }
 
-  function renderUsdExpenses(base) {
-    if (!base || !base.count) return '';
-    const rows = (base.by_category || []).map(r =>
-      `<div class="card-sub">${escapeHtml(r.category)}: <b>U$S ${Number(r.total).toLocaleString('es-AR')}</b></div>`
-    ).join('');
-    return `<div class="card mt-24"><div class="section-title" style="margin-bottom:12px">Gastos en USD</div>
-      <div class="stat-value">U$S ${Number(base.total).toLocaleString('es-AR')}</div>
-      <div class="card-sub" style="margin-bottom:10px">${base.count} gastos. Se muestran sin convertir a pesos ni aplicar IPC.</div>${rows}</div>`;
-  }
-
-  function renderCoverage(coverage) {
-    const rows = coverage.map(c =>
-      `<div class="stat-cell"><div class="stat-label">${escapeHtml(c.user)}</div><div class="stat-value">${c.count}</div><div class="card-sub">${fmtAmount(c.total)}</div></div>`
-    ).join("");
+  function renderCoverage(arsCoverage, usdCoverage) {
+    function rows(coverage, currency) {
+      return coverage.map(c =>
+        `<div class="stat-cell"><div class="stat-label">${escapeHtml(c.user)}</div><div class="stat-value">${c.count}</div><div class="card-sub">${fmtAmount(c.total, currency)}</div></div>`
+      ).join("");
+    }
+    const usdRows = (usdCoverage && usdCoverage.length) ? rows(usdCoverage, "USD") : "";
     return `
       <div class="card mt-24">
         <div class="section-title" style="margin-bottom:8px">Quién registró</div>
         <div class="card-sub" style="margin-bottom:16px">Cuenta quién cargó cada gasto en la app, no quién lo pagó — no es un reparto de gastos.</div>
-        <div class="stat-strip" style="border:none">${rows}</div>
+        <div class="stat-strip" style="border:none">${rows(arsCoverage, "ARS")}</div>
+        ${usdRows ? `<div class="stat-strip mt-8" style="border:none">${usdRows}</div>` : ""}
       </div>`;
   }
 

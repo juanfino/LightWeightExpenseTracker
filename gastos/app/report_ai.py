@@ -95,6 +95,11 @@ _CLASSIFY_SYSTEM = (
     "classified in prior months. Prefer staying consistent unless the amount or context "
     "clearly indicates something changed (same store, a wildly different amount -> "
     "probably a genuinely different kind of purchase, not the same recurring one).\n\n"
+    "Expenses come in two currencies, ARS and USD, each carrying its own 'currency' "
+    "field. Never compare or weigh amounts across currencies — a USD amount has fewer "
+    "digits than an ARS one but is not therefore small. Recurrence evidence is also "
+    "currency-scoped: a concept's prior occurrences only count if they're in the same "
+    "currency as the expense you're classifying.\n\n"
     "Return ONLY classifications. Do not narrate, do not sum amounts, do not analyze "
     "the month — a separate step aggregates your labels."
 )
@@ -114,19 +119,46 @@ _ANALYZE_SYSTEM = (
     "advice. Use type=\"uncategorized\" for the aggregate uncategorized-spending "
     "question (fixed_expense_id null), type=\"unlinked_fixed\" once per unpaid/"
     "unlinked fixed expense you want to flag (set fixed_expense_id to its id from the "
-    "dossier), type=\"other\" for anything else worth flagging that doesn't map to "
-    "either link (fixed_expense_id null). Never invent a fixed_expense_id that isn't "
-    "in the dossier.\n"
+    "dossier — fixed expenses exist in both currencies.ARS.fixed_expenses and "
+    "currencies.USD.fixed_expenses, and ids are unique across both), type=\"other\" for "
+    "anything else worth flagging that doesn't map to either link (fixed_expense_id "
+    "null). Never invent a fixed_expense_id that isn't in the dossier.\n"
     "- If hard_facts.months_available is small, present every contrast as an "
     "observation ('recién es el N-ésimo mes de datos') rather than a conclusion about "
     "behavior change — recent app adoption explains differences at least as well as "
-    "real spending changes, and you must say so explicitly when history is short.\n"
+    "real spending changes, and you must say so explicitly when history is short. Each "
+    "currency block also carries its own months_available — a currency with little "
+    "history of its own gets the same treatment even if the other currency has plenty.\n"
     "- registration_coverage measures who LOGGED an expense, not who spent the money — "
     "never infer spending behavior, fairness, or effort from it; if you mention it, "
     "describe it only as app usage.\n"
-    "- The fixed/recurring/exceptional partition is already computed — cite it, don't "
-    "recompute or contradict it.\n"
-    "- Do not invent URLs, links, category names, or ids beyond what's in the input."
+    "- The fixed/recurring/exceptional partition is already computed per currency "
+    "(currencies.ARS.partition, currencies.USD.partition) — cite it, don't recompute "
+    "or contradict it.\n"
+    "- Do not invent URLs, links, category names, or ids beyond what's in the input.\n\n"
+    "Currency rules — this dossier covers two independent currencies, ARS and USD, as "
+    "parallel same-shape blocks under \"currencies\". This is not a pesos report with a "
+    "dollar footnote: both currencies are first-class and both deserve findings when "
+    "material.\n"
+    "- NEVER sum, average, or otherwise combine an ARS amount with a USD amount. Each "
+    "currency's totals, contrasts, and partition are self-contained.\n"
+    "- Every amount you write carries its currency's symbol explicitly: \"$\" for ARS, "
+    "\"U$S\" for USD. A bare number with no symbol is not acceptable.\n"
+    "- IPC/inflation ('real' figures) only exists for ARS. currencies.USD.contrasts "
+    "entries carry real_not_applicable instead of real figures — never call a USD "
+    "amount 'real' or inflation-adjusted, and never explain a USD change using IPC.\n"
+    "- \"equivalence\" is a reference-only ARS-equivalent of this month's USD spending, "
+    "at the family's own dollar rate (equivalence.rate, from equivalence.rate_source). "
+    "You may cite it AT MOST ONCE, only to convey how large the USD spending was in "
+    "terms the reader already thinks in, and always labeled as an approximation that "
+    "names the rate used. Never treat it as a total, never feed it into a contrast, and "
+    "never use it as if it were a real peso expense.\n"
+    "- Materiality rule: if equivalence.usd_share_pct >= 10, or if there is USD "
+    "spending but equivalence.available is false, the headline and summary MUST "
+    "mention the USD spending explicitly (its own total, in U$S, plus a finding about "
+    "it) — a large or unconvertible dollar expense cannot be relegated to a minor "
+    "finding or omitted. Below that threshold, mention USD only if there's something "
+    "specific worth noting (e.g. a new recurring USD subscription)."
 )
 
 
@@ -148,10 +180,10 @@ def _first_text(message) -> str | None:
     return None
 
 
-def classify_expenses(dossier: dict, prior_classifications: list[dict]) -> list[dict] | None:
-    """Returns [{expense_id, label, confidence}] for the dossier's variable expenses,
-    or None if the call failed (report.py degrades to a dossier-only report)."""
-    variable = dossier["variable_expenses"]
+def classify_expenses(dossier: dict, variable: list[dict], prior_classifications: list[dict]) -> list[dict] | None:
+    """Returns [{expense_id, label, confidence}] for the given variable expenses
+    (both currencies, each item already carrying its own "currency"), or None if the
+    call failed (report.py degrades to a dossier-only report)."""
     if not variable:
         return []
 
@@ -160,7 +192,8 @@ def classify_expenses(dossier: dict, prior_classifications: list[dict]) -> list[
         return None
 
     prior_lines = [
-        f"- {c['year']:04d}-{c['month']:02d}: \"{c['concept']}\" (${c['amount']:.0f}) -> {c['label']}"
+        f"- {c['year']:04d}-{c['month']:02d}: \"{c['concept']}\" "
+        f"({'U$S' if c.get('currency') == 'USD' else '$'}{c['amount']:.0f}) -> {c['label']}"
         for c in prior_classifications
     ]
     payload = {
@@ -201,14 +234,16 @@ def classify_expenses(dossier: dict, prior_classifications: list[dict]) -> list[
         return None
 
 
-def analyze(dossier: dict, partition: dict) -> dict | None:
+def analyze(dossier: dict) -> dict | None:
     """Returns {headline, summary, findings, questions}, or None if the call failed
-    (report.py still persists the dossier-only report with llm_ok=False)."""
+    (report.py still persists the dossier-only report with llm_ok=False). The
+    fixed/recurring/exceptional partition is already embedded per currency at
+    dossier["currencies"][cur]["partition"] by the time this is called."""
     client = _client()
     if client is None:
         return None
 
-    payload = {"dossier": dossier, "partition": partition}
+    payload = {"dossier": dossier}
 
     try:
         call_started = llm_usage.started()
