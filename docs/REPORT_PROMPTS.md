@@ -319,25 +319,34 @@ call:
 report_id = db.create_report(
     year=year, month=month,
     model=report_ai.model_name(),      # e.g. "claude-opus-4-8"
-    prompt_version=_PROMPT_VERSION,    # currently "3", a plain string constant in report.py
+    prompt_version=report_ai.prompt_version(),
     dossier_json=..., output_json=..., fingerprint=fp, llm_ok=llm_ok,
 )
 ```
 
-So a past report **can** be traced back to which model served it, and to a
-developer-maintained version number for "the prompt as it existed at generation time."
+`prompt_version()` derives the value from the exact response-shaping configuration used
+by both calls: the complete `_CLASSIFY_SYSTEM` and `_ANALYZE_SYSTEM` text, both JSON
+schemas, `max_tokens`, adaptive-thinking configuration, output effort and structured-
+output settings. The same dictionaries are expanded into `client.messages.create()` and
+serialized for the fingerprint, so the audited configuration cannot drift from the one
+actually sent. Serialization uses sorted keys and compact separators before SHA-256,
+making dictionary insertion order irrelevant and the result stable across machines and
+restarts. The value is computed once per process and has this shape:
 
-**Gap** (not fixed in this session, per the surrounding task's scope): `_PROMPT_VERSION`
-is a hand-maintained string (`"3"`) in `report.py`, disconnected from the actual prompt
-text in `report_ai.py` — nothing ties a change to `_CLASSIFY_SYSTEM`/`_ANALYZE_SYSTEM`
-(or to the JSON schemas, `max_tokens`, `thinking`/`effort` settings) to a bump of that
-constant, and nothing hashes or otherwise fingerprints the prompt text itself. The two
-system prompts and the schemas are not persisted anywhere — only their retroactively-
-assigned version label. Concretely: if a future change edits `_ANALYZE_SYSTEM` without
-remembering to bump `_PROMPT_VERSION`, every report generated before and after that
-change would carry the same `prompt_version = "3"`, and there would be no way,
-looking only at the `reports` table, to tell which prompt actually produced a given
-row's `output_json`. This is a real limitation to keep in mind for the
-per-family-configurable-prompt design: today there is exactly one global prompt, its
-full text lives only in source control (git history via `report_ai.py`), and the stored
-`prompt_version` is a manual, unenforced label rather than a derived identifier.
+```text
+report-v1-<first 12 hex chars>:sha256:<full 64-char SHA-256>
+```
+
+The short prefix is convenient when inspecting rows; the full digest preserves the
+complete identity. `v1` identifies the fingerprint format, not a manually maintained
+prompt generation. Editing any covered live value changes the digest automatically.
+
+The model name is deliberately excluded because it is already stored independently in
+`reports.model`; otherwise a model-only deployment would misleadingly look like a prompt
+change. User-turn data is also excluded because it is the per-report input, not prompt
+configuration. The full prompt text is still not copied into each report row.
+
+Rows created before this mechanism retain their original labels (for example
+`prompt_version = "3"`). There is no migration or retroactive fingerprint: the exact
+historical prompt configuration was not persisted, so assigning one after the fact would
+create false audit confidence. Those rows remain readable by `/resumenes` unchanged.
