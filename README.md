@@ -4,12 +4,13 @@ A family expense tracker: send a message like `Supermercado 150000` to a Telegra
 
 ## Current product
 
-The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.6.0**.
+The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.10.1**.
 The application now provides:
 
 - PostgreSQL tenancy enforced with forced Row-Level Security.
 - Google/email authentication, family invitations and self-service Telegram linking.
 - Per-family LLM quotas and concurrency isolation.
+- Expense entry via plain text, a natural-language conversational layer (edits, taxonomy management, read-only reports), OCR receipt-photo scanning, and voice notes — all going through the same categorization/fixed-expense-linking pipeline.
 - Expenses, fixed expenses, incomes, USD operations, shopping lists, AI monthly reports and portable CSV/ZIP exports.
 - A superadmin-only operational panel for cross-family adoption, LLM usage/cost, quota overrides and recent failures.
 
@@ -23,9 +24,9 @@ business data.
 ### Making a change
 
 1. Code your change locally
-2. Push to `main` (or merge a PR to `main`)
-3. GitHub Actions builds and pushes the image automatically (~2-3 min)
-4. Check the Actions tab to confirm the run is green
+2. Push to `main` (or merge a PR to `main`) — every PR and every push to `main` also runs `.github/workflows/test.yml` (unit tests plus two Postgres smoke tests against a real `postgres:17-alpine` service container)
+3. GitHub Actions builds and pushes the image automatically (~2-3 min, `.github/workflows/docker-publish.yml`)
+4. Check the Actions tab to confirm both runs are green
 
 The image is published to `ghcr.io/juanfino/lightweightexpensetracker:latest` (multi-arch: `linux/arm64`, `linux/amd64`). The same commit is also tagged with its git SHA for traceability.
 
@@ -50,7 +51,7 @@ without being sent to the family Telegram chat.
 - Google always shows the account selector; email OTP reaches the verified sender
 - `/dashboard` redirects to `/login` without a session and private APIs return `401`
 - Bot responds in Telegram
-- The database reports Alembic head `0008`
+- The database reports Alembic head `0009`
 - The configured superadmin can open `/superadmin`; a regular family admin receives `403`
 - The avatar popup opens above page content and exposes the applicable administration, export and logout actions
 
@@ -70,6 +71,7 @@ without being sent to the family Telegram chat.
 | `RESEND_FROM_EMAIL` | No | Verified sender; defaults to `acceso@juampifinochietto.com` |
 | `TURNSTILE_SECRET` | Yes | Private Cloudflare Turnstile siteverify secret |
 | `ANTHROPIC_API_KEY` | No | Enables OCR of ticket photos, voice/dollar extraction, and the natural-language intent layer |
+| `REPORT_ANTHROPIC_MODEL` | No | Default: `claude-opus-4-8`. Model used for the monthly report's two LLM calls, kept separate from the Haiku model used everywhere else |
 | `OPENAI_API_KEY` | No | Enables voice message transcription (Whisper) |
 | `DATABASE_URL` | Yes | PostgreSQL connection URL |
 | `POSTGRES_PASSWORD` | Yes | PostgreSQL service password |
@@ -77,7 +79,7 @@ without being sent to the family Telegram chat.
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Yes | Bucket-scoped R2 credentials |
 | `DASHBOARD_PORT` | No | Dashboard port (default: `5000`; the Pi sets this to `8090` to free up 5000 for Frigate) |
 
-Copy `.env.example` to `~/.env` on the Pi and fill in the values.
+Copy the repo-root `.env.example` to `~/.env` on the Pi and fill in the values. (There is also a `gastos/.env.example` — it predates the PostgreSQL migration and still references a `DB_PATH`/SQLite setup; it is stale and should not be used.)
 
 ### Persistent data
 
