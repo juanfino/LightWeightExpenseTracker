@@ -807,6 +807,15 @@
     })();
   </script>
 
+  <script>
+    window.MANGOTECA_MONEY = {
+      locale: {{ reader_locale|tojson }},
+      defaultCurrency: {{ default_currency|tojson }},
+      currencies: {{ currency_catalog|tojson }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename='money.js') }}"></script>
+
   {% block scripts %}{% endblock %}
 
   <script>

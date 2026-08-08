@@ -302,7 +302,7 @@
       <label class="form-label">Monto estimado (opcional)</label>
       <input type="number" id="edit-amount" placeholder="Ej: 180000" min="0" step="any">
     </div>
-    <div class="form-row"><label class="form-label">Moneda</label><select id="edit-currency"><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
+    <div class="form-row"><label class="form-label">Moneda</label><select id="edit-currency">{% for currency in currency_catalog %}<option value="{{ currency.code }}"{% if currency.code == default_currency %} selected{% endif %}>{{ currency.code }}</option>{% endfor %}</select></div>
     <div class="form-row">
       <label class="form-label">Categoría</label>
       <select id="edit-category"></select>
@@ -329,13 +329,7 @@
   let selMonth = {{ month }};
 
   // ── Formatting ─────────────────────────────────────────────────────────────
-  function fmtAmount(n, currency) {
-    if (n === null || n === undefined) return "—";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    const prefix = currency === 'USD' ? 'U$S ' : '$';
-    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
-    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
+  const fmtAmount = MoneyFormat.formatAmount;
 
   // Category palette keyed by name (design tokens); DB color is only a fallback.
   const CAT_COLORS = {
@@ -377,7 +371,7 @@
     }
 
     const countPaid  = statusRows.filter(r => r.paid).length;
-    const totals = ['ARS', 'USD'].map(currency => ({
+    const totals = [...new Set(statusRows.map(r => r.currency))].map(currency => ({
       currency,
       estimated: statusRows.filter(r => r.currency === currency).reduce((s, r) => s + (r.estimated_amount || 0), 0),
       paid: statusRows.filter(r => r.currency === currency && r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0),
@@ -427,7 +421,7 @@
     payFixedId = feId;
     document.getElementById('pay-title').textContent  = `Registrar pago: ${concept}`;
     document.getElementById('pay-amount').value       = estimated || '';
-    document.getElementById('pay-currency-prefix').textContent = currency === 'USD' ? 'U$S' : '$';
+    document.getElementById('pay-currency-prefix').textContent = MoneyFormat.metadata(currency).symbol;
 
     // Default date: today if we're looking at the current month, otherwise the 1st of
     // the period being viewed — a past period's payment must not be born dated today,
@@ -614,7 +608,7 @@
     document.getElementById('edit-title').textContent   = fe ? 'Editar gasto fijo' : 'Agregar gasto fijo';
     document.getElementById('edit-concept').value       = fe ? fe.concept : '';
     document.getElementById('edit-amount').value        = (fe && fe.estimated_amount) ? fe.estimated_amount : '';
-    document.getElementById('edit-currency').value      = fe ? fe.currency : 'ARS';
+    document.getElementById('edit-currency').value      = fe ? fe.currency : MoneyFormat.defaultCurrency;
     const catSel = document.getElementById('edit-category');
     catSel.value = (fe && fe.category_id) ? fe.category_id : '';
     await loadSubcategoriesForEdit(catSel.value, fe ? fe.subcategory_id : null);

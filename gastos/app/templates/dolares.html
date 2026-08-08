@@ -234,19 +234,8 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
   // ── Formatting ───────────────────────────────────────────────────────────────
-  function fmtARS(n) {
-    if (n === null || n === undefined) return "—";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return "$" + Math.round(n).toLocaleString("es-AR");
-    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
-
-  function fmtUSD(n) {
-    if (n === null || n === undefined) return "—";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return "U$S " + Math.round(n).toLocaleString("es-AR");
-    return "U$S " + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
+  const fmtARS = n => MoneyFormat.formatAmount(n, "ARS");
+  const fmtUSD = n => MoneyFormat.formatAmount(n, "USD");
 
   function fmtMes(ym) {
     const MONTHS_ES = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
@@ -303,7 +292,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         scales: {
           x: { ticks: { color: tickColor }, grid: { color: gridColor } },
           y: {
-            ticks: { color: tickColor, callback: v => "U$S " + v.toLocaleString("es-AR") },
+            ticks: { color: tickColor, callback: fmtUSD },
             grid: { color: gridColor },
           },
         },
@@ -340,7 +329,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         scales: {
           x: { ticks: { color: tickColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
           y: {
-            ticks: { color: tickColor, callback: v => "$" + v.toLocaleString("es-AR") },
+            ticks: { color: tickColor, callback: fmtARS },
             grid: { color: gridColor },
           },
         },
@@ -373,7 +362,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
         scales: {
           x: { ticks: { color: tickColor }, grid: { color: gridColor } },
           y: {
-            ticks: { color: tickColor, callback: v => "$" + v.toLocaleString("es-AR") },
+            ticks: { color: tickColor, callback: fmtARS },
             grid: { color: gridColor },
           },
         },

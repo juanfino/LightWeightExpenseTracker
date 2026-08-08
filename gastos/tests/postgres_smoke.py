@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 import db
+import pgcompat
 import sqlro
 
 
@@ -17,6 +18,30 @@ def main():
     assert stored["concept"] == "Prueba PostgreSQL"
     assert stored["amount"] == Decimal("123.45")
     assert isinstance(stored["amount"], Decimal)
+    assert set(db.SUPPORTED_CURRENCIES) == {"ARS", "USD", "BRL", "EUR"}
+    with pgcompat.current_pool().connection() as conn:
+        fk_names = {
+            row[0]
+            for row in conn.execute(
+                "SELECT conname FROM pg_constraint WHERE contype = 'f' "
+                "AND conname = ANY(%s)",
+                ([
+                    "fk_expenses_currency",
+                    "fk_fixed_expenses_currency",
+                    "fk_incomes_currency",
+                    "fk_expense_classifications_currency",
+                    "fk_families_default_currency",
+                ],),
+            ).fetchall()
+        }
+        assert len(fk_names) == 5, fk_names
+        try:
+            conn.execute("UPDATE families SET default_currency = 'ZZZ' WHERE id = 1")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        else:
+            raise AssertionError("currency FK accepted an unknown code")
     assert db.get_recent_expenses()
     assert db.get_expense_years()
     assert db.get_expenses_today()

@@ -159,6 +159,14 @@ def _auth_template_context():
         "shopping_pending_count": (
             db.shopping_pending_count() if getattr(g, "current_user", None) else 0
         ),
+        "currency_catalog": db.get_currencies(),
+        "reader_locale": money.READER_LOCALE,
+        "default_currency": (
+            db.get_family_default_currency()
+            if getattr(g, "current_user", None)
+            and g.current_user.get("family_id")
+            else db.DEFAULT_CURRENCY
+        ),
     }
     if hasattr(g, "period_year"):
         context.update({
@@ -302,9 +310,13 @@ def _row_to_dict(row) -> dict:
 
 
 def _currency_arg() -> str:
-    """Validate dashboard currency input; ARS remains the default surface."""
+    """Validate dashboard currency input using the current family's default."""
     body = request.get_json(silent=True) or {}
-    return db.normalize_currency(request.args.get("currency") or body.get("currency") or "ARS")
+    return db.normalize_currency(
+        request.args.get("currency")
+        or body.get("currency")
+        or db.get_family_default_currency()
+    )
 
 
 def _require_superadmin():
@@ -1021,7 +1033,7 @@ def api_expenses_add():
     subcategory_id = data.get("subcategory_id")
     user_id     = data.get("user_id")
     date_str    = (data.get("date") or "").strip()
-    currency    = (data.get("currency") or "ARS").upper()
+    currency    = (data.get("currency") or db.get_family_default_currency()).upper()
 
     if not concept or amount is None or not user_id or not date_str:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -1111,7 +1123,7 @@ def api_expenses_update():
     subcategory_id   = data.get("subcategory_id")    # may be None / null
     fixed_expense_id = data.get("fixed_expense_id")  # may be None / null
     date_str         = (data.get("date") or "").strip() or None
-    currency         = (data.get("currency") or "ARS").upper()
+    currency         = (data.get("currency") or db.get_family_default_currency()).upper()
 
     if not expense_id or not concept or amount is None:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
@@ -1356,7 +1368,7 @@ def api_fixed_expenses_add():
     concept          = (data.get("concept") or "").strip()
     estimated_amount = data.get("estimated_amount")
     category_id      = data.get("category_id")
-    currency         = data.get("currency") or "ARS"
+    currency         = data.get("currency") or db.get_family_default_currency()
     if not concept:
         return jsonify({"ok": False, "error": "El concepto es obligatorio"}), 400
     try:
@@ -1706,7 +1718,9 @@ def _validated_income_payload(data):
         if amount <= 0:
             raise ValueError
         datetime.strptime(date_str, "%Y-%m-%d")
-        currency = db.normalize_currency(data.get("currency"))
+        currency = db.normalize_currency(
+            data.get("currency") or db.get_family_default_currency()
+        )
         category_id = int(data["income_category_id"]) if data.get("income_category_id") else None
     except (TypeError, ValueError, InvalidOperation):
         return None

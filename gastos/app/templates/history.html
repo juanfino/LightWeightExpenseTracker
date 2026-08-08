@@ -185,7 +185,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
           <option value="variable">Solo variables</option>
         </select>
       </div>
-      <div class="filter-group"><label class="filter-label" for="f-currency">Moneda</label><select id="f-currency"><option value="">Todas</option><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
+      <div class="filter-group"><label class="filter-label" for="f-currency">Moneda</label><select id="f-currency"><option value="">Todas</option>{% for currency in currency_catalog %}<option value="{{ currency.code }}">{{ currency.code }}</option>{% endfor %}</select></div>
       <div class="filter-group">
         <label class="filter-label" for="f-user">Usuario</label>
         <select id="f-user">
@@ -267,10 +267,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       <div style="display:flex; gap:10px; align-items:flex-end">
         <div class="filter-group" style="flex:0 0 auto">
           <label class="filter-label" for="add-currency">Moneda</label>
-          <select id="add-currency" style="width:auto; padding:9px 8px; font-size:13px">
-            <option value="ARS">ARS</option>
-            <option value="USD">USD</option>
-          </select>
+          <select id="add-currency" style="width:auto; padding:9px 8px; font-size:13px">{% for currency in currency_catalog %}<option value="{{ currency.code }}"{% if currency.code == default_currency %} selected{% endif %}>{{ currency.code }}</option>{% endfor %}</select>
         </div>
         <div class="filter-group" style="flex:1">
           <label class="filter-label" for="add-amount">Monto</label>
@@ -400,13 +397,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   });
 
   // ── Formateo ───────────────────────────────────────────────────────────────
-  function fmtAmount(n, currency) {
-    if (n === null || n === undefined) return "—";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    const prefix = currency === 'USD' ? 'U$S ' : '$';
-    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
-    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
+  const fmtAmount = MoneyFormat.formatAmount;
 
   function fmtDate(s) {
     if (!s) return "—";
@@ -464,7 +455,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
       + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
       + '<td class="hide-mobile" data-label="Gasto fijo"><select id="ei-fixed-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Ninguno —</option>' + fixedOptions + '</select></td>'
-      + '<td data-label="Monto"><div style="display:flex;gap:4px;align-items:center"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"><select id="ei-currency-' + r.id + '"' + catDisabled + ' style="flex:0 0 auto;padding:9px 4px"><option value="ARS"' + (r.currency === 'ARS' ? ' selected' : '') + '>ARS</option><option value="USD"' + (r.currency === 'USD' ? ' selected' : '') + '>USD</option></select></div></td>'
+      + '<td data-label="Monto"><div style="display:flex;gap:4px;align-items:center"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"><select id="ei-currency-' + r.id + '"' + catDisabled + ' style="flex:0 0 auto;padding:9px 4px">' + MoneyFormat.optionMarkup(r.currency) + '</select></div></td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap">'
@@ -867,7 +858,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     errEl.style.display = "none";
     document.getElementById("add-concept").value = "";
     document.getElementById("add-amount").value  = "";
-    document.getElementById("add-currency").value = "ARS";
+    document.getElementById("add-currency").value = MoneyFormat.defaultCurrency;
 
     const today = new Date();
     const pad = function(n) { return String(n).padStart(2, "0"); };

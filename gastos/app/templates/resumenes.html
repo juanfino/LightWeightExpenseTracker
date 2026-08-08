@@ -371,13 +371,7 @@
     }
   });
 
-  function fmtAmount(n, currency) {
-    if (n === null || n === undefined) return "—";
-    const prefix = currency === "USD" ? "U$S " : "$";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
-    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  }
+  const fmtAmount = MoneyFormat.formatAmount;
 
   function fmtPct(n) {
     if (n === null || n === undefined) return "—";
@@ -652,7 +646,7 @@
       : `Cobertura: ${(cov * 100).toFixed(0)}% del gasto del mes (${dollars.coverage_basis}) vino de pesos obtenidos vendiendo dólares.`;
     function opBlock(label, op) {
       const range = op.cnt
-        ? `USD ${op.total_usd.toLocaleString("es-AR")} · cotización ${op.cotizacion_min.toFixed(0)}–${op.cotizacion_max.toFixed(0)}`
+        ? `${fmtAmount(op.total_usd, "USD")} · cotización ${fmtAmount(op.cotizacion_min, "ARS")}–${fmtAmount(op.cotizacion_max, "ARS")}`
         : "sin operaciones este mes";
       return `
         <div>

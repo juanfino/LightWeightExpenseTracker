@@ -72,22 +72,15 @@ NL_HISTORY_MAX_MESSAGES = 10
 # ── Formateo ──────────────────────────────────────────────────────────────────
 
 def fmt_amount(amount, currency: str = "ARS") -> str:
-    """2500.5 → '$2.500,50'  |  150000.0 → '$150.000'"""
-    prefix = "U$S " if currency == "USD" else "$"
-    if amount == int(amount):
-        # whole number: use dot as thousands separator
-        return prefix + f"{int(amount):,}".replace(",", ".")
-    # has decimals: format with 2 decimal places, swap separators
-    formatted = f"{amount:,.2f}"          # "2,500.50"
-    int_part, dec_part = formatted.split(".")
-    int_part = int_part.replace(",", ".")  # "2.500"
-    return f"{prefix}{int_part},{dec_part}"
+    return money.format_amount(amount, db.get_currency(currency))
 
 
 def _separate_totals(rows) -> str:
     totals = {currency: sum(r["amount"] for r in rows if r["currency"] == currency)
-              for currency in ("ARS", "USD")}
-    return " · ".join(fmt_amount(totals[c], c) for c in ("ARS", "USD") if totals[c]) or "$0"
+              for currency in db.SUPPORTED_CURRENCIES}
+    return " · ".join(
+        fmt_amount(totals[c], c) for c in db.SUPPORTED_CURRENCIES if totals[c]
+    ) or fmt_amount(0)
 
 
 def _parse_cambio_token(token: str) -> Decimal | None:

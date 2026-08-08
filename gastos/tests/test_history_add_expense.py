@@ -90,6 +90,37 @@ class HistoryAddExpenseTests(unittest.TestCase):
         self.assertIn(b'id="add-category-create"', response.data)
         self.assertIn(b'id="add-subcategory-create"', response.data)
 
+    def test_history_form_uses_catalogue_and_family_default_currency(self):
+        with db.get_conn() as conn:
+            conn.execute("UPDATE families SET default_currency = 'BRL' WHERE id = 1")
+
+        response = self.client.get("/history")
+
+        self.assertEqual(response.status_code, 200)
+        for code in (b'ARS', b'USD', b'BRL', b'EUR'):
+            self.assertIn(b'value="' + code + b'"', response.data)
+        self.assertIn(b'defaultCurrency: "BRL"', response.data)
+
+    def test_add_expense_without_currency_uses_family_default(self):
+        with db.get_conn() as conn:
+            conn.execute("UPDATE families SET default_currency = 'BRL' WHERE id = 1")
+
+        response = self.client.post(
+            "/api/expenses/add",
+            json={
+                "concept": "Compra sin moneda",
+                "amount": "12.34",
+                "user_id": self.user["id"],
+                "date": "2026-07-20",
+            },
+            headers=self.csrf_headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            db.get_expense_by_id(response.get_json()["id"])["currency"], "BRL"
+        )
+
     def test_add_expense_rejects_subcategory_from_another_category(self):
         other_category = db.get_category_by_name("Salud")
 

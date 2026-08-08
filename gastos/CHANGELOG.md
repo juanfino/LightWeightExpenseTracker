@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.15.0
+- La migración `0013` agrega el catálogo global `currencies` con ARS, USD, BRL y EUR (código, símbolo y decimales), y reemplaza los cinco `CHECK` históricos por claves foráneas sin alterar los datos existentes.
+- `families.currency` pasa a llamarse `default_currency`; los formularios web lo usan cuando no se indica moneda, aunque todavía no existe una pantalla que permita cambiarlo y todas las familias conservan ARS hasta que se generalice la capa de entrada.
+- El formato monetario queda centralizado en `money.py` y `static/money.js`: símbolo y decimales salen del catálogo, mientras los separadores siguen la convención `es-AR` del lector. El símbolo de dólar se unifica como `US$` en bot y dashboard.
+
 ## 7.14.0
 - Cada resumen guarda una proyección determinística e inmutable para el mes inmediatamente siguiente, separada por moneda y explícita sobre el mes objetivo y el corte de datos; nunca usa información posterior aunque el reporte se lea más tarde.
 - La proyección combina gastos fijos activos, categorías variables habituales estimadas con mediana y rango intercuartílico, y una cola histórica para imprevistos. Con menos de tres meses por moneda muestra sólo la porción fija y explica qué historial falta.
