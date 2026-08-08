@@ -99,6 +99,7 @@ class TenantIsolationTests(unittest.TestCase):
             "ipc_series", "reports", "expense_classifications", "llm_calls",
             "income_categories", "incomes",
             "shopping_items", "family_quota_overrides", "system_errors",
+            "family_report_preferences",
         }
         with db.get_conn() as conn:
             rows = conn.execute(
@@ -138,6 +139,23 @@ class TenantIsolationTests(unittest.TestCase):
             sqlro.run_readonly("SELECT * FROM family_quota_overrides"), []
         )
         self.assertEqual(sqlro.run_readonly("SELECT * FROM system_errors"), [])
+
+    def test_report_preferences_are_tenant_scoped(self):
+        pgcompat.set_family_id(1)
+        db.upsert_report_preferences(
+            self.user_a["id"], '["outliers"]', "direct", "short", "Solo A", True
+        )
+        self.assertEqual(db.get_report_preferences()["focus"], "Solo A")
+
+        pgcompat.set_family_id(self.family_b)
+        self.assertIsNone(db.get_report_preferences())
+        db.upsert_report_preferences(
+            self.user_b["id"], "[]", "neutral", "medium", "Solo B", False
+        )
+        self.assertEqual(db.get_report_preferences()["focus"], "Solo B")
+
+        pgcompat.set_family_id(1)
+        self.assertEqual(db.get_report_preferences()["focus"], "Solo A")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ def reset_database(users=None):
         conn.execute(
             "TRUNCATE TABLE oauth_identities, otp_codes, sessions, invitations, "
             "telegram_link_tokens, system_errors, family_quota_overrides, llm_calls, "
+            "family_report_preferences, "
             "shopping_items, incomes, income_categories, "
             "expense_classifications, reports, ipc_series, "
             "cambios_dolar, expenses, fixed_expenses, keywords, subcategories, "

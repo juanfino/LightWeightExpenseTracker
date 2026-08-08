@@ -1,13 +1,9 @@
 # Monthly Report — Prompt & Rendering Inventory
 
-Factual, code-derived snapshot of the two LLM calls behind `/resumenes` (the monthly
-AI-generated report) and of how the report page turns their output into UI. Extracted
-directly from `gastos/app/report_ai.py`, `gastos/app/report.py`, `gastos/app/dossier.py`
-and `gastos/app/templates/resumenes.html`. Where something is inferred rather than
-directly observed in code, it's marked as such.
-
-This is an input to a design decision (making the prompt configurable per family, and
-adding forecasting) — it does not change any prompt, schema, or behavior.
+Factual, code-derived description of the two LLM calls behind `/resumenes`, the
+per-family compilation layer for the narrative call, and how the page turns their output
+into UI. It traces `report_ai.py`, `report_preferences.py`, `report.py`, `dossier.py` and
+`templates/resumenes.html`. Forecasting remains out of scope.
 
 ---
 
@@ -137,7 +133,10 @@ Notes:
 
 ## 3. Call 2 — `analyze()`
 
-### 3.1 System prompt (verbatim, from `_ANALYZE_SYSTEM` in `report_ai.py`)
+### 3.1 Base/default system prompt (verbatim, from `_ANALYZE_SYSTEM` in `report_ai.py`)
+
+This exact prompt is still sent when a family has no saved preferences (or saves the
+defaults: no emphasis, neutral tone, medium length, empty focus, suggestions off).
 
 ```
 You write the monthly findings for a household expense report, in Rioplatense Spanish. Every number in the input "dossier" is pre-computed by code — you narrate, you never calculate, and you never contradict a number you were given.
@@ -246,6 +245,39 @@ structured-output enforcement means a response missing any of them, or with the 
 top-level shape, cannot occur (see §6 for what "structurally can't happen" leaves as an
 actual risk surface).
 
+### 3.4 Per-family compilation
+
+`family_report_preferences` stores one shared, RLS-protected row per family. Any active
+member may update it from `/resumenes`; no row resolves to these behavior-preserving
+defaults:
+
+```json
+{"emphasis": [], "tone": "neutral", "length": "medium", "focus": "", "allow_suggestions": false}
+```
+
+The emphasis choices come from actual dossier structures, not an independent product
+taxonomy: category totals/movement/taxonomy, temporal contrasts, USD spending and dollar
+position, fixed-expense state, statistical outliers, and the fixed/recurring/exceptional
+partition. Tone is `neutral|warm|direct`; length is `short|medium|long`. Neutral/medium
+emit no extra prompt text, which is why defaults preserve the former system prompt
+byte-for-byte. Short prefers about three strong findings; long permits up to seven only
+when supported, retaining the no-padding rule.
+
+`compile_analyze_config()` deep-copies the live analysis call config and appends soft
+guidance after every hard rule. The appendix says preferences may change only topic
+emphasis, tone, narrative length and whether evidence-based suggestions are permitted;
+they cannot alter Rioplatense Spanish, the JSON schema, factual/currency constraints, or
+question/id rules. The focus is trimmed,
+limited to 400 characters in both application validation and a DB check, JSON-quoted,
+angle-bracket escaped, enclosed in an untrusted-data delimiter, and explicitly treated
+as subject matter rather than instructions. Thus text asking for English, a different
+schema or fabricated figures remains subordinate to the immutable rules.
+
+With suggestions off, the old blanket prohibition remains literally unchanged. With it
+on, only that sentence is replaced: suggestions may appear, but each must explicitly
+rest on a concrete dossier figure and may never invent a target, threshold, budget or
+other number. The output schema and deterministic page sections do not change.
+
 ---
 
 ## 4. What's LLM-generated vs. deterministic on `/resumenes`
@@ -311,27 +343,28 @@ or a 500 from the API. Based on the code:
 
 ## 6. Prompt traceability — what's persisted with a report
 
-`reports` (schema in `migrations/versions/0001_initial_postgres.py`) has both a
-`model` column and a `prompt_version` column, populated on every `generate_report()`
-call:
+`reports` has `model`, `prompt_version` and, since migration `0011`, nullable
+`preferences_json`. Every new `generate_report()` resolves preferences once, uses that
+same value to compile the call, and persists it:
 
 ```python
 report_id = db.create_report(
     year=year, month=month,
     model=report_ai.model_name(),      # e.g. "claude-opus-4-8"
-    prompt_version=report_ai.prompt_version(),
+    prompt_version=report_ai.prompt_version(preferences),
     dossier_json=..., output_json=..., fingerprint=fp, llm_ok=llm_ok,
+    preferences_json=json.dumps(preferences),
 )
 ```
 
 `prompt_version()` derives the value from the exact response-shaping configuration used
 by both calls: the complete `_CLASSIFY_SYSTEM` and `_ANALYZE_SYSTEM` text, both JSON
 schemas, `max_tokens`, adaptive-thinking configuration, output effort and structured-
-output settings. The same dictionaries are expanded into `client.messages.create()` and
-serialized for the fingerprint, so the audited configuration cannot drift from the one
-actually sent. Serialization uses sorted keys and compact separators before SHA-256,
-making dictionary insertion order irrelevant and the result stable across machines and
-restarts. The value is computed once per process and has this shape:
+output settings, plus the complete resolved preferences. The same compiled dictionary is
+expanded into `client.messages.create()` and serialized for the fingerprint, so two
+families with different preferences cannot share a version even if a future compiler
+maps two values to equivalent text. Sorted-key compact JSON feeds SHA-256, making mapping
+order irrelevant and the result stable across machines. The value has this shape:
 
 ```text
 report-v1-<first 12 hex chars>:sha256:<full 64-char SHA-256>
@@ -341,12 +374,16 @@ The short prefix is convenient when inspecting rows; the full digest preserves t
 complete identity. `v1` identifies the fingerprint format, not a manually maintained
 prompt generation. Editing any covered live value changes the digest automatically.
 
-The model name is deliberately excluded because it is already stored independently in
-`reports.model`; otherwise a model-only deployment would misleadingly look like a prompt
-change. User-turn data is also excluded because it is the per-report input, not prompt
-configuration. The full prompt text is still not copied into each report row.
+The model name remains excluded because it is stored in `reports.model`; the dossier is
+excluded because it is report input. Resolved preferences are configuration, so they are
+both fingerprinted and stored. The fingerprint answers whether configuration differed;
+the snapshot answers how. This is worth the nullable column because preferences are
+tenant-specific, mutable, and reports are append-only. The raw prompt is not copied into
+the row or exposed in the UI.
 
-Rows created before this mechanism retain their original labels (for example
-`prompt_version = "3"`). There is no migration or retroactive fingerprint: the exact
-historical prompt configuration was not persisted, so assigning one after the fact would
-create false audit confidence. Those rows remain readable by `/resumenes` unchanged.
+Rows created before either traceability mechanism retain their original labels (for
+example `prompt_version = "3"`) and have `preferences_json = NULL`. There is no
+retroactive fingerprint or synthetic preference snapshot: the exact historical state is
+unknowable. `_load_report_row()` treats that nullable field as absent, and the existing
+client-side dossier normalization remains unchanged, so historical reports render as
+before.
