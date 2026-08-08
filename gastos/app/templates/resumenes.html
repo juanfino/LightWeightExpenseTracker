@@ -139,6 +139,46 @@
   margin-bottom: 20px;
 }
 
+.forecast-card {
+  border-top: 3px solid var(--amber);
+}
+.forecast-range {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0;
+}
+.forecast-buckets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+.forecast-bucket {
+  background: var(--surface2);
+  border-radius: 12px;
+  padding: 13px;
+}
+.forecast-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 14px;
+}
+.forecast-category {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.forecast-actual {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
 .preferences-card { display: none; }
 .preferences-card.open { display: block; }
 .preferences-grid {
@@ -182,7 +222,7 @@
 .preferences-status { min-height: 20px; font-size: 12.5px; color: var(--text2); }
 
 @media (max-width: 700px) {
-  .preferences-grid, .emphasis-options { grid-template-columns: 1fr; }
+  .preferences-grid, .emphasis-options, .forecast-buckets { grid-template-columns: 1fr; }
 }
 {% endblock %}
 
@@ -442,6 +482,7 @@
     if (out) parts.push(renderNarrative(out));
     parts.push(renderKinds(ars, "ARS", "Las tres clases de gasto — pesos"));
     if (hasUsd) parts.push(renderKinds(usd, "USD", "Las tres clases de gasto — dólares"));
+    if (report.forecast) parts.push(renderForecast(report.forecast));
     parts.push(renderDollars(d.dollars));
     parts.push(renderCoverage(ars.registration_coverage, usd.registration_coverage));
     if (out && out.questions && out.questions.length) parts.push(renderQuestions(out.questions));
@@ -544,6 +585,64 @@
         </div>
         ${categoryRows}
       </div>`;
+  }
+
+  function forecastPeriodText(forecast) {
+    const target = forecast.target_period;
+    const source = forecast.source_period;
+    return `Proyección para ${MONTHS_ES[target.month].toLowerCase()} ${target.year}, en base a los datos hasta ${MONTHS_ES[source.month].toLowerCase()} ${source.year}.`;
+  }
+
+  function fmtRange(block, currency) {
+    return `${fmtAmount(block.low, currency)}–${fmtAmount(block.high, currency)}`;
+  }
+
+  function renderForecastCurrency(forecast, currency, label) {
+    const cur = forecast.currencies[currency];
+    const context = forecastPeriodText(forecast);
+    const categories = (cur.habitual.categories || []).map(item => {
+      const variance = item.stability === "high_variance" ? " · variación alta"
+        : item.stability === "variable" ? " · variación media" : " · estable";
+      return `<div class="forecast-category"><span>${escapeHtml(item.category)}${variance}</span><b>${fmtRange(item.range, currency)}</b></div>`;
+    }).join("");
+    const variableNote = cur.variable_available
+      ? `<div class="forecast-buckets">
+          <div class="forecast-bucket"><div class="stat-label">Fijo · confianza alta</div><div class="stat-value">${fmtRange(cur.fixed, currency)}</div></div>
+          <div class="forecast-bucket"><div class="stat-label">Variable habitual · confianza media</div><div class="stat-value">${fmtRange(cur.habitual, currency)}</div></div>
+          <div class="forecast-bucket"><div class="stat-label">Cola e imprevistos · confianza baja</div><div class="stat-value">${fmtRange(cur.tail, currency)}</div></div>
+        </div>${categories ? `<div class="forecast-categories">${categories}</div>` : ""}`
+      : `<div class="dossier-only-note">La parte fija sí puede proyectarse. Cuando haya al menos ${cur.data_floor_months} meses con movimientos en ${label}, también aparecerán las estimaciones variables; hoy hay ${cur.history_months}.</div>`;
+    const fixedUnknownNote = cur.fixed.has_unknown_amounts
+      ? `<div class="card-sub mt-8">Hay gastos fijos activos sin monto estimado; se muestran en la lista pero no se suman al rango.</div>` : "";
+    let inflationNote = "Montos nominales: el ajuste por inflación no aplica a esta moneda.";
+    if (currency === "ARS") {
+      inflationNote = cur.inflation_status === "adjusted"
+        ? "Los antecedentes se llevaron a precios comparables y el IPC se proyectó un mes usando sólo la serie disponible hasta el corte."
+        : "Montos nominales: no había una serie IPC suficiente hasta el corte para ajustar sin inventar datos.";
+    }
+    const actual = forecast.actuals && forecast.actuals[currency];
+    const actualBlock = actual
+      ? `<div class="forecast-actual"><div class="stat-label">Proyectado vs. real</div><div class="card-sub">${context} Rango proyectado ${fmtRange(cur.total, currency)}; gasto registrado real ${fmtAmount(actual.total, currency)} (fijo ${fmtAmount(actual.fixed, currency)}, habitual ${fmtAmount(actual.habitual, currency)}, cola ${fmtAmount(actual.tail, currency)}).</div></div>`
+      : "";
+    return `<div class="card forecast-card">
+      <div class="section-title">${label}</div>
+      <div class="card-sub mt-8">${context}</div>
+      <div class="forecast-range">${fmtRange(cur.total, currency)}</div>
+      <div class="card-sub">Total mensual proyectado${cur.total.fixed_only ? " · sólo porción fija conocida" : ""}. ${inflationNote}</div>
+      ${fixedUnknownNote}${variableNote}${actualBlock}
+    </div>`;
+  }
+
+  function renderForecast(forecast) {
+    const usd = forecast.currencies.USD;
+    const showUsd = usd.history_months > 0 || (usd.fixed.items || []).length > 0;
+    return `<div class="mt-24">
+      <div class="section-title" style="margin-bottom:12px">Qué podría venir el mes siguiente</div>
+      <div class="${showUsd ? "grid-2" : ""}">
+        ${renderForecastCurrency(forecast, "ARS", "Pesos")}
+        ${showUsd ? renderForecastCurrency(forecast, "USD", "Dólares") : ""}
+      </div>
+    </div>`;
   }
 
   function renderDollars(dollars) {

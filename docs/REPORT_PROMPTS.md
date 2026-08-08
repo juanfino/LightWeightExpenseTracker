@@ -2,8 +2,9 @@
 
 Factual, code-derived description of the two LLM calls behind `/resumenes`, the
 per-family compilation layer for the narrative call, and how the page turns their output
-into UI. It traces `report_ai.py`, `report_preferences.py`, `report.py`, `dossier.py` and
-`templates/resumenes.html`. Forecasting remains out of scope.
+into UI. It traces `report_ai.py`, `report_preferences.py`, `report.py`, `dossier.py`,
+`forecast.py` and `templates/resumenes.html`, including the deterministic forecast that
+may be supplied to narration.
 
 ---
 
@@ -135,8 +136,8 @@ Notes:
 
 ### 3.1 Base/default system prompt (verbatim, from `_ANALYZE_SYSTEM` in `report_ai.py`)
 
-This exact prompt is still sent when a family has no saved preferences (or saves the
-defaults: no emphasis, neutral tone, medium length, empty focus, suggestions off).
+This base prompt is sent when a family has no saved preferences (or saves the defaults:
+no emphasis, neutral tone, medium length, empty focus, suggestions off).
 
 ```
 You write the monthly findings for a household expense report, in Rioplatense Spanish. Every number in the input "dossier" is pre-computed by code — you narrate, you never calculate, and you never contradict a number you were given.
@@ -149,6 +150,7 @@ Rules:
 - If hard_facts.months_available is small, present every contrast as an observation ('recién es el N-ésimo mes de datos') rather than a conclusion about behavior change — recent app adoption explains differences at least as well as real spending changes, and you must say so explicitly when history is short. Each currency block also carries its own months_available — a currency with little history of its own gets the same treatment even if the other currency has plenty.
 - registration_coverage measures who LOGGED an expense, not who spent the money — never infer spending behavior, fairness, or effort from it; if you mention it, describe it only as app usage.
 - The fixed/recurring/exceptional partition is already computed per currency (currencies.ARS.partition, currencies.USD.partition) — cite it, don't recompute or contradict it.
+- If the dossier contains a forecast, it was computed and frozen by code. Never recompute, contradict, narrow, widen or sharpen any forecast range, and never present a range as a certainty. Every mention must explicitly name both its target month and its cutoff month (for example: 'Proyección para julio 2026, en base a los datos hasta junio 2026'). Forecast language is descriptive and conditional ('podrías gastar'), never normative ('deberías gastar menos').
 - Do not invent URLs, links, category names, or ids beyond what's in the input.
 
 Currency rules — this dossier covers two independent currencies, ARS and USD, as parallel same-shape blocks under "currencies". This is not a pesos report with a dollar footnote: both currencies are first-class and both deserve findings when material.
@@ -174,7 +176,10 @@ The full dossier — `period`, `hard_facts`, `dollars`, `equivalence`,
 `registration_coverage`, `months_available`, `variable_expenses`, and — by the time
 this call runs — `partition`, injected by `report.py` after `classify_expenses()`
 returns) — is serialized as-is. See `dossier.py` for the exact shape of each block; it
-is not reproduced here since it's deterministic and unrelated to the prompt itself.
+is not reproduced here since it's deterministic. `report.py` adds `forecast` only when
+the resolved emphasis includes `forecast` or suggestions are enabled. That block is the
+already-computed, frozen projection for the immediately following month; the model never
+receives a request to calculate it.
 A synthetic sketch:
 
 ```json
@@ -257,10 +262,9 @@ defaults:
 
 The emphasis choices come from actual dossier structures, not an independent product
 taxonomy: category totals/movement/taxonomy, temporal contrasts, USD spending and dollar
-position, fixed-expense state, statistical outliers, and the fixed/recurring/exceptional
-partition. Tone is `neutral|warm|direct`; length is `short|medium|long`. Neutral/medium
-emit no extra prompt text, which is why defaults preserve the former system prompt
-byte-for-byte. Short prefers about three strong findings; long permits up to seven only
+position, fixed-expense state, statistical outliers, the fixed/recurring/exceptional
+partition, and the stored next-month forecast. Tone is `neutral|warm|direct`; length is `short|medium|long`. Neutral/medium
+emit no extra soft-guidance text. Short prefers about three strong findings; long permits up to seven only
 when supported, retaining the no-padding rule.
 
 `compile_analyze_config()` deep-copies the live analysis call config and appends soft
@@ -276,7 +280,8 @@ schema or fabricated figures remains subordinate to the immutable rules.
 With suggestions off, the old blanket prohibition remains literally unchanged. With it
 on, only that sentence is replaced: suggestions may appear, but each must explicitly
 rest on a concrete dossier figure and may never invent a target, threshold, budget or
-other number. The output schema and deterministic page sections do not change.
+other number. A frozen forecast range is an allowed anchor but never a target. The output
+schema and deterministic page sections do not change.
 
 ---
 
@@ -291,6 +296,7 @@ Traced directly from `resumenes.html`'s `render()` and its helper functions.
 | Headline, summary, findings (`renderNarrative`) | 100% LLM — `report.output.headline`/`.summary`/`.findings[].text` verbatim from `analyze()`. Rendered through `escapeHtml()` (textContent-based), so arbitrary text is safe to inject as HTML but not otherwise validated |
 | "Tres clases de gasto" bars — fixed slice (`renderKinds`) | Deterministic — `partition.fixed_total`, from `dossier.currencies.{cur}.fixed_expenses.total_paid`, itself a DB aggregate with no LLM input |
 | "Tres clases de gasto" bars — recurring/exceptional slices | **Hybrid**: the *label* on each expense (which bucket it falls in) comes from the classification LLM call; the *sums* (`recurring_total`, `exceptional_total`, counts) are computed by code in `report.py`'s `_build_partitions()`, which only aggregates labels the model returned — the model itself never sums |
+| Next-month projection and predicted-vs-actual (`renderForecast`) | 100% deterministic — `forecast.py` computes and `report_forecasts` freezes one block per currency. Target actuals are queried later only for the inline backtest and never change the stored prediction |
 | Dollars section (venta/compra totals, coverage ratio) (`renderDollars`) | 100% deterministic — `dossier.dollars`, from `db.get_cambios_resumen_mes_by_tipo()` |
 | "Quién registró" / registration coverage (`renderCoverage`) | 100% deterministic — `dossier.currencies.{cur}.registration_coverage` |
 | "Para resolver" / questions list (`renderQuestions`) | 100% LLM — `report.output.questions[]` verbatim from `analyze()`. `type` drives which URL the question links to (client-side `if` on the enum value, not LLM-supplied); `text` goes through `escapeHtml()` |
@@ -344,7 +350,8 @@ or a 500 from the API. Based on the code:
 ## 6. Prompt traceability — what's persisted with a report
 
 `reports` has `model`, `prompt_version` and, since migration `0011`, nullable
-`preferences_json`. Every new `generate_report()` resolves preferences once, uses that
+`preferences_json`; migration `0012` adds the separate insert-only `report_forecasts`
+rows. Every new `generate_report()` resolves preferences once, uses that
 same value to compile the call, and persists it:
 
 ```python
@@ -374,8 +381,10 @@ The short prefix is convenient when inspecting rows; the full digest preserves t
 complete identity. `v1` identifies the fingerprint format, not a manually maintained
 prompt generation. Editing any covered live value changes the digest automatically.
 
-The model name remains excluded because it is stored in `reports.model`; the dossier is
-excluded because it is report input. Resolved preferences are configuration, so they are
+The model name remains excluded because it is stored in `reports.model`; the dossier and
+forecast values are excluded because they are report input. The hard forecast rules and
+the resolved preference that controls whether forecast material is sent are included.
+Resolved preferences are configuration, so they are
 both fingerprinted and stored. The fingerprint answers whether configuration differed;
 the snapshot answers how. This is worth the nullable column because preferences are
 tenant-specific, mutable, and reports are append-only. The raw prompt is not copied into
@@ -385,5 +394,5 @@ Rows created before either traceability mechanism retain their original labels (
 example `prompt_version = "3"`) and have `preferences_json = NULL`. There is no
 retroactive fingerprint or synthetic preference snapshot: the exact historical state is
 unknowable. `_load_report_row()` treats that nullable field as absent, and the existing
-client-side dossier normalization remains unchanged, so historical reports render as
-before.
+client-side dossier normalization remains unchanged, and no `report_forecasts` rows are
+backfilled, so historical reports render as before.

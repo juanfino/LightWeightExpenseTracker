@@ -100,6 +100,7 @@ class TenantIsolationTests(unittest.TestCase):
             "income_categories", "incomes",
             "shopping_items", "family_quota_overrides", "system_errors",
             "family_report_preferences",
+            "report_forecasts",
         }
         with db.get_conn() as conn:
             rows = conn.execute(
@@ -156,6 +157,30 @@ class TenantIsolationTests(unittest.TestCase):
 
         pgcompat.set_family_id(1)
         self.assertEqual(db.get_report_preferences()["focus"], "Solo A")
+
+    def test_persisted_forecasts_are_tenant_scoped(self):
+        forecast_payload = {
+            "method_id": "test-v1",
+            "source_period": {"year": 2026, "month": 8},
+            "target_period": {"year": 2026, "month": 9},
+            "currencies": {
+                "ARS": {"total": {"low": 10, "central": 20, "high": 30}},
+                "USD": {"total": {"low": 1, "central": 2, "high": 3}},
+            },
+        }
+        pgcompat.set_family_id(1)
+        report_a = db.create_report(2026, 8, None, "test", "{}", None, "a", False)
+        db.save_report_forecast(report_a, forecast_payload)
+
+        pgcompat.set_family_id(self.family_b)
+        self.assertIsNone(db.get_report_forecast(report_a))
+        report_b = db.create_report(2026, 8, None, "test", "{}", None, "b", False)
+        db.save_report_forecast(report_b, forecast_payload)
+        self.assertIsNotNone(db.get_report_forecast(report_b))
+
+        pgcompat.set_family_id(1)
+        self.assertIsNotNone(db.get_report_forecast(report_a))
+        self.assertIsNone(db.get_report_forecast(report_b))
 
 
 if __name__ == "__main__":

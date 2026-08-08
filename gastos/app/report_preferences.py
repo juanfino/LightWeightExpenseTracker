@@ -12,6 +12,7 @@ EMPHASIS_OPTIONS = {
     "fixed_expenses": "Gastos fijos",
     "outliers": "Gastos atípicos",
     "spending_mix": "Composición fijo, recurrente y excepcional",
+    "forecast": "Proyección del mes siguiente",
 }
 MAX_FOCUS_LENGTH = 400
 

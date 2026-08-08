@@ -14,6 +14,7 @@ import logging
 
 import db
 import dossier as dossier_module
+import forecast as forecast_module
 import inflation
 import report_ai
 import report_preferences
@@ -32,6 +33,9 @@ def generate_report(year: int, month: int) -> dict:
     inflation.refresh()
     preferences = report_preferences.from_storage(db.get_report_preferences())
     dossier = dossier_module.build_dossier(year, month)
+    computed_forecast = forecast_module.build_forecast(year, month)
+    if "forecast" in preferences["emphasis"] or preferences["allow_suggestions"]:
+        dossier["forecast"] = computed_forecast
     all_variable = [e for cur in _CURRENCIES for e in dossier["currencies"][cur]["variable_expenses"]]
 
     prior_classifications = db.get_recent_classifications_before(
@@ -60,6 +64,7 @@ def generate_report(year: int, month: int) -> dict:
         llm_ok=llm_ok,
         preferences_json=money.json_dumps(preferences, ensure_ascii=False),
     )
+    db.save_report_forecast(report_id, computed_forecast)
 
     if classifications:
         by_id = {e["expense_id"]: e for e in all_variable}
@@ -168,6 +173,10 @@ def _load_report_row(row: dict | None) -> dict | None:
     preferences_json = result.pop("preferences_json", None)
     result["preferences"] = json.loads(preferences_json) if preferences_json else None
     result["llm_ok"] = bool(result["llm_ok"])
+    stored_forecast = db.get_report_forecast(result["id"])
+    if stored_forecast is not None:
+        stored_forecast["actuals"] = forecast_module.actuals(stored_forecast)
+    result["forecast"] = stored_forecast
     return result
 
 
