@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.9.0
+- El checklist "Primeros pasos" del dashboard ya no muestra "Invitar a alguien a tu grupo" a quienes no son owner de la familia — solo el owner puede crear invitaciones, así que mostrárselo a un miembro llevaba a un callejón sin salida en `/familia`.
+- Se agrega un botón para cerrar el checklist manualmente antes de completar los 3 pasos, con estado persistido por membership (`memberships.onboarding_dismissed_at`, migración `0009`) — no reaparece en otro dispositivo ni navegador, y volver a crear o unirte a otra familia lo muestra de nuevo.
+
 ## 7.8.0
 - **La landing pública muestra el alcance real de la app** (gastos, ingresos, lista de compras, gastos fijos y dólares, no solo "gastos") y agrega una sección de "antes → después" que enseña, de un vistazo, cómo un mensaje de voz, texto o una pregunta en lenguaje natural se convierte en un registro categorizado, además de mencionar foto de ticket y nota de voz.
 - **Login y registro se unifican en una sola pantalla de identidad** (`/login`): email + Turnstile u "Continuar con Google", sin pedir nombre ni nombre de familia, y sin el Turnstile duplicado que tenía el registro. El botón de Google usa el isotipo oficial multicolor de Google, sin recolorear.

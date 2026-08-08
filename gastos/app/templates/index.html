@@ -411,7 +411,10 @@
 .fijos-row-amount.paid   { color: var(--green); }
 .fijos-row-amount.unpaid { color: var(--text2); }
 
-.onboarding-card { margin-bottom: 28px; display:grid; grid-template-columns: .8fr 1.2fr; gap:28px; }
+.onboarding-card { position:relative; margin-bottom: 28px; display:grid; grid-template-columns: .8fr 1.2fr; gap:28px; }
+.onboarding-dismiss { position:absolute; top:16px; right:16px; width:28px; height:28px; border-radius:50%; border:0; background:transparent; color:var(--text3); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:background .15s,color .15s; }
+.onboarding-dismiss:hover { background:var(--surface2); color:var(--text); }
+.onboarding-dismiss i { font-size:16px; }
 .onboarding-list { display:flex; flex-direction:column; gap:4px; }
 .onboarding-step { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; color:var(--text); }
 a.onboarding-step:hover { background:var(--surface2); }
@@ -603,8 +606,11 @@ a.onboarding-step:hover { background:var(--surface2); }
 {% block content %}
 <div class="container">
 
-  {% if not onboarding.complete %}
-  <section class="card onboarding-card" aria-labelledby="onboarding-title">
+  {% if not onboarding.complete and not onboarding.dismissed %}
+  <section class="card onboarding-card" id="onboarding-card" aria-labelledby="onboarding-title">
+    <button class="onboarding-dismiss" id="onboarding-dismiss-btn" type="button" aria-label="Cerrar">
+      <i class="ti ti-x"></i>
+    </button>
     <div>
       <div class="card-title">Primeros pasos</div>
       <h1 class="section-title" id="onboarding-title">Dejá tu espacio listo en pocos minutos</h1>
@@ -614,7 +620,9 @@ a.onboarding-step:hover { background:var(--surface2); }
       <div class="onboarding-step done"><i class="ti ti-circle-check-filled"></i><span>Crear cuenta</span></div>
       <a class="onboarding-step {{ 'done' if onboarding.has_expense else '' }}" href="/history?add=1"><i class="ti {{ 'ti-circle-check-filled' if onboarding.has_expense else 'ti-circle' }}"></i><span>Cargar tu primer gasto</span><b>Ir →</b></a>
       <a class="onboarding-step {{ 'done' if onboarding.telegram_connected else '' }}" href="/vincular-telegram"><i class="ti {{ 'ti-circle-check-filled' if onboarding.telegram_connected else 'ti-circle' }}"></i><span>Conectar Telegram <small>(opcional)</small></span><b>Ir →</b></a>
+      {% if onboarding.is_owner %}
       <a class="onboarding-step {{ 'done' if onboarding.family_invited else '' }}" href="/familia"><i class="ti {{ 'ti-circle-check-filled' if onboarding.family_invited else 'ti-circle' }}"></i><span>Invitar a alguien a tu grupo</span><b>Ir →</b></a>
+      {% endif %}
     </div>
   </section>
   {% endif %}
@@ -1637,6 +1645,19 @@ a.onboarding-step:hover { background:var(--surface2); }
       alert('Error: ' + (data.error || 'desconocido'));
     }
   });
+
+  // ── Onboarding dismiss ─────────────────────────────────────────────────────
+  const onboardingDismissBtn = document.getElementById('onboarding-dismiss-btn');
+  if (onboardingDismissBtn) {
+    onboardingDismissBtn.addEventListener('click', async () => {
+      const card = document.getElementById('onboarding-card');
+      try {
+        await fetch('/api/onboarding/dismiss', { method: 'POST' });
+      } finally {
+        if (card) card.remove();
+      }
+    });
+  }
 
   // ── Init ───────────────────────────────────────────────────────────────────
   (async function init() {
