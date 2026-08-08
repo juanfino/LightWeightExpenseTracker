@@ -13,6 +13,7 @@ from flask import (
     Flask, abort, g, got_request_exception, make_response, render_template,
     request, jsonify, redirect, session, url_for,
 )
+from flask.json.provider import DefaultJSONProvider
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.middleware.proxy_fix import ProxyFix
 import qrcode
@@ -26,8 +27,20 @@ import report
 import pgcompat
 import llm_limits
 import export_data
+import money
+
+
+class DecimalJSONProvider(DefaultJSONProvider):
+    """The single HTTP boundary: Decimal leaves Python as a JSON number."""
+
+    def default(self, value):
+        if isinstance(value, Decimal):
+            return float(value)
+        return super().default(value)
 
 app = Flask(__name__)
+app.json_provider_class = DecimalJSONProvider
+app.json = app.json_provider_class(app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("AUTH_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(
@@ -918,10 +931,10 @@ def api_expenses_add():
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
 
     try:
-        amount = float(amount)
+        amount = money.amount(amount)
         if amount <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
 
     try:
@@ -1008,10 +1021,10 @@ def api_expenses_update():
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
 
     try:
-        amount = float(amount)
+        amount = money.amount(amount)
         if amount <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
 
     if date_str is not None:
@@ -1251,8 +1264,8 @@ def api_fixed_expenses_add():
     if not concept:
         return jsonify({"ok": False, "error": "El concepto es obligatorio"}), 400
     try:
-        estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
-    except (ValueError, TypeError):
+        estimated_amount = money.amount(estimated_amount) if estimated_amount not in (None, "") else None
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
     cat_id    = int(category_id) if category_id else None
     subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
@@ -1274,8 +1287,8 @@ def api_fixed_expenses_update():
     if not fe_id or not concept:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
     try:
-        estimated_amount = float(estimated_amount) if estimated_amount not in (None, "") else None
-    except (ValueError, TypeError):
+        estimated_amount = money.amount(estimated_amount) if estimated_amount not in (None, "") else None
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
     cat_id    = int(category_id) if category_id else None
     subcat_id = int(data["subcategory_id"]) if data.get("subcategory_id") else None
@@ -1311,10 +1324,10 @@ def api_fixed_expenses_pay():
     if not fixed_expense_id or amount is None or not year or not month:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
     try:
-        amount = float(amount)
+        amount = money.amount(amount)
         if amount <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Monto inválido"}), 400
 
     fe = db.get_fixed_expense_by_id(int(fixed_expense_id))
@@ -1428,11 +1441,11 @@ def api_cambios_add():
         return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
 
     try:
-        monto_usd  = float(monto_usd)
-        cotizacion = float(cotizacion)
+        monto_usd = money.amount(monto_usd)
+        cotizacion = money.amount(cotizacion)
         if monto_usd <= 0 or cotizacion <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Montos inválidos"}), 400
 
     cambio_id = db.registrar_cambio(fecha, monto_usd, cotizacion, g.current_user["name"], tipo=tipo)
@@ -1467,11 +1480,11 @@ def api_cambios_update(cambio_id: int):
         return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
 
     try:
-        monto_usd  = float(monto_usd)
-        cotizacion = float(cotizacion)
+        monto_usd = money.amount(monto_usd)
+        cotizacion = money.amount(cotizacion)
         if monto_usd <= 0 or cotizacion <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Montos inválidos"}), 400
 
     updated = db.update_cambio(cambio_id, fecha, monto_usd, cotizacion, tipo=tipo)
@@ -1593,13 +1606,13 @@ def api_incomes():
 def _validated_income_payload(data):
     concept, date_str = (data.get("concept") or "").strip(), (data.get("date") or "").strip()
     try:
-        amount = float(data.get("amount"))
+        amount = money.amount(data.get("amount"))
         if amount <= 0:
             raise ValueError
         datetime.strptime(date_str, "%Y-%m-%d")
         currency = db.normalize_currency(data.get("currency"))
         category_id = int(data["income_category_id"]) if data.get("income_category_id") else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, InvalidOperation):
         return None
     if not concept or (category_id and not db.get_income_category(category_id)):
         return None

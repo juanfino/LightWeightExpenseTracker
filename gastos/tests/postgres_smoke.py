@@ -1,4 +1,6 @@
 """Small destructive smoke test intended for an empty scratch PostgreSQL DB."""
+from decimal import Decimal
+
 import db
 import sqlro
 
@@ -11,7 +13,10 @@ def main():
         user["id"], None, "Prueba PostgreSQL", 123.45, "Prueba PostgreSQL 123,45"
     )
     assert expense_id
-    assert db.get_expense_by_id(expense_id)["concept"] == "Prueba PostgreSQL"
+    stored = db.get_expense_by_id(expense_id)
+    assert stored["concept"] == "Prueba PostgreSQL"
+    assert stored["amount"] == Decimal("123.45")
+    assert isinstance(stored["amount"], Decimal)
     assert db.get_recent_expenses()
     assert db.get_expense_years()
     assert db.get_expenses_today()

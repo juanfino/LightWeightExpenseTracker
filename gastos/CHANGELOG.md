@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.11.1
+- Los montos se mantienen como `Decimal` exactos desde PostgreSQL hasta los bordes HTTP/LLM, con redondeo monetario centralizado a 2 decimales mediante `ROUND_HALF_UP`; las respuestas JSON y ambos payloads de Resúmenes siguen exponiendo números, nunca strings.
+- Los cálculos del dossier, equivalencias, IPC, gastos fijos, ingresos y cambios de dólares eliminan mezclas accidentales con `float`; el índice IPC conserva sus 12 decimales de precisión.
+- Se agregan regresiones para la forma numérica de ambos payloads del informe, la preservación de `Decimal` en `pgcompat`, el redondeo y la serialización de todos los endpoints monetarios contra PostgreSQL real.
+
 ## 7.11.0
 - El dashboard muestra una frase diaria curada, estable por fecha local y familia, con degradación de idioma y sin bloquear la pantalla si el contenido no está disponible; la migración `0010` incorpora una tabla global y 80 frases iniciales.
 - El menú principal agrupa primero Movimientos, Ingresos, Fijos, Dólares y Resúmenes, y separa visualmente **Lista de compras** al final tanto en escritorio como en mobile; la ruta `/lista` no cambia.

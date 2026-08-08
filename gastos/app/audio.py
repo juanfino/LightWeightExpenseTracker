@@ -1,11 +1,13 @@
 import io
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 
 import anthropic
 import openai
 import llm_usage
 import llm_limits
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -32,12 +34,13 @@ _EXTRACT_PROMPT = (
 )
 
 
-def _parse_amount(raw) -> float | None:
+def _parse_amount(raw) -> Decimal | None:
     if raw is None:
         return None
     try:
-        return float(raw)
-    except (TypeError, ValueError):
+        value = money.amount(raw)
+        return value if value > 0 else None
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 
@@ -80,7 +83,7 @@ def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
 def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     """Extract one or more expenses from a transcription.
 
-    Returns [{"concept": str, "amount": float | None, "confidence": float}, ...].
+    Returns [{"concept": str, "amount": Decimal | None, "confidence": float}, ...].
     Raises RuntimeError on extraction failure.
     """
     try:

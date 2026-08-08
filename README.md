@@ -4,7 +4,7 @@ A family expense tracker: send a message like `Supermercado 150000` to a Telegra
 
 ## Current product
 
-The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.11.0**.
+The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.11.1**.
 The application now provides:
 
 - PostgreSQL tenancy enforced with forced Row-Level Security.

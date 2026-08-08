@@ -15,10 +15,12 @@ uses the real number from then on.
 """
 
 import logging
+from decimal import Decimal, InvalidOperation
 
 import requests
 
 import db
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +48,8 @@ def refresh() -> bool:
 
     for row in data:
         try:
-            iso_date, value = row[0], float(row[1])
-        except (IndexError, TypeError, ValueError):
+            iso_date, value = row[0], Decimal(str(row[1]))
+        except (IndexError, TypeError, ValueError, InvalidOperation):
             continue
         year, month = int(iso_date[:4]), int(iso_date[5:7])
         db.upsert_ipc_value(year, month, value, is_estimated=False)
@@ -87,7 +89,7 @@ def get_index(year: int, month: int) -> dict | None:
     return db.get_ipc_value(year, month)
 
 
-def deflate(amount: float, from_year: int, from_month: int, to_year: int, to_month: int) -> float | None:
+def deflate(amount, from_year: int, from_month: int, to_year: int, to_month: int):
     """Converts a nominal amount from from_year/from_month prices into to_year/to_month
     prices. Returns None — not the nominal value, not zero — if either index is
     missing, so callers can tell "computed" apart from "unavailable" instead of
@@ -96,4 +98,4 @@ def deflate(amount: float, from_year: int, from_month: int, to_year: int, to_mon
     to_idx = db.get_ipc_value(to_year, to_month)
     if from_idx is None or to_idx is None:
         return None
-    return amount * (to_idx["value"] / from_idx["value"])
+    return money.amount(amount * (to_idx["value"] / from_idx["value"]))

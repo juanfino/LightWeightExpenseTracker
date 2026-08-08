@@ -10,6 +10,7 @@ from psycopg import IntegrityError
 from psycopg.rows import dict_row
 
 import pgcompat
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -735,7 +736,7 @@ def create_expense(user_id: int, category_id: int | None, concept: str, amount: 
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, currency, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, _normalize_concept(concept), amount, normalize_currency(currency), raw_text, now_utc),
+            (user_id, category_id, subcategory_id, _normalize_concept(concept), money.amount(amount), normalize_currency(currency), raw_text, now_utc),
         )
         return cur.lastrowid
 
@@ -750,7 +751,7 @@ def create_expense_full(user_id: int, category_id: int | None, concept: str, amo
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, currency, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, concept, amount, normalize_currency(currency), concept, created_at),
+            (user_id, category_id, subcategory_id, concept, money.amount(amount), normalize_currency(currency), concept, created_at),
         )
         return cur.lastrowid
 
@@ -920,7 +921,7 @@ def get_expenses_summary_by_category(year: int, month: int, user_name: str | Non
     grand_total = sum(r["total"] for r in rows)
     result = []
     for r in rows:
-        pct = round(r["total"] / grand_total * 100) if grand_total else 0
+        pct = money.statistic(r["total"] / grand_total * 100, 0) if grand_total else 0
         result.append({
             "name":  r["name"],
             "color": r["color"],
@@ -1007,7 +1008,7 @@ def update_expense(expense_id: int, concept: str, amount: float, category_id: in
                 and requested_currency != current["currency"]):
             return False
     sets = ["concept=?", "amount=?", "category_id=?"]
-    params: list = [concept, amount, category_id]
+    params: list = [concept, money.amount(amount), category_id]
     if subcategory_id is not None:
         sets.append("subcategory_id=?")
         params.append(subcategory_id)
@@ -1057,7 +1058,7 @@ def update_expense_amount(expense_id: int, user_id: int, amount: float) -> bool:
     with get_conn() as conn:
         cur = conn.execute(
             "UPDATE expenses SET amount = ? WHERE id = ? AND user_id = ?",
-            (amount, expense_id, user_id),
+            (money.amount(amount), expense_id, user_id),
         )
         return cur.rowcount > 0
 
@@ -1087,7 +1088,7 @@ def update_expense_fields(expense_id: int, user_id: int, *, amount: float | None
     params: list = []
     if amount is not None:
         sets.append("amount = ?")
-        params.append(amount)
+        params.append(money.amount(amount))
     if concept is not None:
         sets.append("concept = ?")
         params.append(_normalize_concept(concept))
@@ -1336,7 +1337,7 @@ def get_gastos_por_categoria(year: int, month: int, user_name: str | None = None
     for r in rows:
         cat = r["categoria"]
         if cat not in cats:
-            cats[cat] = {"total": 0.0, "subcategorias": []}
+            cats[cat] = {"total": money.MONEY_ZERO, "subcategorias": []}
             cat_meta[cat] = {"color": r["color"], "icon": r["icon"]}
         cats[cat]["total"] += r["total"]
         if r["subcategoria"]:
@@ -1385,17 +1386,17 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
     for r in rows:
         n = r["cat_name"]
         if n not in cats:
-            cats[n] = [0.0] * 12
+            cats[n] = [money.MONEY_ZERO] * 12
             cat_colors[n] = r["cat_color"]
         cats[n][r["month_num"] - 1] += r["total"]
 
-    monthly_totals = [0.0] * 12
+    monthly_totals = [money.MONEY_ZERO] * 12
     for values in cats.values():
         for i, v in enumerate(values):
             monthly_totals[i] += v
 
     annual_total = sum(monthly_totals[:active_months])
-    monthly_avg  = annual_total / active_months if active_months > 0 else 0
+    monthly_avg = money.rounded(annual_total / active_months) if active_months > 0 else money.MONEY_ZERO
 
     peak_idx   = max(range(active_months), key=lambda i: monthly_totals[i]) if active_months > 0 else 0
     peak_month = {"name": MONTHS_SHORT[peak_idx], "amount": monthly_totals[peak_idx]}
@@ -1403,7 +1404,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
     cat_totals   = {n: sum(v[:active_months]) for n, v in cats.items()}
     top_cat_name = max(cat_totals, key=cat_totals.get) if cat_totals else ""
     top_cat_amt  = cat_totals.get(top_cat_name, 0)
-    top_cat_pct  = round(top_cat_amt / annual_total * 100) if annual_total else 0
+    top_cat_pct = money.statistic(top_cat_amt / annual_total * 100, 0) if annual_total else 0
 
     with get_conn() as conn:
         user_rows = conn.execute(
@@ -1425,7 +1426,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
     for r in user_rows:
         nm = r["user_name"]
         if nm not in by_user:
-            by_user[nm] = [0.0] * 12
+            by_user[nm] = [money.MONEY_ZERO] * 12
         by_user[nm][r["month_num"] - 1] += r["total"]
 
     by_category_sorted = sorted(cats.keys(), key=lambda x: cat_totals.get(x, 0), reverse=True)
@@ -1486,14 +1487,14 @@ def get_monthly_totals(months: int = 6, currency: str = DEFAULT_CURRENCY) -> lis
         days_in_month = calendar.monthrange(y, m)[1]
         days_elapsed  = today.day if (y == today.year and m == today.month) else days_in_month
         row   = row_map.get(ym)
-        total = row["total"] if row else 0.0
+        total = row["total"] if row else money.MONEY_ZERO
         cnt   = row["cnt"]   if row else 0
         result.append({
             "year":      y,
             "month":     m,
             "total":     total,
             "count":     cnt,
-            "avg_daily": round(total / days_elapsed, 2) if days_elapsed > 0 else 0,
+            "avg_daily": money.rounded(total / days_elapsed) if days_elapsed > 0 else money.MONEY_ZERO,
         })
     return result
 
@@ -1679,7 +1680,7 @@ def create_fixed_expense(concept: str, estimated_amount: float | None, category_
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO fixed_expenses (concept, estimated_amount, currency, category_id, subcategory_id) VALUES (?, ?, ?, ?, ?)",
-            (concept.strip(), estimated_amount, normalize_currency(currency), category_id, subcategory_id),
+            (concept.strip(), money.amount(estimated_amount) if estimated_amount is not None else None, normalize_currency(currency), category_id, subcategory_id),
         )
         return cur.lastrowid
 
@@ -1697,7 +1698,7 @@ def update_fixed_expense(fe_id: int, concept: str, estimated_amount: float | Non
     with get_conn() as conn:
         conn.execute(
             "UPDATE fixed_expenses SET concept=?, estimated_amount=?, currency=?, category_id=?, subcategory_id=? WHERE id=?",
-            (concept.strip(), estimated_amount, normalize_currency(currency or current["currency"]), category_id, subcategory_id, fe_id),
+            (concept.strip(), money.amount(estimated_amount) if estimated_amount is not None else None, normalize_currency(currency or current["currency"]), category_id, subcategory_id, fe_id),
         )
     return True
 
@@ -1828,7 +1829,9 @@ def get_fixed_expense_monthly_summary(year: int, month: int,
 # ── Cambios de Dólar ──────────────────────────────────────────────────────────
 
 def registrar_cambio(fecha: str, monto_usd: float, cotizacion: float, usuario: str, tipo: str = "venta") -> int:
-    monto_ars = monto_usd * cotizacion
+    monto_usd = money.amount(monto_usd)
+    cotizacion = money.amount(cotizacion)
+    monto_ars = money.amount(monto_usd * cotizacion)
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO cambios_dolar (fecha, monto_usd, cotizacion, monto_ars, usuario, tipo)"
@@ -2032,8 +2035,9 @@ def get_cambios_resumen_mes_by_tipo(year: int, month: int) -> dict:
             (str(year), f"{month:02d}"),
         ).fetchall()
     by_tipo = {r["tipo"]: dict(r) for r in rows}
-    empty = {"cnt": 0, "total_usd": 0.0, "total_ars": 0.0,
-             "cotizacion_promedio": 0.0, "cotizacion_min": 0.0, "cotizacion_max": 0.0}
+    empty = {"cnt": 0, "total_usd": money.MONEY_ZERO, "total_ars": money.MONEY_ZERO,
+             "cotizacion_promedio": money.MONEY_ZERO, "cotizacion_min": money.MONEY_ZERO,
+             "cotizacion_max": money.MONEY_ZERO}
     return {tipo: by_tipo.get(tipo, dict(empty)) for tipo in ("venta", "compra")}
 
 
@@ -2193,7 +2197,9 @@ def get_recent_classifications_before(year: int, month: int, lookback_months: in
 
 
 def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float, tipo: str | None = None) -> bool:
-    monto_ars = monto_usd * cotizacion
+    monto_usd = money.amount(monto_usd)
+    cotizacion = money.amount(cotizacion)
+    monto_ars = money.amount(monto_usd * cotizacion)
     with get_conn() as conn:
         if tipo is None:
             cur = conn.execute(
@@ -2271,7 +2277,7 @@ def create_income(user_id: int, concept: str, amount: float, currency: str, date
         cur = conn.execute(
             "INSERT INTO incomes (user_id, concept, amount, currency, income_category_id, date) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, _normalize_concept(concept), amount, normalize_currency(currency),
+            (user_id, _normalize_concept(concept), money.amount(amount), normalize_currency(currency),
              income_category_id, date_str),
         )
         return cur.lastrowid
@@ -2308,7 +2314,7 @@ def update_income(income_id: int, user_id: int, concept: str, amount: float, cur
         cur = conn.execute(
             "UPDATE incomes SET concept=?, amount=?, currency=?, date=?, income_category_id=? "
             "WHERE id=? AND user_id=?",
-            (_normalize_concept(concept), amount, normalize_currency(currency), date_str,
+            (_normalize_concept(concept), money.amount(amount), normalize_currency(currency), date_str,
              income_category_id, income_id, user_id),
         )
         return cur.rowcount > 0
@@ -2320,14 +2326,14 @@ def delete_income(income_id: int, user_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def get_income_month_totals(year: int, month: int) -> dict[str, float]:
+def get_income_month_totals(year: int, month: int) -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT currency, COALESCE(SUM(amount), 0) AS total FROM incomes "
             "WHERE EXTRACT(YEAR FROM date)=? AND EXTRACT(MONTH FROM date)=? GROUP BY currency",
             (year, month),
         ).fetchall()
-    return {row["currency"]: float(row["total"]) for row in rows}
+    return {row["currency"]: row["total"] for row in rows}
 
 
 # ── Lista de compras ─────────────────────────────────────────────────────────

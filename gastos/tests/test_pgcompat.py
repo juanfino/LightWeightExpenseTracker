@@ -1,5 +1,6 @@
 import sys
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
@@ -27,6 +28,14 @@ class _FakePsycopgConnection:
 
 
 class PgCompatInsertTests(unittest.TestCase):
+    def test_row_preserves_decimal_values(self):
+        value = Decimal("123.45")
+
+        row = pgcompat.Row(["amount"], [value])
+
+        self.assertIs(row["amount"], value)
+        self.assertIsInstance(row["amount"], Decimal)
+
     def test_conflict_do_nothing_does_not_request_missing_id(self):
         statement, wants_id = pgcompat._sql(
             """

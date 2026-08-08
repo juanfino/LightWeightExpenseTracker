@@ -18,6 +18,7 @@ import os
 import anthropic
 import llm_usage
 import llm_limits
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ def classify_expenses(dossier: dict, variable: list[dict], prior_classifications
                 "format": {"type": "json_schema", "schema": _CLASSIFY_SCHEMA},
             },
             system=_CLASSIFY_SYSTEM,
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+            messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
             )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:
@@ -257,7 +258,7 @@ def analyze(dossier: dict) -> dict | None:
                 "format": {"type": "json_schema", "schema": _ANALYZE_SCHEMA},
             },
             system=_ANALYZE_SYSTEM,
-            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)}],
+            messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
             )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:

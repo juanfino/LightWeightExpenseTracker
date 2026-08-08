@@ -1,4 +1,7 @@
 import re
+from decimal import Decimal, InvalidOperation
+
+import money
 
 
 # Matches a number that may use:
@@ -16,9 +19,9 @@ _USD_RE = re.compile(
 )
 
 
-def _normalize_amount(raw: str) -> float | None:
+def _normalize_amount(raw: str) -> Decimal | None:
     """
-    Convierte un string de número local a float.
+    Convierte un string de número local a Decimal monetario.
 
     Casos:
       "100.000"   → 100000.0   (punto de miles)
@@ -36,8 +39,9 @@ def _normalize_amount(raw: str) -> float | None:
     if dot_count == 0 and comma_count == 0:
         # plain integer
         try:
-            return float(s)
-        except ValueError:
+            value = money.amount(s)
+            return value if value > 0 else None
+        except (InvalidOperation, ValueError, TypeError):
             return None
 
     if dot_count > 1:
@@ -73,9 +77,9 @@ def _normalize_amount(raw: str) -> float | None:
             s = s.replace(",", ".")
 
     try:
-        value = float(s)
+        value = money.amount(s)
         return value if value > 0 else None
-    except ValueError:
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 
