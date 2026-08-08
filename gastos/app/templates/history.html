@@ -125,6 +125,8 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 {% block content %}
 <div class="container">
 
+  {% include "_period_control.html" %}
+
   <!-- Page header -->
   <div class="page-header">
     <div class="page-title">Movimientos</div>
@@ -327,7 +329,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 <script>
   const initialParams = new URLSearchParams(window.location.search);
   const shouldOpenAdd = initialParams.get("add") === "1";
-  const enteredWithFilters = Array.from(initialParams.keys()).some(key => key !== "add");
+  const enteredWithFilters = Array.from(initialParams.keys()).some(key => !["add", "period"].includes(key));
   const PAGE_SIZE = 25;
   let allExpenses = [];
   let page        = 0;
@@ -721,6 +723,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     const q                  = document.getElementById("f-search").value.trim();
 
     const usp = new URLSearchParams();
+    usp.set("period", {{ period_value|tojson }});
     // month/year are always written explicitly (even empty = "Todos") so the URL
     // distinguishes "explicitly all" from "no filters at all" on a fresh visit.
     usp.set("month", month);
@@ -1028,10 +1031,9 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   // month/year) — since loadExpenses() always writes both keys once a filter fires.
   function applyFiltersFromUrl() {
     const usp = new URLSearchParams(window.location.search);
-    if (Array.from(usp.keys()).length === 0) {
-      const now = new Date();
-      document.getElementById("f-year").value  = now.getFullYear();
-      document.getElementById("f-month").value = now.getMonth() + 1;
+    if (!usp.has("year") && !usp.has("month")) {
+      document.getElementById("f-year").value  = {{ period_year }};
+      document.getElementById("f-month").value = {{ period_month }};
       return "";
     }
     document.getElementById("f-month").value    = usp.get("month")       || "";

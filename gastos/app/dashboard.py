@@ -6,7 +6,7 @@ import traceback
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 from authlib.integrations.flask_client import OAuth
 from flask import (
@@ -62,6 +62,12 @@ if os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET")
     )
 
 BAIRES = timezone(timedelta(hours=-3))
+PERIOD_COOKIE = "gastos_period"
+PERIOD_COOKIE_MAX_AGE = 60 * 60 * 24 * 400
+PERIOD_PAGE_ENDPOINTS = {
+    "index", "history", "incomes_page", "fijos_page", "dolares_page",
+    "resumenes_page",
+}
 
 
 @got_request_exception.connect_via(app)
@@ -109,6 +115,16 @@ def _resolve_web_identity():
     elif request.endpoint == "onboarding":
         return redirect(url_for("index"))
 
+    if (
+        g.current_user
+        and g.current_user.get("family_id")
+        and request.endpoint in PERIOD_PAGE_ENDPOINTS
+        and request.method in {"GET", "HEAD"}
+    ):
+        invalid_explicit_period = _prepare_period_context()
+        if invalid_explicit_period:
+            return redirect(_period_href(g.period_year, g.period_month))
+
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
         expected = (
@@ -125,7 +141,13 @@ def _resolve_web_identity():
 def _auth_template_context():
     if "preauth_csrf" not in session:
         session["preauth_csrf"] = secrets.token_urlsafe(32)
-    return {
+    if (
+        not hasattr(g, "period_year")
+        and getattr(g, "current_user", None)
+        and g.current_user.get("family_id")
+    ):
+        _prepare_period_context(allow_explicit=False)
+    context = {
         "current_user": getattr(g, "current_user", None),
         "csrf_token": (
             g.current_user["csrf_token"]
@@ -137,6 +159,18 @@ def _auth_template_context():
             db.shopping_pending_count() if getattr(g, "current_user", None) else 0
         ),
     }
+    if hasattr(g, "period_year"):
+        context.update({
+            "period_year": g.period_year,
+            "period_month": g.period_month,
+            "period_value": g.period_value,
+            "period_label": _month_label(g.period_year, g.period_month),
+            "period_is_current": (g.period_year, g.period_month) == g.current_period,
+            "period_prev_url": _period_href(*_shift_period(g.period_year, g.period_month, -1)),
+            "period_next_url": _period_href(*_shift_period(g.period_year, g.period_month, 1)),
+            "period_current_url": _period_href(*g.current_period),
+        })
+    return context
 
 
 @app.after_request
@@ -162,6 +196,16 @@ def _security_headers(response):
         )
     if request.endpoint in {"login", "register", "verify_otp", "google_callback", "onboarding"}:
         response.headers["Cache-Control"] = "no-store"
+    if hasattr(g, "period_value"):
+        response.set_cookie(
+            PERIOD_COOKIE,
+            g.period_value,
+            max_age=PERIOD_COOKIE_MAX_AGE,
+            secure=request.is_secure,
+            httponly=False,
+            samesite="Lax",
+            path="/",
+        )
     return response
 
 MONTHS_ES = [
@@ -172,6 +216,59 @@ MONTHS_ES = [
 
 def _month_label(year: int, month: int) -> str:
     return f"{MONTHS_ES[month]} {year}"
+
+
+def _family_now() -> datetime:
+    try:
+        family_tz = ZoneInfo(g.current_user["timezone"])
+    except (KeyError, TypeError, ZoneInfoNotFoundError):
+        family_tz = BAIRES
+    return datetime.now(family_tz)
+
+
+def _parse_period(period: str) -> tuple[int, int]:
+    year_str, month_str = period.split("-", 1)
+    if len(year_str) != 4 or len(month_str) != 2:
+        raise ValueError("Formato de período inválido")
+    year, month = int(year_str), int(month_str)
+    if not (2000 <= year <= 2099 and 1 <= month <= 12):
+        raise ValueError("Período fuera de rango")
+    return year, month
+
+
+def _shift_period(year: int, month: int, delta: int) -> tuple[int, int]:
+    absolute = year * 12 + month - 1 + delta
+    return absolute // 12, absolute % 12 + 1
+
+
+def _prepare_period_context(allow_explicit: bool = True) -> bool:
+    """Resolve the page period. An explicit URL always beats the preference cookie."""
+    current = _family_now()
+    g.current_period = (current.year, current.month)
+    explicit = request.args.get("period") if allow_explicit else None
+    candidate = explicit if explicit is not None else request.cookies.get(PERIOD_COOKIE)
+    invalid_explicit = False
+    try:
+        year, month = _parse_period(candidate) if candidate else g.current_period
+    except (TypeError, ValueError):
+        year, month = g.current_period
+        invalid_explicit = explicit is not None
+    g.period_year = year
+    g.period_month = month
+    g.period_value = f"{year:04d}-{month:02d}"
+    return invalid_explicit
+
+
+def _period_href(year: int, month: int) -> str:
+    """Build a canonical period link while preserving page-local filters."""
+    endpoint = request.endpoint or "index"
+    path = url_for(endpoint, **(request.view_args or {}))
+    args = request.args.to_dict(flat=False)
+    args["period"] = [f"{year:04d}-{month:02d}"]
+    if endpoint == "history":
+        args["year"] = [str(year)]
+        args["month"] = [str(month)]
+    return f"{path}?{urlencode(args, doseq=True)}"
 
 
 def _to_baires_str(value) -> str:
@@ -225,11 +322,7 @@ def landing():
 
 @app.route("/dashboard")
 def index():
-    try:
-        family_tz = ZoneInfo(g.current_user["timezone"])
-    except (KeyError, TypeError, ZoneInfoNotFoundError):
-        family_tz = BAIRES
-    now = datetime.now(family_tz)
+    now = _family_now()
     daily_quote = db.get_daily_quote(
         g.current_user["family_id"], now.date(), request.accept_languages.best or "es-AR"
     )
@@ -250,8 +343,8 @@ def index():
     onboarding["is_owner"] = g.current_user["role"] == "owner"
     onboarding["dismissed"] = g.current_user["onboarding_dismissed"]
     return render_template(
-        "index.html", year=now.year, month=now.month,
-        month_label=_month_label(now.year, now.month), onboarding=onboarding,
+        "index.html", year=g.period_year, month=g.period_month,
+        month_label=_month_label(g.period_year, g.period_month), onboarding=onboarding,
         daily_quote=daily_quote,
     )
 
@@ -707,6 +800,8 @@ def history():
     categories = db.get_all_categories()
     users      = db.get_all_users()
     years      = db.get_expense_years()
+    if g.period_year not in years:
+        years = sorted([*years, g.period_year], reverse=True)
     return render_template(
         "history.html",
         categories=[_row_to_dict(c) for c in categories],
@@ -1212,7 +1307,7 @@ def api_categories_delete():
 
 @app.route("/fijos")
 def fijos_page():
-    return render_template("fijos.html")
+    return render_template("fijos.html", year=g.period_year, month=g.period_month)
 
 
 @app.route("/config")
@@ -1388,13 +1483,20 @@ def api_backup_status():
 
 @app.route("/dolares")
 def dolares_page():
-    return render_template("dolares.html")
+    return render_template("dolares.html", year=g.period_year, month=g.period_month)
 
 
 @app.route("/api/cambios/resumen")
 def api_cambios_resumen():
-    now = datetime.now(BAIRES)
-    return jsonify(db.get_cambios_resumen_mes(now.year, now.month))
+    now = _family_now()
+    try:
+        year = int(request.args.get("year", now.year))
+        month = int(request.args.get("month", now.month))
+        if not (2000 <= year <= 2099 and 1 <= month <= 12):
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Período inválido"}), 400
+    return jsonify(db.get_cambios_resumen_mes(year, month))
 
 
 @app.route("/api/cambios/historial")
@@ -1495,20 +1597,13 @@ def api_cambios_update(cambio_id: int):
 
 @app.route("/resumenes")
 def resumenes_page():
-    latest = report.get_latest_report_overall()
-    if latest:
-        year, month = latest["year"], latest["month"]
-    else:
-        now = datetime.now(BAIRES)
-        year, month = now.year, now.month
-    return render_template("resumenes.html", year=year, month=month)
+    return render_template("resumenes.html", year=g.period_year, month=g.period_month)
 
 
 @app.route("/ingresos")
 def incomes_page():
-    now = datetime.now()
     return render_template("incomes.html", categories=[dict(r) for r in db.get_income_categories()],
-                           year=now.year, month=now.month)
+                           year=g.period_year, month=g.period_month)
 
 
 def _shopping_category(name: str):
@@ -1676,16 +1771,9 @@ def resumenes_page_period(period: str):
     try:
         year, month = _parse_period(period)
     except ValueError:
-        return redirect("/resumenes")
-    return render_template("resumenes.html", year=year, month=month)
-
-
-def _parse_period(period: str) -> tuple[int, int]:
-    year_str, month_str = period.split("-", 1)
-    year, month = int(year_str), int(month_str)
-    if not (1 <= month <= 12):
-        raise ValueError("Mes inválido")
-    return year, month
+        now = _family_now()
+        year, month = now.year, now.month
+    return redirect(url_for("resumenes_page", period=f"{year:04d}-{month:02d}"))
 
 
 def _serialize_report(r: dict | None) -> dict | None:

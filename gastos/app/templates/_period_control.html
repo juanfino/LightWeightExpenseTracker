@@ -1,0 +1,17 @@
+<div class="period-control-wrap {{ 'period-control-stale' if not period_is_current else '' }}" data-period-control>
+  <div class="period-control" aria-label="Período contable">
+    <a class="period-arrow" href="{{ period_prev_url }}" aria-label="Mes anterior" title="Mes anterior">&#8592;</a>
+    <div class="period-copy">
+      <span class="period-kicker">Período</span>
+      <span class="period-label">{{ period_label }}</span>
+    </div>
+    <a class="period-arrow" href="{{ period_next_url }}" aria-label="Mes siguiente" title="Mes siguiente">&#8594;</a>
+  </div>
+  {% if not period_is_current %}
+  <div class="period-stale-note">
+    <i class="ti ti-calendar-time" aria-hidden="true"></i>
+    <span>Estás viendo un período anterior</span>
+    <a href="{{ period_current_url }}">Volver al mes actual</a>
+  </div>
+  {% endif %}
+</div>

@@ -12,16 +12,6 @@
   margin-bottom: 24px;
 }
 
-.month-selector {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.month-selector select {
-  width: auto;
-}
-
 .fixed-list {
   display: flex;
   flex-direction: column;
@@ -217,20 +207,11 @@
 {% block content %}
 <div class="container">
 
+  {% include "_period_control.html" %}
+
   <!-- ── Estado del mes ─────────────────────────────────────────────────── -->
   <div class="fijos-header">
     <div class="page-title">Estado del mes</div>
-    <div class="month-selector">
-      <select id="sel-month">
-        <option value="1">Enero</option><option value="2">Febrero</option>
-        <option value="3">Marzo</option><option value="4">Abril</option>
-        <option value="5">Mayo</option><option value="6">Junio</option>
-        <option value="7">Julio</option><option value="8">Agosto</option>
-        <option value="9">Septiembre</option><option value="10">Octubre</option>
-        <option value="11">Noviembre</option><option value="12">Diciembre</option>
-      </select>
-      <select id="sel-year"></select>
-    </div>
   </div>
 
   <div class="card" id="status-card">
@@ -344,30 +325,8 @@
                      "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   const now = new Date();
-  // A "resumen" question ("no pagaste X este período") deep-links here with
-  // ?year=&month= so the user lands on the period that needs attention, not
-  // whatever month happens to be current.
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlYear    = parseInt(urlParams.get('year'), 10);
-  const urlMonth   = parseInt(urlParams.get('month'), 10);
-  let selYear  = !isNaN(urlYear) ? urlYear : now.getFullYear();
-  let selMonth = (!isNaN(urlMonth) && urlMonth >= 1 && urlMonth <= 12) ? urlMonth : now.getMonth() + 1;
-
-  // ── Selectors ──────────────────────────────────────────────────────────────
-  const selMonthEl = document.getElementById('sel-month');
-  const selYearEl  = document.getElementById('sel-year');
-
-  // Populate year selector (last 2 + current + next)
-  for (let y = selYear - 1; y <= selYear + 1; y++) {
-    const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
-    if (y === selYear) opt.selected = true;
-    selYearEl.appendChild(opt);
-  }
-  selMonthEl.value = selMonth;
-
-  selMonthEl.addEventListener('change', () => { selMonth = +selMonthEl.value; loadStatus(); });
-  selYearEl.addEventListener('change',  () => { selYear  = +selYearEl.value;  loadStatus(); });
+  let selYear = {{ year }};
+  let selMonth = {{ month }};
 
   // ── Formatting ─────────────────────────────────────────────────────────────
   function fmtAmount(n, currency) {

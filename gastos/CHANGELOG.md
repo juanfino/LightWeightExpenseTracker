@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.12.0
+- Dashboard, Movimientos, Ingresos, Fijos, Dólares y Resúmenes comparten un único período contable mediante `?period=YYYY-MM`: la URL explícita prevalece, una cookie dedicada lo conserva al navegar y, sin preferencia, se usa el mes actual de la zona horaria de la familia.
+- Las seis pantallas muestran el mismo control de período sobre su contenido; un mes anterior se distingue con calma y ofrece volver directo al actual. Movimientos conserva sus filtros locales — incluso “todos los meses”— sin modificar el período global.
+- Los períodos inválidos redirigen al mes familiar actual, `/resumenes/YYYY-MM` sigue funcionando como compatibilidad y las preguntas de gastos fijos de un resumen enlazan al nuevo formato canónico.
+
 ## 7.11.2
 - `reports.prompt_version` deja de depender de una etiqueta manual: cada resumen nuevo guarda una identificación legible y un SHA-256 derivados de los dos prompts, sus schemas y los parámetros reales de respuesta; el modelo sigue auditado por separado y las filas históricas conservan su valor original.
 

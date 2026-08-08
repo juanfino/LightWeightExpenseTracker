@@ -81,6 +81,8 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **mangoteca** arriba a la izquierda. Allí aparece una frase breve que cambia cada día local y se mantiene estable al refrescar. El menú principal contiene Movimientos, Ingresos, Fijos, Dólares y Resúmenes; al final, separada visualmente por no representar dinero registrado, está **Lista de compras**.
 
+Dashboard, Movimientos, Ingresos, Fijos, Dólares y Resúmenes comparten el mismo **período contable**. Al cambiar el mes con las flechas, las demás pantallas se abren en ese mismo período. Si estás viendo un mes anterior, el selector se destaca suavemente y ofrece **Volver al mes actual**. En Movimientos, los filtros siguen siendo independientes: podés elegir “Todos” o acotar más la búsqueda sin cambiar el período que verás al ir a otra pantalla.
+
 Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, el selector de apariencia y **Cerrar sesión**. La apariencia puede seguir al sistema o fijarse en modo oscuro/claro; la elección queda guardada en ese navegador. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú agrega Sistema (backup/restauración global de la base) y el acceso al panel operativo global.
 
 ### Panel de superadmin
