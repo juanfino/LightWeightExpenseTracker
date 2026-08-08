@@ -80,17 +80,6 @@ their existing non-monetary types. `ipc_series.value` remains a full-precision
 `Decimal` at `NUMERIC(20,12)` and is never quantized as money; only the deflated amount
 result is quantized to cents.
 
-`SCHEMA` (the large triple-quoted SQL string near the top of `db.py`, lines ~44–146)
-is **dead code** — it's a legacy SQLite-era schema definition (`INTEGER PRIMARY KEY
-AUTOINCREMENT`, `REAL` amount columns, `DATETIME DEFAULT CURRENT_TIMESTAMP`,
-`sqlite_master` references elsewhere in the file) that is never executed. The actual
-schema is applied exclusively via Alembic (`db.init_db()` calls
-`command.upgrade(alembic_cfg, "head")`); nothing in the codebase calls `conn.execute
-(SCHEMA)` or similar. Anyone reading `SCHEMA` for "what type is `amount`" would be
-misled into thinking it's `REAL` — it is `NUMERIC(14,2)` in the live database. Flagged
-here since it's directly relevant to "what type are amounts" but not fixed, since
-`SCHEMA`'s removal is a code change outside this session's documentation-only scope.
-
 ### 1.4 Exchange rate storage direction
 
 `cambios_dolar.cotizacion` stores "pesos per one US dollar" — confirmed both by
@@ -221,13 +210,7 @@ than per line, since the pattern repeats.
   Telegram-side formatting choke point — `prefix = "U$S " if currency == "USD" else
   "$"`, then a hand-rolled thousands-dot/decimal-comma formatter (Argentine
   convention, not locale-driven — no `locale` module or `babel` usage anywhere in the
-  codebase). There is also a **separate, redundant** `fmt_usd(amount)` function
-  immediately below it (line ~85) that duplicates `fmt_amount(amount, "USD")`'s logic
-  verbatim and produces an identical string; it does have one live caller (the dollar-
-  operation confirmation message, line ~1843) rather than being fully dead, but the
-  duplication itself — two functions computing the same formatted string — is not
-  fixed here since it's a code change outside this session's scope, but worth flagging
-  (see PR description). `_separate_totals()` (line ~96) hardcodes iterating `("ARS", "USD")` to build a
+  codebase). `_separate_totals()` (line ~96) hardcodes iterating `("ARS", "USD")` to build a
   per-currency total string.
 - **`dashboard.py`**: `other_currency = "USD" if currency == "ARS" else "ARS"` appears
   twice (lines ~729, ~767) — a binary toggle, not an N-way selector, used wherever the
