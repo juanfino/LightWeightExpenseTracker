@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.9.0
+- **Se puede cargar un cambio de dólares directamente desde la web.** Hasta ahora `/dolares` solo permitía editar o eliminar cambios ya registrados por Telegram; ahora un botón "+ Agregar cambio" abre un formulario con un selector "Vendí dólares" / "Compré dólares" que adapta las etiquetas (monto, cotización y el ARS calculado dicen "obtenidos" o "gastados" según corresponda) para que quede claro en qué dirección va la operación.
+- Nuevo endpoint `POST /api/cambios/add`, mismo permiso que editar/eliminar un cambio existente (cualquier miembro activo de la familia).
+
 ## 7.8.1
 - Se corrige el espaciado entre el texto y el botón "Conectar mi Telegram" en `/vincular-telegram`: la clase `mt-16` usada ahí nunca existió en el CSS, así que el botón quedaba pegado al párrafo.
 - Se agrega una confirmación visual ("Enlace copiado") al copiar el enlace de invitación en `/familia`, en vez de copiar en silencio.

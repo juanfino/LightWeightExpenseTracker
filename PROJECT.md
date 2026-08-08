@@ -90,7 +90,7 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 | `/exportar` | `export.html` | RFC 4180/BOM CSV exports per business dataset and complete ZIP exit path, all tenant-scoped |
 | `/settings` | `settings.html` | Categories: create/edit/delete (name, icon, color); subcategories CRUD; keywords CRUD (add/edit/delete, category + optional subcategory) |
 | `/fijos` | `fijos.html` | Fixed expenses: CRUD (name, amount, category), any month's paid/pending status with progress bar, register-payment modal (amount + date, date constrained to the period being viewed), "ya lo pagué" candidate search to link an already-logged expense instead. As of 2.3.0, accepts `?year=&month=` to open a specific period directly (used by the monthly report's "unlinked fixed expense" question links) |
-| `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, delete/edit an operation |
+| `/dolares` | `dolares.html` | USD/ARS operations: history, monthly summary, historical-rate chart, add/edit/delete an operation — "+ Agregar cambio" opens a buy/sell toggle that relabels the amount/rate/ARS fields per direction |
 | `/resumenes` | `resumenes.html` | Monthly AI-generated report (2.3.0; ARS/USD currency parity in 7.7.0) — see dedicated section above. Most recent report with a month selector; `/resumenes/YYYY-MM` deep link; Generate button when a period has none; understated Regenerate always available |
 | `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only. Superadmin-only (7.5.4) — a global full-DB backup trigger, not a per-family feature |
 | `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |

@@ -1385,6 +1385,37 @@ def api_cambios_cotizacion_historica():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/api/cambios/add", methods=["POST"])
+def api_cambios_add():
+    data       = request.get_json(silent=True) or {}
+    fecha      = (data.get("fecha") or "").strip()
+    monto_usd  = data.get("monto_usd")
+    cotizacion = data.get("cotizacion")
+    tipo       = (data.get("tipo") or "venta").strip().lower()
+
+    if not fecha or monto_usd is None or cotizacion is None:
+        return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
+
+    if tipo not in ("venta", "compra"):
+        return jsonify({"ok": False, "error": "Tipo inválido (venta/compra)"}), 400
+
+    try:
+        datetime.strptime(fecha, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
+
+    try:
+        monto_usd  = float(monto_usd)
+        cotizacion = float(cotizacion)
+        if monto_usd <= 0 or cotizacion <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Montos inválidos"}), 400
+
+    cambio_id = db.registrar_cambio(fecha, monto_usd, cotizacion, g.current_user["name"], tipo=tipo)
+    return jsonify({"ok": True, "id": cambio_id, "monto_ars": monto_usd * cotizacion})
+
+
 @app.route("/api/cambios/<int:cambio_id>", methods=["DELETE"])
 def api_cambios_delete(cambio_id: int):
     deleted = db.delete_cambio(cambio_id)

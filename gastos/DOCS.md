@@ -54,7 +54,7 @@ Si está configurada la `OPENAI_API_KEY` (además de `ANTHROPIC_API_KEY`), le po
 
 ### Dólares (compra/venta)
 
-Con `ANTHROPIC_API_KEY` configurada, también se pueden registrar operaciones de cambio en lenguaje natural (texto o audio): `vendí 500 dólares a 1700`, `compré 1000 dólares a 1550 cada uno`. Sigue funcionando el comando clásico `CambioDolar <monto_usd> <cotizacion>` (registra una venta).
+Con `ANTHROPIC_API_KEY` configurada, también se pueden registrar operaciones de cambio en lenguaje natural (texto o audio): `vendí 500 dólares a 1700`, `compré 1000 dólares a 1550 cada uno`. Sigue funcionando el comando clásico `CambioDolar <monto_usd> <cotizacion>` (registra una venta). Desde la web, el botón "+ Agregar cambio" en `/dolares` permite cargar una compra o una venta sin pasar por Telegram.
 
 ## Comandos
 
