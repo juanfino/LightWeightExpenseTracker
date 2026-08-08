@@ -1,5 +1,6 @@
-import os
+import hashlib
 import logging
+import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
@@ -40,111 +41,6 @@ USER_COLOR_PALETTE = [
     "#ef4444",  # rojo
     "#84cc16",  # lima
 ]
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id TEXT    UNIQUE NOT NULL,
-    name        TEXT    NOT NULL,
-    color       TEXT    NOT NULL DEFAULT '#6366f1',
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS categories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    UNIQUE NOT NULL,
-    color      TEXT    NOT NULL DEFAULT '#6366f1',
-    icon       TEXT    NOT NULL DEFAULT '💰',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS subcategories (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_id INTEGER NOT NULL,
-    name        TEXT NOT NULL,
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS keywords (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    keyword        TEXT    UNIQUE NOT NULL,
-    category_id    INTEGER NOT NULL,
-    subcategory_id INTEGER REFERENCES subcategories(id),
-    FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS expenses (
-    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id              INTEGER NOT NULL,
-    category_id          INTEGER,
-    subcategory_id       INTEGER REFERENCES subcategories(id),
-    concept              TEXT    NOT NULL,
-    amount               REAL    NOT NULL,
-    currency             TEXT    NOT NULL DEFAULT 'ARS' CHECK(currency IN ('ARS', 'USD')),
-    raw_text             TEXT    NOT NULL,
-    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
-    fixed_expense_id     INTEGER REFERENCES fixed_expenses(id) ON DELETE SET NULL,
-    fixed_expense_year   INTEGER,
-    fixed_expense_month  INTEGER,
-    FOREIGN KEY (user_id)     REFERENCES users(id),
-    FOREIGN KEY (category_id) REFERENCES categories(id)
-);
-
-CREATE TABLE IF NOT EXISTS fixed_expenses (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    concept          TEXT    NOT NULL,
-    estimated_amount REAL,
-    currency         TEXT    NOT NULL DEFAULT 'ARS' CHECK(currency IN ('ARS', 'USD')),
-    category_id      INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    active           INTEGER NOT NULL DEFAULT 1,
-    created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-);
-
-CREATE TABLE IF NOT EXISTS cambios_dolar (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha      TEXT    NOT NULL,
-    monto_usd  REAL    NOT NULL,
-    cotizacion REAL    NOT NULL,
-    monto_ars  REAL    NOT NULL,
-    usuario    TEXT    NOT NULL,
-    tipo       TEXT    NOT NULL DEFAULT 'venta'
-);
-
-CREATE TABLE IF NOT EXISTS ipc_series (
-    year         INTEGER NOT NULL,
-    month        INTEGER NOT NULL,
-    value        REAL    NOT NULL,
-    is_estimated INTEGER NOT NULL DEFAULT 0,
-    updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    PRIMARY KEY (year, month)
-);
-
-CREATE TABLE IF NOT EXISTS reports (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    year           INTEGER NOT NULL,
-    month          INTEGER NOT NULL,
-    generated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-    model          TEXT,
-    prompt_version TEXT,
-    dossier_json   TEXT    NOT NULL,
-    output_json    TEXT,
-    fingerprint    TEXT    NOT NULL,
-    llm_ok         INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS expense_classifications (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    report_id  INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
-    expense_id INTEGER NOT NULL REFERENCES expenses(id),
-    concept    TEXT    NOT NULL,
-    amount     REAL    NOT NULL,
-    currency   TEXT    NOT NULL DEFAULT 'ARS',
-    label      TEXT    NOT NULL CHECK(label IN ('recurring','exceptional')),
-    confidence REAL,
-    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-);
-"""
-
 
 @contextmanager
 def get_conn():
@@ -187,7 +83,8 @@ def _migrate_fixed_expenses_to_expense_link():
     """One-time, idempotent conversion of the old fixed_expense_payments join table into
     fixed_expense_id/fixed_expense_year/fixed_expense_month columns directly on expenses
     (v2.0.0). If fixed_expense_payments doesn't exist, this is a no-op — either a fresh DB
-    (SCHEMA already created the columns) or a DB that already went through this migration.
+    (a fresh PostgreSQL DB already has the columns via Alembic) or a DB that already
+    went through this legacy migration.
 
     Payments with a NULL expense_id have no amount to migrate — there's nothing to fabricate
     an expense from — so they're counted and dropped rather than converted. This is a
@@ -263,7 +160,7 @@ def _migrate_currencies():
 
     SQLite cannot add a CHECK constraint with older versions reliably, therefore
     the application validates all writes and fresh databases get the constraint
-    from SCHEMA.
+    through the historical SQLite bootstrap.
     """
     with get_conn() as conn:
         expense_cols = [r[1] for r in conn.execute("PRAGMA table_info(expenses)").fetchall()]
@@ -305,6 +202,37 @@ def init_db(users: dict | None = None, *, user_emails: dict | None = None):
     superadmin_email = os.environ.get("SUPERADMIN_EMAIL", "").strip().casefold()
     if superadmin_email:
         _bootstrap_superadmin(superadmin_email)
+
+
+def get_daily_quote(family_id: int, local_date, language: str = "es-AR"):
+    """Return a stable active quote for a family-local day.
+
+    Exact and base-language rows form the preferred pool. If neither exists,
+    selection degrades to every active quote. Decorative content must never make
+    the dashboard unavailable, so database errors intentionally return ``None``.
+    """
+    requested = (language or "es").strip() or "es"
+    base_language = requested.split("-", 1)[0]
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT id, text, author, language, tag, verified "
+                "FROM quotes WHERE active=true ORDER BY id"
+            ).fetchall()
+        if not rows:
+            return None
+        preferred = [
+            row for row in rows
+            if row["language"] == requested or row["language"] == base_language
+        ]
+        eligible = preferred or rows
+        digest = hashlib.sha256(
+            f"{local_date.isoformat()}:{family_id}".encode("utf-8")
+        ).digest()
+        return eligible[int.from_bytes(digest[:8], "big") % len(eligible)]
+    except Exception:
+        logger.warning("No se pudo seleccionar la frase diaria", exc_info=True)
+        return None
 
 
 def _bootstrap_web_identity(email: str) -> None:

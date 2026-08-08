@@ -79,7 +79,7 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **mangoteca** arriba a la izquierda. El menú principal contiene Movimientos, Ingresos, Lista, Gastos Fijos, Dólares y Resúmenes.
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **mangoteca** arriba a la izquierda. Allí aparece una frase breve que cambia cada día local y se mantiene estable al refrescar. El menú principal contiene Movimientos, Ingresos, Fijos, Dólares y Resúmenes; al final, separada visualmente por no representar dinero registrado, está **Lista de compras**.
 
 Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, el selector de apariencia y **Cerrar sesión**. La apariencia puede seguir al sistema o fijarse en modo oscuro/claro; la elección queda guardada en ese navegador. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú agrega Sistema (backup/restauración global de la base) y el acceso al panel operativo global.
 
@@ -116,7 +116,7 @@ En **Ingresos** se registran sueldos, honorarios, alquileres, ventas, reintegros
 
 En Telegram, `Ingreso: sueldo 1.500.000` usa el camino rápido. También se entienden frases inequívocas como `cobré 300.000 de un freelance` o `me depositaron el sueldo`. El formato corto `concepto monto` sin prefijo continúa registrando un gasto.
 
-En **Lista** (`/lista`), toda la familia comparte los productos pendientes agrupados por categoría. Se puede agregar una cantidad libre (`2 paquetes`, `1 kg`), editar, marcar comprado, reagregar desde los últimos 30 días o limpiar los comprados. Un producto pendiente repetido no se duplica: la cantidad nueva lo actualiza.
+En **Lista de compras** (`/lista`), toda la familia comparte los productos pendientes agrupados por categoría. Se puede agregar una cantidad libre (`2 paquetes`, `1 kg`), editar, marcar comprado, reagregar desde los últimos 30 días o limpiar los comprados. Un producto pendiente repetido no se duplica: la cantidad nueva lo actualiza.
 
 Telegram entiende `falta detergente`, `necesitamos dos leches`, `compré el detergente` y `qué falta comprar`. Un mensaje con monto es un gasto; algo faltante o necesario sin monto pertenece a la lista.
 
