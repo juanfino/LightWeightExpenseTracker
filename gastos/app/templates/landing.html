@@ -2,17 +2,35 @@
 {% block title %}mangoteca{% endblock %}
 {% block content %}
 <main class="hero">
-  <h1>Los gastos de tu familia, claros y en un solo lugar.</h1>
-  <p>Anotá un gasto en segundos desde Telegram o la web. El resto se ordena solo para que todos en casa entiendan en qué se va la plata.</p>
+  <h1>La plata de tu casa, clara y en un solo lugar.</h1>
+  <p>Anotá gastos, ingresos y la lista de compras desde Telegram o la web. El resto se ordena solo para que todos en casa entiendan en qué se va la plata.</p>
   <div class="hero-actions">
-    <a class="button" href="{{ url_for('register') }}">Crear mi cuenta</a>
+    <a class="button" href="{{ url_for('login') }}">Crear mi cuenta</a>
     <a class="button secondary" href="{{ url_for('login') }}">Ya tengo cuenta</a>
   </div>
 </main>
-<section class="feature-grid" aria-label="Cómo funciona">
-  <article class="feature"><strong>1. Cargá como te resulte cómodo</strong><p>Escribí “Supermercado 15000” en Telegram o usá el formulario desde el teléfono.</p></article>
-  <article class="feature"><strong>2. Mirá todo ordenado</strong><p>Movimientos, categorías, gastos fijos y dólares quedan reunidos en un dashboard compartido.</p></article>
-  <article class="feature"><strong>3. Sumá a tu familia</strong><p>Invitá a otra persona con un enlace privado. Cada grupo ve únicamente sus propios datos.</p></article>
+<section class="input-showcase" aria-label="Cómo funciona la carga">
+  <h2>Escribile como le hablarías a una persona</h2>
+  <div class="bubble-row">
+    <div class="bubble-item">
+      <div class="bubble">Supermercado 15000</div>
+      <p class="bubble-caption">Rápido y al hueso.</p>
+    </div>
+    <div class="bubble-item">
+      <div class="bubble">gasté 15 lucas en el súper y 20 en la verdulería</div>
+      <p class="bubble-caption">Lo separa, lo categoriza y lo guarda solo.</p>
+    </div>
+    <div class="bubble-item">
+      <div class="bubble">¿cuánto gastamos en comida este mes?</div>
+      <p class="bubble-caption">También te contesta.</p>
+    </div>
+  </div>
+  <p class="input-extra">También podés mandarle una foto del ticket o una nota de voz.</p>
+</section>
+<section class="feature-grid" aria-label="Qué incluye">
+  <article class="feature"><strong>Cargá como te resulte cómodo</strong><p>Texto, audio o foto del ticket, desde Telegram o el formulario web.</p></article>
+  <article class="feature"><strong>Mirá todo ordenado</strong><p>Gastos, ingresos, lista de compras, gastos fijos y dólares, todo en un dashboard compartido.</p></article>
+  <article class="feature"><strong>Sumá a tu familia</strong><p>Invitá a otra persona con un enlace privado. Cada grupo ve únicamente sus propios datos.</p></article>
 </section>
 <p class="trust">Empezás gratis y sin tarjeta. Es una beta familiar: tus datos se guardan en infraestructura privada administrada por Juampi.</p>
 {% endblock %}

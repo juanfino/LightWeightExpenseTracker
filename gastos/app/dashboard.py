@@ -8,7 +8,11 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urljoin, urlparse
 
 from authlib.integrations.flask_client import OAuth
-from flask import Flask, abort, g, got_request_exception, render_template, request, jsonify, redirect, session, url_for
+from flask import (
+    Flask, abort, g, got_request_exception, make_response, render_template,
+    request, jsonify, redirect, session, url_for,
+)
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.middleware.proxy_fix import ProxyFix
 import qrcode
 
@@ -69,14 +73,27 @@ def _resolve_web_identity():
         pgcompat.set_user_id(g.current_user["id"])
         pgcompat.set_family_id(g.current_user["family_id"])
 
-    public = {
+    # A verified identity with no active family membership is a real,
+    # durable state (mid-onboarding) — it resolves to /onboarding from any
+    # URL, the same way a fully anonymous request resolves to /login.
+    no_identity_required = {
         "landing", "login", "register", "verify_otp", "google_start",
         "google_callback", "family_join", "privacy", "terms", "static",
     }
-    if request.endpoint not in public and not g.current_user:
-        if request.path.startswith("/api/") or request.path.startswith("/admin/"):
-            return jsonify({"error": "Autenticación requerida"}), 401
-        return redirect(url_for("login", next=request.full_path.rstrip("?")))
+    no_family_required = {"onboarding", "logout", "static", "privacy", "terms"}
+
+    if not g.current_user:
+        if request.endpoint not in no_identity_required:
+            if request.path.startswith("/api/") or request.path.startswith("/admin/"):
+                return jsonify({"error": "Autenticación requerida"}), 401
+            return redirect(url_for("login", next=request.full_path.rstrip("?")))
+    elif not g.current_user["family_id"]:
+        if request.endpoint not in no_family_required:
+            if request.path.startswith("/api/") or request.path.startswith("/admin/"):
+                return jsonify({"error": "Autenticación requerida"}), 401
+            return redirect(url_for("onboarding"))
+    elif request.endpoint == "onboarding":
+        return redirect(url_for("index"))
 
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
@@ -129,7 +146,7 @@ def _security_headers(response):
         response.headers.setdefault(
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
         )
-    if request.endpoint in {"login", "register", "verify_otp", "google_callback"}:
+    if request.endpoint in {"login", "register", "verify_otp", "google_callback", "onboarding"}:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -309,74 +326,91 @@ def _set_auth_cookie(response, token: str):
     return response
 
 
+INVITE_COOKIE = "gastos_invite"
+
+
+def _invite_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(app.secret_key, salt="invite")
+
+
+def _set_invite_cookie(response, token: str):
+    """Persist the pending invitation across the identity round-trip.
+
+    A dedicated, explicitly-lived cookie (not Flask's ephemeral `session`)
+    so it survives a full OAuth redirect bounce and a closed-tab return —
+    the invitation itself is still re-validated server-side on use.
+    """
+    response.set_cookie(
+        INVITE_COOKIE,
+        _invite_serializer().dumps(token),
+        max_age=auth.INVITATION_DAYS * 86400,
+        secure=True,
+        httponly=True,
+        samesite="Lax",
+        path="/",
+    )
+    return response
+
+
+def _clear_invite_cookie(response):
+    response.delete_cookie(INVITE_COOKIE, path="/")
+    return response
+
+
+def _pending_invitation():
+    """Read the invite cookie, if any, and re-validate it against the DB."""
+    signed = request.cookies.get(INVITE_COOKIE)
+    if not signed:
+        return None
+    try:
+        token = _invite_serializer().loads(signed, max_age=auth.INVITATION_DAYS * 86400)
+    except (BadSignature, SignatureExpired):
+        return None
+    invitation = auth.get_invitation(token)
+    return invitation if invitation and invitation["valid"] else None
+
+
+def _post_auth_redirect(user_id: int, next_target: str) -> str:
+    """Route a freshly-authenticated identity to onboarding or its destination."""
+    if auth.user_has_active_membership(user_id):
+        return next_target
+    session["post_onboarding_next"] = next_target
+    return url_for("onboarding")
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if g.current_user:
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
-        login_user = None
         email = auth.normalize_email(request.form.get("email", ""))
+        next_target = _safe_next(request.form.get("next") or request.args.get("next"))
         ip = _client_ip()
-        if not auth.consume_rate_limit(f"otp-ip:{ip}", limit=10, window_seconds=3600):
+        if not email:
+            error = "Ingresá tu email."
+        elif not auth.consume_rate_limit(f"otp-ip:{ip}", limit=10, window_seconds=3600):
             error = "Demasiados intentos. Probá de nuevo más tarde."
         elif not auth.consume_rate_limit(f"otp-email:{email}", limit=5, window_seconds=3600):
             error = "Demasiados códigos pedidos para ese email. Probá más tarde."
         elif not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
             error = "No pudimos verificar que seas una persona. Intentá de nuevo."
         else:
-            login_user = auth.find_user_by_email(email)
-        if error:
-            pass
-        elif not login_user:
-            error = "No existe una cuenta con ese email. Podés crear una ahora."
-        elif not auth.user_has_active_membership(login_user["id"]):
-            error = "Ya no pertenecés a una familia. Podés crear una nueva desde Registro."
-        else:
+            # Identical path whether or not the email is already registered —
+            # this screen must not leak which addresses have an account.
             try:
                 code = auth.issue_otp(email, flow="login")
                 auth.send_otp(email, code)
-                return render_template("verify_otp.html", email=email, next=_safe_next(request.args.get("next")))
+                return render_template("verify_otp.html", email=email, next=next_target)
             except Exception:
-                app.logger.exception("No se pudo enviar OTP de login")
+                app.logger.exception("No se pudo enviar OTP")
                 error = "No pudimos enviar el código. Intentá de nuevo."
     return render_template("login.html", error=error, next=_safe_next(request.args.get("next")))
 
 
 @app.route("/registro", methods=["GET", "POST"])
 def register():
-    if g.current_user:
-        return redirect(url_for("index"))
-    error = None
-    if request.method == "POST":
-        existing_user = None
-        email = auth.normalize_email(request.form.get("email", ""))
-        name = request.form.get("name", "").strip()
-        family_name = request.form.get("family_name", "").strip()
-        ip = _client_ip()
-        if not email or not name or not family_name:
-            error = "Completá todos los campos."
-        else:
-            existing_user = auth.find_user_by_email(email)
-        if error:
-            pass
-        elif existing_user and auth.user_has_active_membership(existing_user["id"]):
-            error = "Ya existe una cuenta activa con ese email. Iniciá sesión."
-        elif not auth.consume_rate_limit(f"register-ip:{ip}", limit=5, window_seconds=3600):
-            error = "Demasiados intentos. Probá de nuevo más tarde."
-        elif not auth.consume_rate_limit(f"register-email:{email}", limit=3, window_seconds=3600):
-            error = "Demasiados intentos para ese email. Probá más tarde."
-        elif not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
-            error = "No pudimos verificar que seas una persona. Intentá de nuevo."
-        else:
-            try:
-                code = auth.issue_otp(email, flow="register", name=name, family_name=family_name)
-                auth.send_otp(email, code)
-                return render_template("verify_otp.html", email=email, next=url_for("index"))
-            except Exception:
-                app.logger.exception("No se pudo enviar OTP de registro")
-                error = "No pudimos enviar el código. Intentá de nuevo."
-    return render_template("register.html", error=error)
+    return redirect(url_for("login", next=request.args.get("next")))
 
 
 @app.route("/auth/otp/verify", methods=["POST"])
@@ -389,68 +423,26 @@ def verify_otp():
             error="El código es inválido, venció o superó los 5 intentos.",
         ), 400
     try:
-        if result["flow"] == "register":
-            existing_user = auth.find_user_by_email(result["email"])
-            if existing_user:
-                user_id = existing_user["id"]
-                auth.create_family_for_existing_user(
-                    user_id, result["family_name"] or ""
-                )
-            else:
-                user_id = auth.create_account(
-                    result["email"], result["name"] or "", result["family_name"] or ""
-                )
-        elif result["flow"] == "invite":
-            user = auth.find_user_by_email(result["email"])
-            user_id = (
-                user["id"] if user
-                else auth.create_user_without_family(result["email"], result["name"] or "")
-            )
-            auth.accept_invitation(result["invitation_id"], user_id)
-        else:
-            user = auth.find_user_by_email(result["email"])
-            if not user:
-                raise ValueError("La cuenta ya no existe")
-            user_id = user["id"]
+        existing_user = auth.find_user_by_email(result["email"])
+        user_id = (
+            existing_user["id"] if existing_user
+            else auth.create_user_without_family(result["email"], "")
+        )
         token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
-    except auth.MembershipConflict as exc:
-        invitation = auth.get_invitation(invitation_id=result.get("invitation_id"))
-        return render_template(
-            "join_family.html", invitation=invitation, error=str(exc)
-        ), 409
     except Exception:
         app.logger.exception("No se pudo completar autenticación OTP")
         return render_template(
             "verify_otp.html", email=email, next=url_for("index"),
             error="No pudimos completar el acceso. Intentá de nuevo.",
         ), 400
-    return _set_auth_cookie(redirect(_safe_next(request.form.get("next"))), token)
+    destination = _post_auth_redirect(user_id, _safe_next(request.form.get("next")))
+    return _set_auth_cookie(redirect(destination), token)
 
 
 @app.route("/auth/google", methods=["GET", "POST"])
 def google_start():
     if not getattr(oauth, "google", None):
         return redirect(url_for("login", error="google_unavailable"))
-    flow = request.values.get("flow", "login")
-    if flow == "register":
-        ip = _client_ip()
-        family_name = request.form.get("family_name", "").strip()
-        if request.method != "POST" or not family_name:
-            return redirect(url_for("register"))
-        if not auth.consume_rate_limit(f"register-google-ip:{ip}", limit=5, window_seconds=3600):
-            return render_template("register.html", error="Demasiados intentos. Probá más tarde."), 429
-        if not auth.verify_turnstile(request.form.get("cf-turnstile-response"), ip):
-            return render_template("register.html", error="No pudimos verificar que seas una persona."), 400
-        session["google_family_name"] = family_name
-    elif flow == "invite":
-        invitation = auth.get_invitation(request.form.get("invitation_token", ""))
-        if request.method != "POST" or not invitation or not invitation["valid"]:
-            return render_template(
-                "join_family.html", invitation=invitation,
-                error="La invitación no es válida o ya venció.",
-            ), 400
-        session["google_invitation_id"] = invitation["id"]
-    session["google_flow"] = flow
     session["google_next"] = _safe_next(request.values.get("next"))
     return oauth.google.authorize_redirect(
         url_for("google_callback", _external=True),
@@ -472,33 +464,12 @@ def google_callback():
     email = auth.normalize_email(profile.get("email", ""))
     if not email or str(profile.get("email_verified")).lower() not in {"true", "1"}:
         return render_template("login.html", error="Google no confirmó el email de la cuenta."), 400
-    flow = session.get("google_flow")
-    existing = auth.find_user_by_email(email)
-    if not existing and flow not in {"register", "invite"}:
-        return render_template("login.html", error="No existe una cuenta con ese email. Registrate primero."), 400
-    if flow == "invite":
-        user_id = auth.link_google_identity_for_invite(
-            str(profile["sub"]), email, profile.get("name") or email.split("@")[0]
-        )
-        invitation_id = session.get("google_invitation_id")
-        try:
-            auth.accept_invitation(invitation_id, user_id)
-        except (auth.InvitationError, auth.MembershipConflict) as exc:
-            invitation = auth.get_invitation(invitation_id=invitation_id)
-            return render_template(
-                "join_family.html", invitation=invitation, error=str(exc)
-            ), 409
-    else:
-        user_id = auth.link_google_identity(
-            str(profile["sub"]), email, profile.get("name") or email.split("@")[0],
-            session.get("google_family_name") or None,
-        )
+    user_id = auth.link_google_identity(
+        str(profile["sub"]), email, profile.get("name") or email.split("@")[0]
+    )
     token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
     destination = session.pop("google_next", url_for("index"))
-    session.pop("google_flow", None)
-    session.pop("google_family_name", None)
-    session.pop("google_invitation_id", None)
-    return _set_auth_cookie(redirect(destination), token)
+    return _set_auth_cookie(redirect(_post_auth_redirect(user_id, destination)), token)
 
 
 @app.route("/logout", methods=["POST"])
@@ -521,8 +492,17 @@ def terms():
     return render_template("terms.html")
 
 
-@app.route("/unirme/<token>", methods=["GET", "POST"])
+@app.route("/unirme/<token>", methods=["GET"])
 def family_join(token):
+    """Public invitation landing.
+
+    Only validates the token and hands the visitor to the unified identity
+    entry (Step 1) via a signed cookie — Step 2 (onboarding) is what
+    actually joins the family, re-validating the token server-side again.
+    A caller who already has a session here is guaranteed by the before_request
+    gate to either have no family (never reaches this view) or to already be a
+    member (the conflict branch below).
+    """
     invitation = auth.get_invitation(token)
     if not invitation or not invitation["valid"]:
         return render_template(
@@ -537,34 +517,53 @@ def family_join(token):
                 "Tenés que salir de ahí primero."
             ),
         ), 409
+    response = make_response(render_template("join_family.html", invitation=invitation))
+    return _set_invite_cookie(response, token)
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    """Step 2: reached only by an authenticated identity with no family yet."""
     error = None
+    notice = None
+    invitation = _pending_invitation()
+    if not invitation and request.cookies.get(INVITE_COOKIE):
+        notice = "Tu invitación venció o ya no es válida. Podés crear tu propio espacio."
     if request.method == "POST":
-        email = auth.normalize_email(request.form.get("email", ""))
+        action = request.form.get("action", "")
         name = request.form.get("name", "").strip()
-        ip = _client_ip()
-        if not email or (not name and not auth.find_user_by_email(email)):
-            error = "Ingresá tu nombre y email."
-        elif not auth.consume_rate_limit(f"invite-ip:{ip}", limit=10, window_seconds=3600):
-            error = "Demasiados intentos. Probá de nuevo más tarde."
-        elif not auth.consume_rate_limit(f"invite-email:{email}", limit=5, window_seconds=3600):
-            error = "Demasiados códigos pedidos para ese email. Probá más tarde."
+        if action == "join":
+            if not invitation:
+                error = "La invitación ya no es válida. Podés crear tu propio espacio."
+            elif not name:
+                error = "Ingresá tu nombre."
+            else:
+                try:
+                    auth.update_user_name(g.current_user["id"], name)
+                    auth.accept_invitation(invitation["id"], g.current_user["id"])
+                except ValueError as exc:
+                    error = str(exc)
+                else:
+                    response = redirect(session.pop("post_onboarding_next", url_for("index")))
+                    return _clear_invite_cookie(response)
+        elif action == "create":
+            family_name = request.form.get("family_name", "").strip()
+            if not name or not family_name:
+                error = "Completá tu nombre y el de tu familia."
+            else:
+                try:
+                    auth.update_user_name(g.current_user["id"], name)
+                    auth.create_family_for_existing_user(g.current_user["id"], family_name)
+                except ValueError as exc:
+                    error = str(exc)
+                else:
+                    response = redirect(session.pop("post_onboarding_next", url_for("index")))
+                    return _clear_invite_cookie(response)
         else:
-            try:
-                code = auth.issue_otp(
-                    email,
-                    flow="invite",
-                    name=name or (auth.find_user_by_email(email) or {}).get("name"),
-                    invitation_id=invitation["id"],
-                )
-                auth.send_otp(email, code)
-                return render_template(
-                    "verify_otp.html", email=email, next=url_for("index")
-                )
-            except Exception:
-                app.logger.exception("No se pudo enviar OTP de invitación")
-                error = "No pudimos enviar el código. Intentá de nuevo."
+            error = "Acción desconocida."
     return render_template(
-        "join_family.html", invitation=invitation, invitation_token=token, error=error
+        "onboarding.html", error=error, notice=notice,
+        invitation=invitation, name=g.current_user["name"],
     )
 
 
@@ -616,10 +615,14 @@ def family():
                 )
                 return redirect(url_for("family", success="Propiedad transferida."))
             elif action == "leave":
-                auth.leave_family(g.current_user["family_id"], g.current_user["id"])
-                response = redirect(url_for("register"))
-                response.delete_cookie(auth.SESSION_COOKIE, path="/")
-                return response
+                user_id = g.current_user["id"]
+                auth.leave_family(g.current_user["family_id"], user_id)
+                # leave_family revokes every session for this user (shared
+                # code path with owner-initiated removal) — re-mint one so a
+                # voluntary leave keeps the identity logged in, as a durable
+                # family-less session that resolves to onboarding.
+                token, _csrf = auth.create_session(user_id, request.user_agent.string, _client_ip())
+                return _set_auth_cookie(redirect(url_for("onboarding")), token)
             elif action == "unlink_telegram":
                 auth.unlink_telegram(g.current_user["id"])
                 g.current_user["telegram_id"] = None

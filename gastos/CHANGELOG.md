@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.8.0
+- **La landing pública muestra el alcance real de la app** (gastos, ingresos, lista de compras, gastos fijos y dólares, no solo "gastos") y agrega una sección de burbujas de chat que enseña, de un vistazo, cómo se carga la información en lenguaje natural, además de mencionar foto de ticket y nota de voz.
+- **Login y registro se unifican en una sola pantalla de identidad** (`/login`): email + Turnstile u "Continuar con Google", sin pedir nombre ni nombre de familia, y sin el Turnstile duplicado que tenía el registro. El botón de Google usa el isotipo oficial multicolor de Google, sin recolorear.
+- **Se separa la verificación de identidad de la creación/unión a una familia.** Una identidad verificada (por email u OAuth) sin family todavía es un estado real y persistente: cualquier pedido autenticado sin membership resuelve a `/onboarding` (crear espacio o unirse a una invitación pendiente) sin importar la URL a la que apuntara, y sobrevive a cerrar la pestaña y volver más tarde. Quien ya pertenece a una familia nunca ve `/onboarding`.
+- El token de invitación pendiente viaja en una cookie firmada independiente de la sesión de Flask, para no perderse al rebotar por el login de Google, y se revalida contra la base en el momento de crear la membership (no solo al abrir el enlace).
+- **Se corrige una fuga de enumeración de cuentas:** el login anterior respondía distinto ("no existe una cuenta con ese email" / "ya no pertenecés a una familia") según si el email estaba registrado. La pantalla unificada emite siempre la misma respuesta.
+- `auth.py`: `resolve_session` ahora resuelve identidades sin membership activa; se elimina la creación de familia embebida en el alta por Google/OTP (`create_account`, `link_google_identity_for_invite`) en favor del paso de onboarding explícito.
+
 ## 7.7.0
 - **Resúmenes trata pesos y dólares como dos monedas de primera clase**, en vez de un informe de pesos con un apéndice de dólares: el total del mes, las tres clases de gasto (fijo/recurrente/excepcional), los gastos fijos, los contrastes contra meses anteriores y "quién registró" ahora tienen un bloque propio por moneda, con la misma jerarquía visual.
 - Se agrega una línea de **equivalencia de referencia** (el gasto en USD valuado a la cotización propia del mes) sólo para transmitir magnitud — nunca se suma a ningún total, contraste ni partición.

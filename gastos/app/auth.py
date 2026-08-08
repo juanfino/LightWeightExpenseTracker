@@ -113,6 +113,12 @@ def create_session(user_id: int, user_agent: str | None, ip: str | None) -> tupl
 
 
 def resolve_session(token: str | None):
+    """Resolve a session to its identity.
+
+    A verified identity with no active family membership is a valid, durable
+    state (mid-onboarding) — the joins are LEFT so such a session still
+    resolves, just with family_id/role/family_name/timezone as None.
+    """
     if not token:
         return None
     with platform_transaction() as raw:
@@ -123,9 +129,9 @@ def resolve_session(token: str | None):
                    m.family_id, m.role, f.name AS family_name, f.timezone
             FROM sessions s
             JOIN users u ON u.id = s.user_id
-            JOIN memberships m ON m.user_id = u.id
-            JOIN families f ON f.id = m.family_id
-            WHERE s.token_hash = %s AND s.expires_at > now() AND m.active
+            LEFT JOIN memberships m ON m.user_id = u.id AND m.active
+            LEFT JOIN families f ON f.id = m.family_id
+            WHERE s.token_hash = %s AND s.expires_at > now()
             """,
             (_hash(token),),
         ).fetchone()
@@ -241,37 +247,12 @@ def send_otp(email: str, code: str) -> None:
     response.raise_for_status()
 
 
-def create_account(email: str, name: str, family_name: str) -> int:
-    email = normalize_email(email)
+def update_user_name(user_id: int, name: str) -> None:
     name = name.strip()
-    family_name = family_name.strip()
-    if not name or not family_name:
-        raise ValueError("Nombre y familia son obligatorios")
+    if not name:
+        raise ValueError("El nombre es obligatorio")
     with platform_transaction() as raw:
-        user_id = raw.execute(
-            "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
-            (email, name),
-        ).fetchone()[0]
-        family_id = raw.execute(
-            "INSERT INTO families (name, created_by_user_id) VALUES (%s, %s) RETURNING id",
-            (family_name, user_id),
-        ).fetchone()[0]
-        raw.execute(
-            "INSERT INTO memberships (user_id, family_id, role) VALUES (%s, %s, 'owner')",
-            (user_id, family_id),
-        )
-        # Seed inside the same transaction so registration cannot leave an
-        # owner/family without its initial taxonomy after a partial failure.
-        raw.execute("SET LOCAL ROLE gastos_app")
-        raw.execute("SELECT set_config('app.family_id', %s, true)", (str(family_id),))
-        import seed
-        previous_family_id = pgcompat.current_family_id()
-        pgcompat.set_family_id(family_id)
-        try:
-            seed.create_family_defaults(pgcompat.Connection(raw), family_id)
-        finally:
-            pgcompat.set_family_id(previous_family_id)
-    return user_id
+        raw.execute("UPDATE users SET name = %s WHERE id = %s", (name, user_id))
 
 
 def create_family_for_existing_user(user_id: int, family_name: str) -> int:
@@ -306,7 +287,12 @@ def create_family_for_existing_user(user_id: int, family_name: str) -> int:
     return family_id
 
 
-def link_google_identity(provider_user_id: str, email: str, name: str, family_name: str | None) -> int:
+def link_google_identity(provider_user_id: str, email: str, name: str) -> int:
+    """Find-or-create the bare identity behind a Google login.
+
+    Never creates a family — a Google-authenticated identity with no
+    membership lands on onboarding just like the email/OTP path.
+    """
     email = normalize_email(email)
     with platform_transaction() as raw:
         identity = raw.execute(
@@ -321,13 +307,13 @@ def link_google_identity(provider_user_id: str, email: str, name: str, family_na
             None if identity
             else raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
         )
-    if identity or by_email:
-        user_id = (identity or by_email)[0]
-        if family_name and not user_has_active_membership(user_id):
-            create_family_for_existing_user(user_id, family_name)
-    else:
-        user_id = create_account(email, name, family_name or f"Familia de {name}")
-    with platform_transaction() as raw:
+        if identity or by_email:
+            user_id = (identity or by_email)[0]
+        else:
+            user_id = raw.execute(
+                "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
+                (email, name.strip()),
+            ).fetchone()[0]
         raw.execute(
             """
             INSERT INTO oauth_identities (user_id, provider, provider_user_id)
@@ -436,36 +422,6 @@ def create_user_without_family(email: str, name: str) -> int:
             "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
             (normalize_email(email), name.strip()),
         ).fetchone()[0]
-
-
-def link_google_identity_for_invite(
-    provider_user_id: str, email: str, name: str
-) -> int:
-    email = normalize_email(email)
-    with platform_transaction() as raw:
-        row = raw.execute(
-            """
-            SELECT user_id FROM oauth_identities
-            WHERE provider = 'google' AND provider_user_id = %s
-            """,
-            (provider_user_id,),
-        ).fetchone()
-        if row:
-            return row[0]
-        row = raw.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
-        user_id = row[0] if row else raw.execute(
-            "INSERT INTO users (email, name) VALUES (%s, %s) RETURNING id",
-            (email, name.strip()),
-        ).fetchone()[0]
-        raw.execute(
-            """
-            INSERT INTO oauth_identities (user_id, provider, provider_user_id)
-            VALUES (%s, 'google', %s)
-            ON CONFLICT (provider, provider_user_id) DO NOTHING
-            """,
-            (user_id, provider_user_id),
-        )
-        return user_id
 
 
 def accept_invitation(invitation_id: int, user_id: int) -> int:
