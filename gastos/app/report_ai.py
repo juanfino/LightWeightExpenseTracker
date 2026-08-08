@@ -139,6 +139,12 @@ _ANALYZE_SYSTEM = (
     "- The fixed/recurring/exceptional partition is already computed per currency "
     "(currencies.ARS.partition, currencies.USD.partition) — cite it, don't recompute "
     "or contradict it.\n"
+    "- If the dossier contains a forecast, it was computed and frozen by code. Never "
+    "recompute, contradict, narrow, widen or sharpen any forecast range, and never "
+    "present a range as a certainty. Every mention must explicitly name both its target "
+    "month and its cutoff month (for example: 'Proyección para julio 2026, en base a "
+    "los datos hasta junio 2026'). Forecast language is descriptive and conditional "
+    "('podrías gastar'), never normative ('deberías gastar menos').\n"
     "- Do not invent URLs, links, category names, or ids beyond what's in the input.\n\n"
     "Currency rules — this dossier covers two independent currencies, ARS and USD, as "
     "parallel same-shape blocks under \"currencies\". This is not a pesos report with a "
@@ -194,7 +200,8 @@ _NO_SUGGESTIONS_RULE = (
 _SUGGESTIONS_RULE = (
     "- Suggestions are allowed, but every suggestion must rest explicitly on a concrete "
     "figure that exists in the dossier. Never invent a target, threshold, budget, or any "
-    "other number; do not imply that a dossier figure is a recommended limit."
+    "other number; do not imply that a dossier figure is a recommended limit. A stored "
+    "forecast range is a valid anchor, but it remains a projection rather than a target."
 )
 
 _EMPHASIS_PROMPTS = {
@@ -204,6 +211,7 @@ _EMPHASIS_PROMPTS = {
     "fixed_expenses": "fixed-expense payment status and movements",
     "outliers": "outliers already identified by the dossier",
     "spending_mix": "the code-computed fixed, recurring and exceptional partition",
+    "forecast": "the code-computed next-month forecast, its ranges, uncertainty and any backtest",
 }
 
 

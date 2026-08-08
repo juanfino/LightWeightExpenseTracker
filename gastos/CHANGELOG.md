@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.14.0
+- Cada resumen guarda una proyección determinística e inmutable para el mes inmediatamente siguiente, separada por moneda y explícita sobre el mes objetivo y el corte de datos; nunca usa información posterior aunque el reporte se lea más tarde.
+- La proyección combina gastos fijos activos, categorías variables habituales estimadas con mediana y rango intercuartílico, y una cola histórica para imprevistos. Con menos de tres meses por moneda muestra sólo la porción fija y explica qué historial falta.
+- Los antecedentes ARS se ajustan y proyectan con el IPC disponible hasta el corte; USD trabaja nominalmente. Los reportes viejos siguen sin cambios y los objetivos con gastos ya registrados muestran proyectado versus real.
+- La migración `0012` persiste el método y los rangos por reporte/moneda en `report_forecasts`, con RLS forzado y referencia compuesta de familia; la narrativa sólo recibe la proyección si la familia la prioriza o habilita sugerencias.
+
 ## 7.13.0
 - Cada familia puede orientar desde **Resúmenes** el énfasis, tono, extensión y foco libre de la próxima narrativa; cualquier miembro puede editar la configuración compartida y los resúmenes ya generados quedan intactos.
 - El foco libre queda aislado como texto no confiable y subordinado a las reglas duras del informe. Las sugerencias siguen apagadas por defecto; al habilitarlas deben apoyarse en una cifra del dossier y nunca inventar metas, presupuestos o umbrales.

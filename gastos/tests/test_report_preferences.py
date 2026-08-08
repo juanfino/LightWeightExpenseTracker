@@ -93,13 +93,16 @@ class ReportPreferencesWebTests(unittest.TestCase):
              patch.object(report.dossier_module, "build_dossier", return_value=dossier), \
              patch.object(report.db, "get_recent_classifications_before", return_value=[]), \
              patch.object(report.report_ai, "classify_expenses", return_value=[]), \
-             patch.object(report.report_ai, "analyze", return_value=output), \
+             patch.object(report.report_ai, "analyze", return_value=output) as analyze_mock, \
              patch.object(report, "fingerprint", return_value="facts"):
             generated = report.generate_report(2026, 8)
 
         self.assertEqual(generated["preferences"], preferences)
         self.assertEqual(generated["output"], output)
         self.assertEqual(generated["prompt_version"], report.report_ai.prompt_version(preferences))
+        narrated_dossier = analyze_mock.call_args.args[0]
+        self.assertIn("forecast", narrated_dossier)
+        self.assertEqual(narrated_dossier["forecast"]["target_period"], {"year": 2026, "month": 9})
 
 
 if __name__ == "__main__":

@@ -1987,6 +1987,41 @@ def get_expenses_excluding_period(year: int, month: int, currency: str | None = 
     return [dict(r) for r in rows]
 
 
+def get_expenses_through_period_art(year: int, month: int) -> list[dict]:
+    """Expense history through the report-period cutoff, never including later facts."""
+    cutoff = f"{year:04d}-{month:02d}"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.id, e.category_id, e.concept, e.amount, e.currency,
+                   e.created_at, e.fixed_expense_id,
+                   COALESCE(c.name, 'Sin categoría') AS category_name
+            FROM expenses e
+            LEFT JOIN categories c ON c.id = e.category_id
+            WHERE strftime('%Y-%m', e.created_at) <= ?
+            ORDER BY e.created_at, e.id
+            """,
+            (cutoff,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_active_fixed_expenses_at_cutoff(year: int, month: int, currency: str) -> list[dict]:
+    """Currently active definitions that existed by the report-period cutoff."""
+    cutoff = f"{year:04d}-{month:02d}"
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, concept, estimated_amount, currency, category_id, created_at
+            FROM fixed_expenses
+            WHERE active IS TRUE AND currency = ? AND strftime('%Y-%m', created_at) <= ?
+            ORDER BY concept, id
+            """,
+            (normalize_currency(currency), cutoff),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_first_expense_date() -> str | None:
     """Date (ART) of the earliest expense ever recorded — a hard fact the report uses
     to calibrate how much confidence a short history should carry. date(timestamptz)
@@ -2127,6 +2162,46 @@ def create_report(year: int, month: int, model: str | None, prompt_version: str 
              fingerprint, llm_ok, preferences_json),
         )
         return cur.lastrowid
+
+
+def save_report_forecast(report_id: int, forecast: dict) -> None:
+    """Persist one immutable forecast row per currency for the producing report."""
+    source = forecast["source_period"]
+    target = forecast["target_period"]
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT INTO report_forecasts"
+            " (report_id, source_year, source_month, target_year, target_month, currency,"
+            " method_id, forecast_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    report_id, source["year"], source["month"], target["year"], target["month"],
+                    currency, forecast["method_id"],
+                    money.json_dumps(block, ensure_ascii=False),
+                )
+                for currency, block in forecast["currencies"].items()
+            ],
+        )
+
+
+def get_report_forecast(report_id: int) -> dict | None:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT source_year, source_month, target_year, target_month, currency,"
+            " method_id, forecast_json FROM report_forecasts"
+            " WHERE report_id = ? ORDER BY currency",
+            (report_id,),
+        ).fetchall()
+    if not rows:
+        return None
+    import json
+    first = rows[0]
+    return {
+        "method_id": first["method_id"],
+        "source_period": {"year": first["source_year"], "month": first["source_month"]},
+        "target_period": {"year": first["target_year"], "month": first["target_month"]},
+        "currencies": {row["currency"]: json.loads(row["forecast_json"]) for row in rows},
+    }
 
 
 def get_latest_report(year: int, month: int) -> dict | None:
