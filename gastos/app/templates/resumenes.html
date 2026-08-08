@@ -3,16 +3,6 @@
 {% block nav_resumenes %}active{% endblock %}
 
 {% block extra_styles %}
-.month-nav {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.month-nav select {
-  min-width: 100px;
-}
-
 .header-meta {
   font-size: 12px;
   color: var(--text3);
@@ -153,6 +143,8 @@
 {% block content %}
 <div class="container">
 
+  {% include "_period_control.html" %}
+
   <!-- Page header -->
   <div class="page-header" style="align-items:flex-start;flex-wrap:wrap;gap:16px">
     <div>
@@ -160,10 +152,6 @@
       <div class="header-meta" id="report-meta">—</div>
     </div>
     <div class="hero-controls" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <div class="month-nav">
-        <select id="sel-month"></select>
-        <select id="sel-year"></select>
-      </div>
       <button class="btn btn-quiet" id="btn-regenerate" style="display:none">Regenerar</button>
     </div>
   </div>
@@ -184,24 +172,9 @@
   let selMonth = {{ month }};
   let quota = {remaining: 0, limit: 15};
 
-  const selMonthEl = document.getElementById('sel-month');
-  const selYearEl  = document.getElementById('sel-year');
   const root       = document.getElementById('report-root');
   const metaEl     = document.getElementById('report-meta');
   const regenBtn   = document.getElementById('btn-regenerate');
-
-  MONTHS_ES.slice(1).forEach((name, i) => {
-    const opt = document.createElement('option');
-    opt.value = i + 1; opt.textContent = name;
-    if (i + 1 === selMonth) opt.selected = true;
-    selMonthEl.appendChild(opt);
-  });
-  for (let y = selYear - 2; y <= selYear + 1; y++) {
-    const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
-    if (y === selYear) opt.selected = true;
-    selYearEl.appendChild(opt);
-  }
 
   function fmtAmount(n, currency) {
     if (n === null || n === undefined) return "—";
@@ -216,15 +189,6 @@
     const sign = n > 0 ? "+" : "";
     return sign + n.toFixed(1) + "%";
   }
-
-  function navigate() {
-    const url = `/resumenes/${selYear}-${String(selMonth).padStart(2, "0")}`;
-    window.history.replaceState(null, "", url);
-    loadReport();
-  }
-
-  selMonthEl.addEventListener('change', () => { selMonth = +selMonthEl.value; navigate(); });
-  selYearEl.addEventListener('change',  () => { selYear  = +selYearEl.value;  navigate(); });
 
   regenBtn.addEventListener('click', () => generateReport());
 
@@ -474,9 +438,9 @@
     const items = questions.map(q => {
       let href = "#";
       if (q.type === "uncategorized") {
-        href = `/history?category_id=null&year=${selYear}&month=${selMonth}`;
+        href = `/history?period=${selYear}-${String(selMonth).padStart(2, "0")}&category_id=null&year=${selYear}&month=${selMonth}`;
       } else if (q.type === "unlinked_fixed" && q.fixed_expense_id) {
-        href = `/fijos?year=${selYear}&month=${selMonth}`;
+        href = `/fijos?period=${selYear}-${String(selMonth).padStart(2, "0")}`;
       }
       return `<a class="question-link" href="${href}">${escapeHtml(q.text)}<i class="ti ti-chevron-right"></i></a>`;
     }).join("");

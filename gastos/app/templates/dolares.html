@@ -66,6 +66,8 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 {% block content %}
 <div class="container">
 
+  {% include "_period_control.html" %}
+
   <!-- Page header -->
   <div class="page-header">
     <div class="page-title">Dólares</div>
@@ -267,7 +269,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
   // ── Load & render summary ────────────────────────────────────────────────────
   async function loadResumen() {
-    const res  = await fetch("/api/cambios/resumen");
+    const res  = await fetch("/api/cambios/resumen?year={{ year }}&month={{ month }}");
     const data = await res.json();
     document.getElementById("val-usd").textContent = fmtUSD(data.total_usd_mes);
     document.getElementById("val-cot").textContent = fmtARS(data.cotizacion_promedio_mes);

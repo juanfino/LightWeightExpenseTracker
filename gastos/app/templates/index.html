@@ -26,39 +26,6 @@
   margin-bottom: 32px;
 }
 
-.month-nav {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.month-nav button {
-  background: none;
-  border: 1px solid var(--border2);
-  border-radius: 50%;
-  color: var(--text2);
-  cursor: pointer;
-  font-size: 14px;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s, border-color 0.15s;
-  font-family: var(--font-sans);
-}
-
-.month-nav button:hover { color: var(--text); border-color: var(--text3); }
-
-.month-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .hero-total {
   font-size: 56px;
   font-weight: 700;
@@ -625,6 +592,8 @@ a.onboarding-step:hover { background:var(--surface2); }
   </figure>
   {% endif %}
 
+  {% include "_period_control.html" %}
+
   {% if not onboarding.complete and not onboarding.dismissed %}
   <section class="card onboarding-card" id="onboarding-card" aria-labelledby="onboarding-title">
     <button class="onboarding-dismiss" id="onboarding-dismiss-btn" type="button" aria-label="Cerrar">
@@ -637,7 +606,7 @@ a.onboarding-step:hover { background:var(--surface2); }
     </div>
     <div class="onboarding-list">
       <div class="onboarding-step done"><i class="ti ti-circle-check-filled"></i><span>Crear cuenta</span></div>
-      <a class="onboarding-step {{ 'done' if onboarding.has_expense else '' }}" href="/history?add=1"><i class="ti {{ 'ti-circle-check-filled' if onboarding.has_expense else 'ti-circle' }}"></i><span>Cargar tu primer gasto</span><b>Ir →</b></a>
+      <a class="onboarding-step {{ 'done' if onboarding.has_expense else '' }}" href="{{ url_for('history', period=period_value, year=period_year, month=period_month, add=1) }}"><i class="ti {{ 'ti-circle-check-filled' if onboarding.has_expense else 'ti-circle' }}"></i><span>Cargar tu primer gasto</span><b>Ir →</b></a>
       <a class="onboarding-step {{ 'done' if onboarding.telegram_connected else '' }}" href="/vincular-telegram"><i class="ti {{ 'ti-circle-check-filled' if onboarding.telegram_connected else 'ti-circle' }}"></i><span>Conectar Telegram <small>(opcional)</small></span><b>Ir →</b></a>
       {% if onboarding.is_owner %}
       <a class="onboarding-step {{ 'done' if onboarding.family_invited else '' }}" href="/familia"><i class="ti {{ 'ti-circle-check-filled' if onboarding.family_invited else 'ti-circle' }}"></i><span>Invitar a alguien a tu grupo</span><b>Ir →</b></a>
@@ -646,14 +615,9 @@ a.onboarding-step:hover { background:var(--surface2); }
   </section>
   {% endif %}
 
-  <!-- Hero: big total + period navigator + user filter + view toggle -->
+  <!-- Hero: big total + user filter + view toggle -->
   <div class="hero">
     <div class="hero-main">
-      <div class="month-nav">
-        <button id="prev-month" title="Anterior">&#8592;</button>
-        <div class="month-label" id="month-label">{{ month_label }}</div>
-        <button id="next-month" title="Siguiente">&#8594;</button>
-      </div>
       <div class="hero-total" id="header-total">cargando…</div>
       <div class="hero-secondary" id="header-secondary"></div>
       <div class="hero-trend" id="header-trend"></div>
@@ -690,7 +654,7 @@ a.onboarding-step:hover { background:var(--surface2); }
         <div class="stat-label">Top del mes</div>
         <div class="top3-list" id="card-top3"></div>
       </div>
-      <a class="stat-cell stat-cell-income" href="/ingresos">
+      <a class="stat-cell stat-cell-income" href="{{ url_for('incomes_page', period=period_value) }}">
         <div class="stat-label">Ingresos del mes</div>
         <div class="stat-value" id="month-incomes">—</div>
         <span class="income-link">Ver ingresos →</span>
@@ -727,14 +691,14 @@ a.onboarding-step:hover { background:var(--surface2); }
     <div class="card mt-24">
       <div class="section-title" style="margin-bottom:14px">Gastos por categoría</div>
       <div id="cat-bars-wrap"></div>
-      <div id="cat-bars-empty" class="empty-state" style="display:none"><div class="empty-state-icon"><i class="ti ti-receipt"></i></div><div class="empty-state-title">Este mes todavía está vacío</div><p class="empty-state-copy">Cargá un gasto y acá vas a ver cómo se distribuye.</p><a class="btn btn-primary" href="/history?add=1">Cargar primer gasto</a></div>
+      <div id="cat-bars-empty" class="empty-state" style="display:none"><div class="empty-state-icon"><i class="ti ti-receipt"></i></div><div class="empty-state-title">Este mes todavía está vacío</div><p class="empty-state-copy">Cargá un gasto y acá vas a ver cómo se distribuye.</p><a class="btn btn-primary" href="{{ url_for('history', period=period_value, year=period_year, month=period_month, add=1) }}">Cargar primer gasto</a></div>
     </div>
 
     <!-- Fijos del mes widget -->
     <div class="card mt-24" id="fijos-widget" style="display:none">
       <div class="fijos-widget-header">
         <div class="section-title">Fijos del mes</div>
-        <a href="/fijos" style="font-size:12px; color:var(--text2)">Ver todo →</a>
+        <a href="{{ url_for('fijos_page', period=period_value) }}" style="font-size:12px; color:var(--text2)">Ver todo →</a>
       </div>
       <div id="fijos-progress-summary" style="font-size:12px; color:var(--text2); margin-bottom:8px"></div>
       <div class="fijos-progress-bar-wrap">
@@ -747,7 +711,7 @@ a.onboarding-step:hover { background:var(--surface2); }
     <div class="card mt-24">
       <div class="section-header">
         <div class="section-title">Últimos gastos</div>
-        <a href="/history" style="font-size:12px; color:var(--text2)">Ver todo →</a>
+        <a href="{{ url_for('history', period=period_value, year=period_year, month=period_month) }}" style="font-size:12px; color:var(--text2)">Ver todo →</a>
       </div>
       <div class="expense-list" id="recent-wrap"></div>
     </div>
@@ -964,30 +928,6 @@ a.onboarding-step:hover { background:var(--surface2); }
     loadAll();
   });
 
-  // ── Period navigation ──────────────────────────────────────────────────────
-  document.getElementById("prev-month").addEventListener("click", () => {
-    if (currentView === 'annual') {
-      currentYear--;
-    } else {
-      currentMonth--;
-      if (currentMonth < 1) { currentMonth = 12; currentYear--; }
-    }
-    loadAll();
-  });
-
-  document.getElementById("next-month").addEventListener("click", () => {
-    const now = new Date();
-    if (currentView === 'annual') {
-      if (currentYear >= now.getFullYear()) return;
-      currentYear++;
-    } else {
-      if (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1) return;
-      currentMonth++;
-      if (currentMonth > 12) { currentMonth = 1; currentYear++; }
-    }
-    loadAll();
-  });
-
   // ── User filter ────────────────────────────────────────────────────────────
   document.getElementById('user-select').addEventListener('change', function() {
     activeUser = this.value;
@@ -1003,9 +943,6 @@ a.onboarding-step:hover { background:var(--surface2); }
 
   // ── Monthly view ───────────────────────────────────────────────────────────
   async function loadMonthly() {
-    document.getElementById("month-label").textContent =
-      MONTHS_ES[currentMonth] + " " + currentYear;
-
     const usuario = activeUser || 'Todos';
     const mes     = `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
 
@@ -1309,7 +1246,6 @@ a.onboarding-step:hover { background:var(--surface2); }
 
   // ── Annual view ────────────────────────────────────────────────────────────
   async function loadAnnual() {
-    document.getElementById("month-label").textContent = String(currentYear);
     document.getElementById("header-total").textContent = "vista anual";
     document.getElementById("header-secondary").textContent = "";
     document.getElementById("header-trend").innerHTML = "";
