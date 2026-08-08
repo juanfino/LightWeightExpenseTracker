@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.11.0
+- El dashboard muestra una frase diaria curada, estable por fecha local y familia, con degradación de idioma y sin bloquear la pantalla si el contenido no está disponible; la migración `0010` incorpora una tabla global y 80 frases iniciales.
+- El menú principal agrupa primero Movimientos, Ingresos, Fijos, Dólares y Resúmenes, y separa visualmente **Lista de compras** al final tanto en escritorio como en mobile; la ruta `/lista` no cambia.
+- Se elimina el `SCHEMA` SQLite obsoleto de `db.py`: Alembic sigue siendo la única fuente del schema real.
+- El bot elimina el formatter USD duplicado y usa `fmt_amount(..., "USD")` para los cambios de dólares.
+
 ## 7.10.1
 - Auditoría de documentación (sin cambios de comportamiento): `PROJECT.md` y `README.md` corrigen versión, head de Alembic y tablas de variables de entorno desincronizadas entre sí y con el código, agregan `pgcompat.py`/`llm_usage.py` a responsabilidades de módulos, `/start` a comandos de Telegram, y mencionan el workflow de tests (`test.yml`) que corría sin documentar.
 - Nuevo `docs/CURRENCY_STATE.md`: inventario factual de cómo se maneja moneda hoy (storage, `cambios_dolar`, hardcoding en cada capa, `dossier.py`/`inflation.py`, entrada por Telegram/NL/voz/OCR, restricciones de RLS) — insumo para diseñar soporte a N monedas.

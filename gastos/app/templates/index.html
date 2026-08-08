@@ -3,6 +3,19 @@
 {% block nav_dashboard %}active{% endblock %}
 
 {% block extra_styles %}
+/* ── Frase del día ── */
+.daily-quote {
+  width: 100%;
+  margin: -12px 0 28px;
+  color: var(--text3);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.daily-quote blockquote { display: inline; }
+.daily-quote figcaption { display: inline; }
+.daily-quote figcaption::before { content: " — "; }
+
 /* ── Hero ── */
 .hero {
   display: flex;
@@ -605,6 +618,12 @@ a.onboarding-step:hover { background:var(--surface2); }
 
 {% block content %}
 <div class="container">
+
+  {% if daily_quote %}
+  <figure class="daily-quote" lang="{{ daily_quote.language }}">
+    <blockquote>“{{ daily_quote.text }}”</blockquote><figcaption>{{ daily_quote.author }}</figcaption>
+  </figure>
+  {% endif %}
 
   {% if not onboarding.complete and not onboarding.dismissed %}
   <section class="card onboarding-card" id="onboarding-card" aria-labelledby="onboarding-title">

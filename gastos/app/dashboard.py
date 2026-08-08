@@ -5,6 +5,7 @@ import io
 import traceback
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import urljoin, urlparse
 
 from authlib.integrations.flask_client import OAuth
@@ -211,7 +212,14 @@ def landing():
 
 @app.route("/dashboard")
 def index():
-    now = datetime.now()
+    try:
+        family_tz = ZoneInfo(g.current_user["timezone"])
+    except (KeyError, TypeError, ZoneInfoNotFoundError):
+        family_tz = BAIRES
+    now = datetime.now(family_tz)
+    daily_quote = db.get_daily_quote(
+        g.current_user["family_id"], now.date(), request.accept_languages.best or "es-AR"
+    )
     family_data = auth.get_family_management(g.current_user["family_id"])
     invitations = (
         auth.list_family_invitations(g.current_user["family_id"])
@@ -231,6 +239,7 @@ def index():
     return render_template(
         "index.html", year=now.year, month=now.month,
         month_label=_month_label(now.year, now.month), onboarding=onboarding,
+        daily_quote=daily_quote,
     )
 
 

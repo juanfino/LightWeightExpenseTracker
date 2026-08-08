@@ -82,16 +82,6 @@ def fmt_amount(amount: float, currency: str = "ARS") -> str:
     return f"{prefix}{int_part},{dec_part}"
 
 
-def fmt_usd(amount: float) -> str:
-    """1000.0 → 'U$S 1.000'  |  500.5 → 'U$S 500,50'"""
-    if amount == int(amount):
-        return "U$S " + f"{int(amount):,}".replace(",", ".")
-    formatted = f"{amount:,.2f}"
-    int_part, dec_part = formatted.split(".")
-    int_part = int_part.replace(",", ".")
-    return f"U$S {int_part},{dec_part}"
-
-
 def _separate_totals(rows) -> str:
     totals = {currency: sum(r["amount"] for r in rows if r["currency"] == currency)
               for currency in ("ARS", "USD")}
@@ -1840,7 +1830,7 @@ def _dolar_summary(tipo: str, monto_usd: float, cotizacion: float) -> str:
     ars_label = "ARS obtenidos" if tipo == "venta" else "ARS pagados"
     fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
     return (
-        f"💵 {verbo}: {fmt_usd(monto_usd)}\n"
+        f"💵 {verbo}: {fmt_amount(monto_usd, 'USD')}\n"
         f"💱 Cotización: {fmt_amount(cotizacion)}\n"
         f"💰 {ars_label}: {fmt_amount(monto_ars)}\n"
         f"📅 Fecha: {fecha_display}"
