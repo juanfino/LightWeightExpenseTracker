@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.8.1
+- Se corrige el espaciado entre el texto y el botón "Conectar mi Telegram" en `/vincular-telegram`: la clase `mt-16` usada ahí nunca existió en el CSS, así que el botón quedaba pegado al párrafo.
+- Se agrega una confirmación visual ("Enlace copiado") al copiar el enlace de invitación en `/familia`, en vez de copiar en silencio.
+- El widget de Turnstile en la pantalla de login ya no queda pegado al campo de email ni al botón de envío.
+- Se agrega un espaciado mínimo (`gap`) a `.section-header` en todas las pantallas que lo usan, para que el título y la acción de la derecha (ej. "Administrar fijos" + "+ Agregar fijo") no queden encimados en mobile.
+
 ## 7.8.0
 - **La landing pública muestra el alcance real de la app** (gastos, ingresos, lista de compras, gastos fijos y dólares, no solo "gastos") y agrega una sección de "antes → después" que enseña, de un vistazo, cómo un mensaje de voz, texto o una pregunta en lenguaje natural se convierte en un registro categorizado, además de mencionar foto de ticket y nota de voz.
 - **Login y registro se unifican en una sola pantalla de identidad** (`/login`): email + Turnstile u "Continuar con Google", sin pedir nombre ni nombre de familia, y sin el Turnstile duplicado que tenía el registro. El botón de Google usa el isotipo oficial multicolor de Google, sin recolorear.

@@ -2,6 +2,8 @@
 {% block title %}Familia · mangoteca{% endblock %}
 {% block extra_styles %}
 .family-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}.notice{padding:12px 14px;border-radius:10px;margin-bottom:16px}.notice.ok{background:color-mix(in oklch,var(--green) 13%,transparent);color:var(--green)}.notice.error{background:color-mix(in oklch,var(--red) 13%,transparent);color:var(--red)}.stack{display:flex;flex-direction:column;gap:12px}.inline-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.invite-link{width:100%;font-size:13px}.danger-zone{border:1px solid color-mix(in oklch,var(--red) 35%,var(--border));}.muted{color:var(--text2);font-size:12px}.member-inactive{opacity:.6}@media(max-width:760px){.family-grid{grid-template-columns:1fr}.page-header{align-items:flex-start;flex-direction:column;gap:8px}}
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 18px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200}
+#toast.show{opacity:1}
 {% endblock %}
 {% block content %}
 <main class="container">
@@ -14,7 +16,7 @@
       <p class="muted">Funciona una sola vez y vence en 7 días. Copialo ahora: después no podemos volver a mostrarlo.</p>
       <div class="inline-form mt-8">
         <input class="invite-link" id="invite-link" readonly value="{{ invitation_url }}">
-        <button class="btn btn-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('invite-link').value)">Copiar enlace</button>
+        <button class="btn btn-primary" type="button" onclick="copyInviteLink()">Copiar enlace</button>
       </div>
     </section>
   {% endif %}
@@ -85,4 +87,24 @@
     </div>
   </div>
 </main>
+<div id="toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function showToast(msg, isError = false) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.style.borderColor = isError ? "var(--danger)" : "var(--border)";
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2800);
+  }
+
+  function copyInviteLink() {
+    const input = document.getElementById("invite-link");
+    navigator.clipboard.writeText(input.value)
+      .then(() => showToast("Enlace copiado."))
+      .catch(() => showToast("No pudimos copiar el enlace. Copialo manualmente.", true));
+  }
+</script>
 {% endblock %}
