@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.7.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.8.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -74,14 +74,15 @@ A retrospective on demand, not a schedule (scheduling/Telegram delivery are a fo
 
 **Telegram** is the primary input surface — no separate "screens," just chat plus inline keyboards (category picker, edit/confirm buttons, fixed-expense payment buttons, OCR/voice confirmation, NL edit candidate picker).
 
-**Web application** (Flask, public auth/legal pages plus 13 private product/administration pages):
+**Web application** (Flask, public auth/legal pages, one identity-only-but-no-family screen, plus 13 private product/administration pages):
 
 | Route | Template | Purpose |
 |---|---|---|
-| `/` | `landing.html` | Public product landing: first-expense workflow, family sharing and privacy boundary; authenticated users continue to the dashboard |
-| `/login`, `/registro` | `login.html`, `register.html` | Google OAuth (always shows the account selector) or email OTP; registration creates the user, family and default taxonomy |
+| `/` | `landing.html` | Public product landing: chat-bubble explainer of the natural-language/OCR/voice input, family sharing and privacy boundary; authenticated users continue to the dashboard (or onboarding, see below) |
+| `/login` (`/registro` redirects here) | `login.html` | **Single identity entry screen** — Google OAuth (always shows the account selector) or email OTP, no name/family fields and exactly one Turnstile widget. Same response for known and unknown emails (no account-enumeration signal). Verifying identity never creates a family by itself |
+| `/onboarding` | `onboarding.html` | **Step 2**, reached only by an authenticated identity with no active family membership — a real, durable state that survives closing the tab. Creates a new family (name + family name) or, when a pending invitation cookie is present, joins it (name only, family name never shown as editable). Anyone who already has a membership is redirected away from this route from any URL; the inverse is also enforced |
 | `/privacy`, `/terms` | `privacy.html`, `terms.html` | Public legal pages required for OAuth publication (`/privacidad` and `/terminos` remain aliases) |
-| `/unirme/<token>` | `join_family.html` | Public invitation landing; Google/email acceptance into the inviter's family |
+| `/unirme/<token>` | `join_family.html` | Public invitation landing — validates the token and hands the visitor to `/login` via a signed, session-independent cookie (survives the Google OAuth round trip and a closed tab); the actual join happens at `/onboarding`, which re-validates the invitation server-side again |
 | `/dashboard` | `index.html` | Dashboard: self-dismissing onboarding checklist for new families, designed empty states, month total (+ vs. prior month), Gastos/Promedio diario/Top del mes strip, charts and per-member filter |
 | `/history` | `history.html` | Full expense history, filterable (concept search, month/year — each with an "all" option, category incl. uncategorized, subcategory scoped to the chosen category, fixed/variable status, user), active filters shown as removable chips, filter state reflected in the URL, inline edit (date, concept, amount, category, subcategory, fixed-expense link), delete. **Nav label is "Movimientos"** (renamed from "Historial" in 2.5.1 to avoid confusion with "Fijos") — route and template name are unchanged, only the visible label moved |
 | `/ingresos` | `incomes.html` | Tenant-scoped income history and CRUD in ARS/USD, with a separate fully administrable income taxonomy; members may mutate only their own rows |
@@ -169,7 +170,7 @@ header.
 - `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding and for the history screen's concept search
 - `db.py` — raw PostgreSQL operations through psycopg pools. `get_conn()` applies the RLS-bound role and transaction-local tenant before each domain transaction; platform identity resolution and the superadmin metrics, overrides, cost settings, and error operations use the dedicated bypass role.
 - `dashboard.py` — Flask app; authenticated product routes, superadmin guards/routes and UTC → Buenos Aires conversion for all display
-- `auth.py` — opaque server-side sessions, hashed OTPs, Resend, Google identity linking, Turnstile/rate limits, invitation lifecycle, active/historical memberships, ownership transfer, and account/family creation. Platform access uses transaction-local `gastos_superadmin`.
+- `auth.py` — opaque server-side sessions (resolve to an identity even without an active family membership, so a verified-but-family-less identity is durable), hashed OTPs, Resend, bare Google identity linking (never creates a family on its own), Turnstile/rate limits, invitation lifecycle, active/historical memberships, ownership transfer, and family creation/joining for an already-identified user (`create_family_for_existing_user`, `accept_invitation` — the onboarding step). Platform access uses transaction-local `gastos_superadmin`.
 - `llm_limits.py` — per-family admission control for all Anthropic/OpenAI calls: defaults to 100 routine calls/day and 15 report generations/month, honors optional `family_quota_overrides`, and allows two concurrent calls; calendar limits use `families.timezone`.
 - `ocr.py` — Anthropic SDK call; returns `{comercio, monto, fecha}`
 - `audio.py` — Whisper transcription + Claude extraction; returns `[{concept, amount, confidence}]`

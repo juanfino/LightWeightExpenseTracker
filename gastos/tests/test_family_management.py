@@ -66,24 +66,25 @@ class FamilyManagementTests(unittest.TestCase):
     def test_email_invitation_can_be_completed_entirely_through_ui(self):
         token, _created = auth.create_invitation(1, self.owner["id"])
         client = dashboard.app.test_client()
-        page = client.get(f"/unirme/{token}")
-        self.assertEqual(page.status_code, 200)
-        csrf = re.search(
-            rb'name="csrf_token" value="([^"]+)"', page.data
+        interstitial = client.get(f"/unirme/{token}")
+        self.assertEqual(interstitial.status_code, 200)
+        self.assertIn(b"Continuar", interstitial.data)
+
+        login_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', client.get("/login").data
         ).group(1).decode()
         sent = {}
 
         def capture(email, code):
             sent.update(email=email, code=code)
 
-        with patch.object(auth, "send_otp", side_effect=capture):
+        with (
+            patch.object(auth, "verify_turnstile", return_value=True),
+            patch.object(auth, "send_otp", side_effect=capture),
+        ):
             response = client.post(
-                f"/unirme/{token}",
-                data={
-                    "csrf_token": csrf,
-                    "name": "Persona invitada",
-                    "email": "ui-invite@example.com",
-                },
+                "/login",
+                data={"csrf_token": login_csrf, "email": "ui-invite@example.com"},
             )
         self.assertEqual(response.status_code, 200)
         verify_csrf = re.search(
@@ -97,6 +98,20 @@ class FamilyManagementTests(unittest.TestCase):
                 "code": sent["code"],
                 "next": "/dashboard",
             },
+        )
+        # A pending invitation, still no membership — lands on onboarding.
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/onboarding")
+
+        onboarding_page = client.get("/onboarding")
+        self.assertEqual(onboarding_page.status_code, 200)
+        self.assertNotIn(b'name="family_name"', onboarding_page.data)
+        onboarding_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', onboarding_page.data
+        ).group(1).decode()
+        response = client.post(
+            "/onboarding",
+            data={"csrf_token": onboarding_csrf, "action": "join", "name": "Persona invitada"},
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/dashboard")

@@ -1,0 +1,25 @@
+{% extends "auth_base.html" %}
+{% block title %}{{ ("Te sumás a " ~ invitation.family_name) if invitation else "Creá tu espacio familiar" }} · mangoteca{% endblock %}
+{% block content %}
+<main class="auth-wrap"><section class="card">
+  {% if invitation %}
+    <h1>Te sumás a {{ invitation.family_name }}</h1>
+  {% else %}
+    <h1>Creá tu espacio familiar</h1>
+    <p>Arrancás con categorías listas y después podés adaptarlas a tu casa.</p>
+  {% endif %}
+  {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="{{ 'join' if invitation else 'create' }}">
+    <label for="name">Tu nombre</label>
+    <input id="name" name="name" autocomplete="name" value="{{ name }}" required>
+    {% if not invitation %}
+      <label for="family_name">Nombre de la familia</label>
+      <input id="family_name" name="family_name" placeholder="Ej. Familia García" required>
+    {% endif %}
+    <button class="button" type="submit">{{ "Entrar" if invitation else "Crear mi espacio" }}</button>
+  </form>
+</section></main>
+{% endblock %}

@@ -85,8 +85,8 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertIsNotNone(auth.consume_otp("test@example.com", second))
         self.assertIsNone(auth.consume_otp("test@example.com", second))
 
-    def test_email_registration_creates_family_defaults_and_session(self):
-        page = self.client.get("/registro")
+    def test_email_identity_then_onboarding_creates_family_defaults_and_session(self):
+        page = self.client.get("/login")
         csrf = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1).decode()
         sent = {}
 
@@ -98,13 +98,8 @@ class AuthSecurityTests(unittest.TestCase):
             patch.object(auth, "send_otp", side_effect=capture),
         ):
             response = self.client.post(
-                "/registro",
-                data={
-                    "csrf_token": csrf,
-                    "name": "Nueva Persona",
-                    "family_name": "Familia Nueva",
-                    "email": "nueva@example.com",
-                },
+                "/login",
+                data={"csrf_token": csrf, "email": "nueva@example.com"},
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(sent["email"], "nueva@example.com")
@@ -121,6 +116,27 @@ class AuthSecurityTests(unittest.TestCase):
                 "next": "/dashboard",
             },
         )
+        # A brand-new identity has no membership yet — it lands on onboarding,
+        # not straight on the requested `next`.
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/onboarding")
+
+        onboarding_page = self.client.get("/onboarding")
+        self.assertEqual(onboarding_page.status_code, 200)
+        self.assertIn("Creá tu espacio familiar".encode(), onboarding_page.data)
+        onboarding_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', onboarding_page.data
+        ).group(1).decode()
+        response = self.client.post(
+            "/onboarding",
+            data={
+                "csrf_token": onboarding_csrf,
+                "action": "create",
+                "name": "Nueva Persona",
+                "family_name": "Familia Nueva",
+            },
+        )
+        # The original `next` from the identity step survives onboarding.
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/dashboard")
         dashboard_page = self.client.get("/dashboard")
@@ -143,6 +159,94 @@ class AuthSecurityTests(unittest.TestCase):
         self.assertEqual(row[2], "Familia Nueva")
         pgcompat.set_family_id(row[1])
         self.assertTrue(db.get_all_categories())
+
+    def test_login_screen_responds_identically_to_known_and_unknown_emails(self):
+        auth.create_user_without_family("conocido@example.com", "Conocido")
+        csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', self.client.get("/login").data
+        ).group(1).decode()
+        with (
+            patch.object(auth, "verify_turnstile", return_value=True),
+            patch.object(auth, "send_otp", return_value=None),
+        ):
+            known = self.client.post(
+                "/login", data={"csrf_token": csrf, "email": "conocido@example.com"},
+            )
+            unknown = self.client.post(
+                "/login", data={"csrf_token": csrf, "email": "jamas-registrado@example.com"},
+            )
+        self.assertEqual(known.status_code, 200)
+        self.assertEqual(unknown.status_code, 200)
+        self.assertNotIn(b"No existe una cuenta", known.data)
+        self.assertNotIn(b"No existe una cuenta", unknown.data)
+
+    def test_family_less_session_persists_and_resolves_to_onboarding(self):
+        user_id = auth.create_user_without_family("huerfano@example.com", "")
+        token, _csrf = auth.create_session(user_id, "test", "127.0.0.1")
+        client = dashboard.app.test_client()
+        client.set_cookie(auth.SESSION_COOKIE, token)
+
+        # Regardless of which URL they aimed at...
+        for path in ("/dashboard", "/login", "/registro", "/"):
+            with self.subTest(path=path):
+                response = client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], "/onboarding")
+
+        self.assertEqual(client.get("/api/summary").status_code, 401)
+
+        # ...and it survives being read again later (closed tab, same cookie).
+        onboarding_page = client.get("/onboarding")
+        self.assertEqual(onboarding_page.status_code, 200)
+
+    def test_member_with_family_is_redirected_away_from_onboarding(self):
+        client, _headers = authenticated_client(dashboard)
+        response = client.get("/onboarding")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/dashboard")
+
+    def test_invited_user_via_google_joins_the_intended_family_without_a_family_field(self):
+        owner = db.get_user_by_telegram_id("100")
+        token, _created = auth.create_invitation(1, owner["id"])
+
+        interstitial = self.client.get(f"/unirme/{token}")
+        self.assertEqual(interstitial.status_code, 200)
+        self.assertIn(b"Continuar", interstitial.data)
+
+        google = MagicMock()
+        google.authorize_access_token.return_value = {}
+        google.get.return_value.json.return_value = {
+            "email": "invitado@example.com", "email_verified": True,
+            "name": "Invitada Google", "sub": "google-sub-invite-1",
+        }
+        with patch.object(dashboard.oauth, "google", google, create=True):
+            response = self.client.get("/auth/google/callback")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/onboarding")
+
+        onboarding_page = self.client.get("/onboarding")
+        self.assertEqual(onboarding_page.status_code, 200)
+        self.assertIn(b"Invitada Google", onboarding_page.data)
+        self.assertNotIn(b'name="family_name"', onboarding_page.data)
+        onboarding_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', onboarding_page.data
+        ).group(1).decode()
+        response = self.client.post(
+            "/onboarding",
+            data={"csrf_token": onboarding_csrf, "action": "join", "name": "Invitada Google"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/dashboard")
+
+        with auth.platform_transaction() as raw:
+            row = raw.execute(
+                """
+                SELECT m.family_id, m.role, m.active
+                FROM users u JOIN memberships m ON m.user_id = u.id
+                WHERE u.email = 'invitado@example.com'
+                """
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, "member", True))
 
     def test_onboarding_card_disappears_when_every_step_is_complete(self):
         client, _headers = authenticated_client(dashboard)
