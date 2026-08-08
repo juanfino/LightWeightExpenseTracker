@@ -24,6 +24,7 @@ import backup as backup_module
 import fixed_matcher
 import categorizer
 import report
+import report_preferences
 import pgcompat
 import llm_limits
 import export_data
@@ -1787,6 +1788,37 @@ def _serialize_report(r: dict | None) -> dict | None:
 @app.route("/api/resumenes/available-months")
 def api_resumenes_available_months():
     return jsonify(db.get_months_with_data())
+
+
+@app.route("/api/resumenes/preferences", methods=["GET", "PUT"])
+def api_resumen_preferences():
+    if request.method == "GET":
+        preferences = report_preferences.from_storage(db.get_report_preferences())
+        return jsonify({
+            "preferences": preferences,
+            "options": {
+                "emphasis": report_preferences.EMPHASIS_OPTIONS,
+                "tones": list(report_preferences.TONE_OPTIONS),
+                "lengths": list(report_preferences.LENGTH_OPTIONS),
+                "max_focus_length": report_preferences.MAX_FOCUS_LENGTH,
+            },
+        })
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "Las preferencias deben ser un objeto JSON"}), 400
+    try:
+        preferences = report_preferences.resolve(payload, strict=True)
+    except report_preferences.InvalidReportPreferences as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    db.upsert_report_preferences(
+        g.current_user["id"], *report_preferences.to_storage(preferences)
+    )
+    return jsonify({
+        "ok": True,
+        "preferences": preferences,
+        "message": "Guardado. Se aplicará a la próxima generación; los resúmenes existentes no cambian.",
+    })
 
 
 @app.route("/api/resumenes/<int:year>/<int:month>")

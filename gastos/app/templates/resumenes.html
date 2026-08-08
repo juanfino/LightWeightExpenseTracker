@@ -138,6 +138,52 @@
   color: var(--text2);
   margin-bottom: 20px;
 }
+
+.preferences-card { display: none; }
+.preferences-card.open { display: block; }
+.preferences-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.preferences-field label,
+.preferences-field legend {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  margin-bottom: 7px;
+}
+.preferences-field fieldset { border: 0; padding: 0; margin: 0; }
+.preferences-field select,
+.preferences-field textarea {
+  width: 100%;
+}
+.emphasis-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+.preference-check {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 500 !important;
+  margin: 0 !important;
+}
+.preference-check input { margin-top: 2px; }
+.preferences-note {
+  background: var(--surface2);
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: var(--text2);
+  font-size: 12.5px;
+}
+.preferences-status { min-height: 20px; font-size: 12.5px; color: var(--text2); }
+
+@media (max-width: 700px) {
+  .preferences-grid, .emphasis-options { grid-template-columns: 1fr; }
+}
 {% endblock %}
 
 {% block content %}
@@ -152,8 +198,53 @@
       <div class="header-meta" id="report-meta">—</div>
     </div>
     <div class="hero-controls" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-quiet" id="btn-preferences" type="button">Preferencias del relato</button>
       <button class="btn btn-quiet" id="btn-regenerate" style="display:none">Regenerar</button>
     </div>
+  </div>
+
+  <div class="card preferences-card" id="preferences-card">
+    <div class="section-title">Cómo querés que esté contado</div>
+    <div class="card-sub mt-8">Esto orienta solamente el titular, el resumen, los hallazgos y las preguntas. Los totales, gráficos y demás datos de la página no cambian.</div>
+    <form id="preferences-form" class="mt-24">
+      <div class="preferences-grid">
+        <div class="preferences-field" style="grid-column:1/-1">
+          <fieldset>
+            <legend>Dar más importancia a</legend>
+            <div class="emphasis-options" id="emphasis-options"></div>
+          </fieldset>
+        </div>
+        <div class="preferences-field">
+          <label for="preference-tone">Tono</label>
+          <select id="preference-tone">
+            <option value="neutral">Neutral</option>
+            <option value="warm">Cálido</option>
+            <option value="direct">Directo</option>
+          </select>
+        </div>
+        <div class="preferences-field">
+          <label for="preference-length">Extensión</label>
+          <select id="preference-length">
+            <option value="short">Corta</option>
+            <option value="medium">Media</option>
+            <option value="long">Larga</option>
+          </select>
+        </div>
+        <div class="preferences-field" style="grid-column:1/-1">
+          <label for="preference-focus">Foco particular <span id="focus-count" style="font-weight:400">0/400</span></label>
+          <textarea id="preference-focus" maxlength="400" rows="3" placeholder="Ej.: Prestá atención a cuánto gastamos en delivery"></textarea>
+        </div>
+        <div class="preferences-field" style="grid-column:1/-1">
+          <label class="preference-check"><input type="checkbox" id="preference-suggestions"> Permitir sugerencias basadas en cifras reales del resumen</label>
+          <div class="card-sub mt-8">Nunca se inventarán presupuestos, metas ni límites.</div>
+        </div>
+      </div>
+      <div class="preferences-note mt-24">Los cambios se aplican cuando generes o regeneres un resumen. El que estás viendo queda intacto.</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="preferences-save" type="submit">Guardar preferencias</button>
+        <div class="preferences-status" id="preferences-status"></div>
+      </div>
+    </form>
   </div>
 
   <div id="report-root">
@@ -175,6 +266,70 @@
   const root       = document.getElementById('report-root');
   const metaEl     = document.getElementById('report-meta');
   const regenBtn   = document.getElementById('btn-regenerate');
+  const preferencesBtn = document.getElementById('btn-preferences');
+  const preferencesCard = document.getElementById('preferences-card');
+  const preferencesForm = document.getElementById('preferences-form');
+  const preferencesStatus = document.getElementById('preferences-status');
+  const focusInput = document.getElementById('preference-focus');
+
+  preferencesBtn.addEventListener('click', () => {
+    preferencesCard.classList.toggle('open');
+    preferencesBtn.textContent = preferencesCard.classList.contains('open')
+      ? "Cerrar preferencias" : "Preferencias del relato";
+  });
+
+  focusInput.addEventListener('input', () => {
+    document.getElementById('focus-count').textContent = `${focusInput.value.length}/400`;
+  });
+
+  async function loadPreferences() {
+    try {
+      const res = await fetch('/api/resumenes/preferences');
+      const data = await res.json();
+      const prefs = data.preferences;
+      const emphasisRoot = document.getElementById('emphasis-options');
+      emphasisRoot.innerHTML = Object.entries(data.options.emphasis).map(([value, label]) =>
+        `<label class="preference-check"><input type="checkbox" name="emphasis" value="${value}"> ${escapeHtml(label)}</label>`
+      ).join('');
+      emphasisRoot.querySelectorAll('input').forEach(input => {
+        input.checked = prefs.emphasis.includes(input.value);
+      });
+      document.getElementById('preference-tone').value = prefs.tone;
+      document.getElementById('preference-length').value = prefs.length;
+      focusInput.value = prefs.focus;
+      focusInput.dispatchEvent(new Event('input'));
+      document.getElementById('preference-suggestions').checked = prefs.allow_suggestions;
+    } catch (e) {
+      preferencesStatus.textContent = "No se pudieron cargar las preferencias.";
+    }
+  }
+
+  preferencesForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const saveBtn = document.getElementById('preferences-save');
+    saveBtn.disabled = true;
+    preferencesStatus.textContent = "Guardando…";
+    const payload = {
+      emphasis: Array.from(document.querySelectorAll('input[name="emphasis"]:checked')).map(el => el.value),
+      tone: document.getElementById('preference-tone').value,
+      length: document.getElementById('preference-length').value,
+      focus: focusInput.value,
+      allow_suggestions: document.getElementById('preference-suggestions').checked,
+    };
+    try {
+      const res = await fetch('/api/resumenes/preferences', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      preferencesStatus.textContent = res.ok ? data.message : (data.error || "No se pudo guardar.");
+    } catch (e) {
+      preferencesStatus.textContent = "No se pudo guardar. Probá de nuevo.";
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
 
   function fmtAmount(n, currency) {
     if (n === null || n === undefined) return "—";
@@ -458,5 +613,6 @@
   }
 
   loadReport();
+  loadPreferences();
 </script>
 {% endblock %}

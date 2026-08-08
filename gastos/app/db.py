@@ -2089,18 +2089,42 @@ def upsert_ipc_value(year: int, month: int, value: float, is_estimated: bool) ->
 
 # ── Reportes mensuales ───────────────────────────────────────────────────────
 
+def get_report_preferences() -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT emphasis_json, tone, length, focus, allow_suggestions, updated_at,"
+            " updated_by_user_id FROM family_report_preferences"
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_report_preferences(user_id: int, emphasis_json: str, tone: str, length: str,
+                              focus: str, allow_suggestions: bool) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO family_report_preferences"
+            " (emphasis_json, tone, length, focus, allow_suggestions, updated_by_user_id)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (family_id) DO UPDATE SET"
+            " emphasis_json=excluded.emphasis_json, tone=excluded.tone,"
+            " length=excluded.length, focus=excluded.focus,"
+            " allow_suggestions=excluded.allow_suggestions,"
+            " updated_by_user_id=excluded.updated_by_user_id, updated_at=now()",
+            (emphasis_json, tone, length, focus, allow_suggestions, user_id),
+        )
+
 def create_report(year: int, month: int, model: str | None, prompt_version: str | None,
                    dossier_json: str, output_json: str | None, fingerprint: str,
-                   llm_ok: bool) -> int:
+                   llm_ok: bool, preferences_json: str | None = None) -> int:
     """Append-only insert — a regeneration is always a new row, never an overwrite."""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO reports (year, month, generated_at, model, prompt_version,"
-            " dossier_json, output_json, fingerprint, llm_ok)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " dossier_json, output_json, fingerprint, llm_ok, preferences_json)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (year, month, now_utc, model, prompt_version, dossier_json, output_json,
-             fingerprint, llm_ok),
+             fingerprint, llm_ok, preferences_json),
         )
         return cur.lastrowid
 

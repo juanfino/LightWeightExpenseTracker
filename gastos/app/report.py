@@ -16,6 +16,7 @@ import db
 import dossier as dossier_module
 import inflation
 import report_ai
+import report_preferences
 import money
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def generate_report(year: int, month: int) -> dict:
     persisted, parsed report — even when the LLM calls fail — so the caller always
     has fixed-section data to render."""
     inflation.refresh()
+    preferences = report_preferences.from_storage(db.get_report_preferences())
     dossier = dossier_module.build_dossier(year, month)
     all_variable = [e for cur in _CURRENCIES for e in dossier["currencies"][cur]["variable_expenses"]]
 
@@ -43,7 +45,7 @@ def generate_report(year: int, month: int) -> dict:
 
     output = None
     if classifications is not None:
-        output = report_ai.analyze(dossier)
+        output = report_ai.analyze(dossier, preferences)
     llm_ok = output is not None
 
     fp = fingerprint(year, month)
@@ -51,11 +53,12 @@ def generate_report(year: int, month: int) -> dict:
         year=year,
         month=month,
         model=report_ai.model_name(),
-        prompt_version=report_ai.prompt_version(),
+        prompt_version=report_ai.prompt_version(preferences),
         dossier_json=money.json_dumps(dossier, ensure_ascii=False),
         output_json=money.json_dumps(output, ensure_ascii=False) if output is not None else None,
         fingerprint=fp,
         llm_ok=llm_ok,
+        preferences_json=money.json_dumps(preferences, ensure_ascii=False),
     )
 
     if classifications:
@@ -162,6 +165,8 @@ def _load_report_row(row: dict | None) -> dict | None:
     result["dossier"] = json.loads(result.pop("dossier_json"))
     output_json = result.pop("output_json")
     result["output"] = json.loads(output_json) if output_json else None
+    preferences_json = result.pop("preferences_json", None)
+    result["preferences"] = json.loads(preferences_json) if preferences_json else None
     result["llm_ok"] = bool(result["llm_ok"])
     return result
 

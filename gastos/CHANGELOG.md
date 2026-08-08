@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.13.0
+- Cada familia puede orientar desde **Resúmenes** el énfasis, tono, extensión y foco libre de la próxima narrativa; cualquier miembro puede editar la configuración compartida y los resúmenes ya generados quedan intactos.
+- El foco libre queda aislado como texto no confiable y subordinado a las reglas duras del informe. Las sugerencias siguen apagadas por defecto; al habilitarlas deben apoyarse en una cifra del dossier y nunca inventar metas, presupuestos o umbrales.
+- Cada reporte nuevo guarda el snapshot de preferencias resueltas y las incorpora a `prompt_version`; la migración `0011` agrega preferencias tenant-scoped con RLS y mantiene compatibles las filas históricas.
+
 ## 7.12.0
 - Dashboard, Movimientos, Ingresos, Fijos, Dólares y Resúmenes comparten un único período contable mediante `?period=YYYY-MM`: la URL explícita prevalece, una cookie dedicada lo conserva al navegar y, sin preferencia, se usa el mes actual de la zona horaria de la familia.
 - Las seis pantallas muestran el mismo control de período sobre su contenido; un mes anterior se distingue con calma y ofrece volver directo al actual. Movimientos conserva sus filtros locales — incluso “todos los meses”— sin modificar el período global.
