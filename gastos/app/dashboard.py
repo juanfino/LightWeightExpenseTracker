@@ -1378,7 +1378,13 @@ def api_cambios_resumen():
 @app.route("/api/cambios/historial")
 def api_cambios_historial():
     rows = db.get_cambios_historial(50)
-    return jsonify([dict(r) for r in rows])
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get("fecha"):
+            d["fecha"] = d["fecha"].strftime("%Y-%m-%d")
+        result.append(d)
+    return jsonify(result)
 
 
 @app.route("/api/cambios/por_mes")
