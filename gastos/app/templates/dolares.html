@@ -55,6 +55,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 .form-label   { font-size: 12px; font-weight: 500; color: var(--text2); }
 .form-row input { width: 100%; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* ── Tipo toggle (same pattern as the dashboard's Mensual/Anual toggle) ── */
+.view-toggle { display: flex; align-items: center; gap: 3px; background: var(--bg3); border-radius: 10px; padding: 3px; }
+.view-btn { flex: 1; padding: 9px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text2); background: none; border: none; cursor: pointer; transition: background 0.15s, color 0.15s; font-family: var(--font-sans); }
+.view-btn.active { background: var(--accent); color: var(--on-accent); }
+.view-btn:hover:not(.active) { color: var(--text); }
 {% endblock %}
 
 {% block content %}
@@ -108,6 +114,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
   <!-- ── Historial table ────────────────────────────────────────────────────── -->
   <div class="section-header">
     <div class="section-title">Historial de cambios</div>
+    <button class="btn btn-primary" id="btn-add-cambio">+ Agregar cambio</button>
   </div>
 
   <div class="card">
@@ -130,8 +137,8 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     <div id="historial-empty" class="empty-state" style="display:none">
       <div class="empty-state-icon"><i class="ti ti-currency-dollar"></i></div>
       <div class="empty-state-title">Todavía no registraste cambios de dólares</div>
-      <p class="empty-state-copy">Cuando compres o vendas dólares desde Telegram, acá vas a ver el monto y la cotización histórica.</p>
-      <a class="btn btn-primary" href="/vincular-telegram">Conectar Telegram</a>
+      <p class="empty-state-copy">Desde Telegram o acá abajo: cargá cuánto compraste o vendiste y a qué cotización.</p>
+      <button class="btn btn-primary" onclick="document.getElementById('btn-add-cambio').click()">Agregar cambio</button>
     </div>
   </div>
 
@@ -146,6 +153,41 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     <div style="display:flex; gap:10px; justify-content:flex-end">
       <button class="btn" id="btn-delete-cancel">Cancelar</button>
       <button class="btn btn-danger" id="btn-delete-confirm">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add modal ──────────────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-add">
+  <div class="modal">
+    <div class="modal-title">Agregar cambio</div>
+    <div class="form-row">
+      <label class="form-label">¿Qué hiciste?</label>
+      <div class="view-toggle" id="add-tipo-toggle">
+        <button type="button" class="view-btn active" data-tipo="venta">Vendí dólares</button>
+        <button type="button" class="view-btn" data-tipo="compra">Compré dólares</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Fecha</label>
+      <input type="date" id="add-fecha">
+    </div>
+    <div class="form-row">
+      <label class="form-label" id="add-usd-label">Monto USD vendido</label>
+      <input type="number" id="add-usd" min="0.01" step="0.01" placeholder="Ej: 1000">
+    </div>
+    <div class="form-row">
+      <label class="form-label" id="add-cot-label">Cotización de venta</label>
+      <input type="number" id="add-cot" min="0.01" step="0.01" placeholder="Ej: 1400">
+    </div>
+    <div class="form-row">
+      <label class="form-label" id="add-ars-label">ARS obtenidos (calculado)</label>
+      <input type="text" id="add-ars-preview" disabled style="color:var(--text2)">
+    </div>
+    <span id="add-error" style="font-size:12px; color:var(--danger); display:none"></span>
+    <div class="modal-footer">
+      <button class="btn" id="btn-add-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="btn-add-save">Guardar</button>
     </div>
   </div>
 </div>
@@ -453,6 +495,101 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     } else {
       alert("Error al eliminar el cambio.");
     }
+  });
+
+  // ── Add modal ──────────────────────────────────────────────────────────────────
+  let addTipo = "venta";
+
+  const ADD_COPY = {
+    venta:  { usdLabel: "Monto USD vendido",  cotLabel: "Cotización de venta",  arsLabel: "ARS obtenidos (calculado)" },
+    compra: { usdLabel: "Monto USD comprado", cotLabel: "Cotización de compra", arsLabel: "ARS gastados (calculado)" },
+  };
+
+  function updateAddCopy() {
+    const copy = ADD_COPY[addTipo];
+    document.getElementById("add-usd-label").textContent = copy.usdLabel;
+    document.getElementById("add-cot-label").textContent = copy.cotLabel;
+    document.getElementById("add-ars-label").textContent = copy.arsLabel;
+  }
+
+  document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      addTipo = btn.dataset.tipo;
+      document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(b) {
+        b.classList.toggle("active", b === btn);
+      });
+      updateAddCopy();
+    });
+  });
+
+  function updateAddArsPreview() {
+    const usd = parseFloat(document.getElementById("add-usd").value);
+    const cot = parseFloat(document.getElementById("add-cot").value);
+    document.getElementById("add-ars-preview").value =
+      (!isNaN(usd) && !isNaN(cot) && usd > 0 && cot > 0) ? fmtARS(usd * cot) : "—";
+  }
+
+  document.getElementById("add-usd").addEventListener("input", updateAddArsPreview);
+  document.getElementById("add-cot").addEventListener("input", updateAddArsPreview);
+
+  function openAddModal() {
+    addTipo = "venta";
+    document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(b) {
+      b.classList.toggle("active", b.dataset.tipo === "venta");
+    });
+    updateAddCopy();
+    const today = new Date();
+    document.getElementById("add-fecha").value =
+      today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
+    document.getElementById("add-usd").value = "";
+    document.getElementById("add-cot").value = "";
+    document.getElementById("add-ars-preview").value = "—";
+    document.getElementById("add-error").style.display = "none";
+    document.getElementById("modal-add").classList.add("open");
+    document.getElementById("add-usd").focus();
+  }
+
+  document.getElementById("btn-add-cambio").addEventListener("click", openAddModal);
+
+  document.getElementById("btn-add-cancel").addEventListener("click", function() {
+    document.getElementById("modal-add").classList.remove("open");
+  });
+
+  document.getElementById("modal-add").addEventListener("click", function(e) {
+    if (e.target === this) this.classList.remove("open");
+  });
+
+  document.getElementById("btn-add-save").addEventListener("click", async function() {
+    const errEl     = document.getElementById("add-error");
+    const fecha     = document.getElementById("add-fecha").value;
+    const monto_usd = parseFloat(document.getElementById("add-usd").value);
+    const cotizacion = parseFloat(document.getElementById("add-cot").value);
+
+    errEl.style.display = "none";
+
+    if (!fecha)                    { errEl.textContent = "La fecha es obligatoria."; errEl.style.display = "inline"; return; }
+    if (isNaN(monto_usd) || monto_usd <= 0) { errEl.textContent = "Monto USD inválido."; errEl.style.display = "inline"; return; }
+    if (isNaN(cotizacion) || cotizacion <= 0) { errEl.textContent = "Cotización inválida."; errEl.style.display = "inline"; return; }
+
+    const res  = await fetch("/api/cambios/add", {
+      method:  "POST",
+      headers: {"Content-Type": "application/json"},
+      body:    JSON.stringify({fecha, tipo: addTipo, monto_usd, cotizacion}),
+    });
+    const data = await res.json().catch(function() { return {}; });
+
+    if (!data.ok) {
+      errEl.textContent  = data.error || "Error al guardar.";
+      errEl.style.display = "inline";
+      return;
+    }
+
+    document.getElementById("modal-add").classList.remove("open");
+    await loadHistorial();
+    loadResumen();
+    loadUsdMes();
+    loadCotizacion();
+    loadPorMes();
   });
 
   // ── Edit modal ───────────────────────────────────────────────────────────────
