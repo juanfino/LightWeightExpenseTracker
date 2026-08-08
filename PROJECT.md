@@ -220,6 +220,7 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 
 ## Known Gotchas
 
+- **Monetary rounding is deliberately `ROUND_HALF_UP`:** every amount is quantized to two decimal places through `money.py`. Do not replace it with Python's built-in `round()` or Decimal's default `ROUND_HALF_EVEN` (banker's rounding); ties such as `2.345` must produce `2.35`.
 - **Dashboard port:** the code's own default is 5000, but the Pi runs it on 8090 (`DASHBOARD_PORT` in `~/.env`) to leave 5000 free for Frigate. Don't assume 5000 is what's live on the Pi.
 - **Argentine number format:** `.` is thousands, `,` is decimal. Test edge cases when touching `parser.py`.
 - **`cloudflared` targets:** use service names, never `localhost` — it runs `network_mode: host` but Cloudflare's tunnel config references Docker service DNS.
