@@ -9,20 +9,54 @@
     <a class="button secondary" href="{{ url_for('login') }}">Ya tengo cuenta</a>
   </div>
 </main>
-<section class="input-showcase" aria-label="Cómo funciona la carga">
-  <h2>Escribile como le hablarías a una persona</h2>
-  <div class="bubble-row">
-    <div class="bubble-item">
-      <div class="bubble">Supermercado 15000</div>
-      <p class="bubble-caption">Rápido y al hueso.</p>
-    </div>
-    <div class="bubble-item">
-      <div class="bubble">gasté 15 lucas en el súper y 20 en la verdulería</div>
-      <p class="bubble-caption">Lo separa, lo categoriza y lo guarda solo.</p>
-    </div>
-    <div class="bubble-item">
-      <div class="bubble">¿cuánto gastamos en comida este mes?</div>
-      <p class="bubble-caption">También te contesta.</p>
+<section class="log-showcase" aria-label="Cómo funciona la carga">
+  <div class="log-card">
+    <h2 class="log-title">Hablále o escribile, como te salga</h2>
+    <div class="log-rows">
+      <div class="log-row">
+        <div class="log-msg">
+          <span class="log-icon log-icon--voice" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="log-text">&quot;gasté quince mil en el súper&quot;</span>
+        </div>
+        <span class="log-arrow" aria-hidden="true">→</span>
+        <div class="log-result">
+          <div class="log-result-main">
+            <span class="log-result-label">Supermercado</span>
+            <span class="log-result-tag">COMIDA</span>
+          </div>
+          <span class="log-result-amount">$15.000</span>
+        </div>
+      </div>
+      <div class="log-row">
+        <div class="log-msg">
+          <span class="log-icon log-icon--text" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="log-text">gasté 15 lucas en el súper y 20 en la verdulería</span>
+        </div>
+        <span class="log-arrow" aria-hidden="true">→</span>
+        <div class="log-result log-result--stack">
+          <div class="log-result-line"><span class="log-result-label">Supermercado</span><span class="log-result-amount">$15.000</span></div>
+          <div class="log-result-line"><span class="log-result-label">Verdulería</span><span class="log-result-amount">$20.000</span></div>
+        </div>
+      </div>
+      <div class="log-row log-row--income">
+        <div class="log-msg">
+          <span class="log-icon log-icon--income" aria-hidden="true"><i></i><i></i></span>
+          <span class="log-text">cobré el sueldo, 800 lucas</span>
+        </div>
+        <span class="log-arrow" aria-hidden="true">→</span>
+        <div class="log-result">
+          <div class="log-result-main">
+            <span class="log-result-label">Sueldo</span>
+            <span class="log-result-tag">INGRESO</span>
+          </div>
+          <span class="log-result-amount">$800.000</span>
+        </div>
+      </div>
+      <div class="log-row log-row--qa">
+        <span class="log-question">¿cuánto gastamos en comida este mes?</span>
+        <span class="log-arrow" aria-hidden="true">→</span>
+        <span class="log-answer">&quot;Este mes, $35.000 en comida&quot;</span>
+      </div>
     </div>
   </div>
   <p class="input-extra">También podés mandarle una foto del ticket o una nota de voz.</p>

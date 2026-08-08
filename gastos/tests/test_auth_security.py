@@ -271,7 +271,9 @@ class AuthSecurityTests(unittest.TestCase):
     def test_public_landing_explains_the_first_expense_path(self):
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
-        self.assertIn(b"Supermercado 15000", page.data)
+        self.assertIn("gasté quince mil en el súper".encode(), page.data)
+        self.assertIn(b"Supermercado", page.data)
+        self.assertIn("cobré el sueldo, 800 lucas".encode(), page.data)
         self.assertIn(b"Crear mi cuenta", page.data)
 
     def test_google_login_always_requests_account_selection(self):
