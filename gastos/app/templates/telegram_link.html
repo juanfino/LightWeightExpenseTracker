@@ -6,7 +6,14 @@
 {% block content %}
 <main class="container link-wrap">
   <div class="page-header"><div><h1 class="page-title">Conectar Telegram</h1><p class="muted">Cargá gastos desde el chat, sin códigos ni configuración.</p></div></div>
-  <section class="card" id="link-card">
+  {% if not connected %}
+  <section class="card">
+    <h2 class="section-title">¿Qué es esto?</h2>
+    <p class="help-copy mt-8">Telegram es una app de mensajería gratuita, como WhatsApp. Un bot es un contacto automático dentro de Telegram: le escribís un mensaje y te responde al instante, no hay ninguna persona del otro lado.</p>
+    <p class="help-copy mt-8">Acá vas a conectar el bot de mangoteca. Una vez conectado, le vas a poder escribir algo como "Supermercado 15000" y él va a guardar el gasto solo, sin que tengas que abrir la web.</p>
+  </section>
+  {% endif %}
+  <section class="card mt-24" id="link-card">
   {% if connected %}
     <div class="connected"><div class="connected-icon">✅</div><h2>Telegram conectado</h2><p class="muted mt-8">Ya podés mandarle gastos al bot.</p></div>
   {% else %}
