@@ -1,10 +1,12 @@
 import json
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 
 import anthropic
 import llm_usage
 import llm_limits
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +39,12 @@ def looks_like_dolar(text: str) -> bool:
     return bool(_DOLAR_RE.search(text or ""))
 
 
-def _parse_number(raw) -> float | None:
+def _parse_number(raw) -> Decimal | None:
     if raw is None:
         return None
-    if isinstance(raw, (int, float)):
-        val = float(raw)
-        return val if val > 0 else None
     try:
-        val = float(str(raw).strip())
-    except (TypeError, ValueError):
+        val = money.amount(raw)
+    except (InvalidOperation, ValueError, TypeError):
         return None
     return val if val > 0 else None
 
@@ -61,7 +60,7 @@ def _parse_confidence(raw) -> float:
 def parse_dolar(text: str, anthropic_api_key: str) -> dict | None:
     """Interpreta un mensaje en lenguaje natural como una operación de dólar.
 
-    Returns {"tipo": "venta"|"compra", "monto_usd": float, "cotizacion": float,
+    Returns {"tipo": "venta"|"compra", "monto_usd": Decimal, "cotizacion": Decimal,
              "confidence": float} o None si el texto no es una operación de dólar
     (o no se pudo interpretar).
     """

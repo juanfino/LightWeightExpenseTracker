@@ -16,6 +16,7 @@ import db
 import dossier as dossier_module
 import inflation
 import report_ai
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,8 @@ def generate_report(year: int, month: int) -> dict:
         month=month,
         model=report_ai.model_name(),
         prompt_version=_PROMPT_VERSION,
-        dossier_json=json.dumps(dossier, ensure_ascii=False, default=str),
-        output_json=json.dumps(output, ensure_ascii=False) if output is not None else None,
+        dossier_json=money.json_dumps(dossier, ensure_ascii=False),
+        output_json=money.json_dumps(output, ensure_ascii=False) if output is not None else None,
         fingerprint=fp,
         llm_ok=llm_ok,
     )
@@ -88,15 +89,15 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
     if classifications is None:
         return {cur: {"available": False, "fixed_total": fixed_totals[cur]} for cur in _CURRENCIES}
 
-    totals = {cur: {"recurring_total": 0.0, "recurring_count": 0,
-                     "exceptional_total": 0.0, "exceptional_count": 0} for cur in _CURRENCIES}
+    totals = {cur: {"recurring_total": money.MONEY_ZERO, "recurring_count": 0,
+                     "exceptional_total": money.MONEY_ZERO, "exceptional_count": 0} for cur in _CURRENCIES}
     for c in classifications:
         expense = by_id.get(c["expense_id"])
         if expense is None:
             continue
         cur = expense.get("currency", "ARS")
-        bucket = totals.setdefault(cur, {"recurring_total": 0.0, "recurring_count": 0,
-                                          "exceptional_total": 0.0, "exceptional_count": 0})
+        bucket = totals.setdefault(cur, {"recurring_total": money.MONEY_ZERO, "recurring_count": 0,
+                                          "exceptional_total": money.MONEY_ZERO, "exceptional_count": 0})
         if c["label"] == "recurring":
             bucket["recurring_total"] += expense["amount"]
             bucket["recurring_count"] += 1
@@ -112,7 +113,10 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
             "recurring_count": totals[cur]["recurring_count"],
             "exceptional_total": totals[cur]["exceptional_total"],
             "exceptional_count": totals[cur]["exceptional_count"],
-            "variable_total": sum(e["amount"] for e in all_variable if e.get("currency", "ARS") == cur),
+            "variable_total": sum(
+                (e["amount"] for e in all_variable if e.get("currency", "ARS") == cur),
+                money.MONEY_ZERO,
+            ),
         }
         for cur in _CURRENCIES
     }
@@ -145,9 +149,9 @@ def fingerprint(year: int, month: int) -> str:
     )
     cambio_facts = db.get_cambios_for_period(year, month)
 
-    canonical = json.dumps(
+    canonical = money.json_dumps(
         {"expenses": expense_facts, "cambios": cambio_facts},
-        sort_keys=True, ensure_ascii=False, default=str,
+        sort_keys=True, ensure_ascii=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

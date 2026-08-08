@@ -25,11 +25,13 @@ messages / inline-confirmation flows. It performs no Telegram I/O itself.
 
 import json
 import logging
+from decimal import InvalidOperation
 from datetime import datetime, timedelta, timezone
 
 import anthropic
 import llm_usage
 import llm_limits
+import money
 
 import db
 import sqlro
@@ -413,8 +415,8 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
 
 def _handle_log(args: dict) -> dict:
     try:
-        amount = float(args.get("amount"))
-    except (TypeError, ValueError):
+        amount = money.amount(args.get("amount"))
+    except (InvalidOperation, ValueError, TypeError):
         return _reply("🤔 No me quedó claro el monto. ¿Me lo repetís?")
     if amount <= 0:
         return _reply("🤔 No me quedó claro el monto. ¿Me lo repetís?")
@@ -434,10 +436,10 @@ def _handle_log(args: dict) -> dict:
 
 def _handle_log_income(args: dict) -> dict:
     try:
-        amount = float(args.get("amount"))
+        amount = money.amount(args.get("amount"))
         if amount <= 0:
             raise ValueError
-    except (TypeError, ValueError):
+    except (InvalidOperation, ValueError, TypeError):
         return _reply("🤔 No me quedó claro el monto del ingreso.")
     concept = (args.get("concept") or "").strip()
     if not concept:
@@ -459,10 +461,10 @@ def _handle_edit(args: dict, user) -> dict:
     clean: dict = {}
     if changes.get("amount") is not None:
         try:
-            amt = float(changes["amount"])
+            amt = money.amount(changes["amount"])
             if amt > 0:
                 clean["amount"] = amt
-        except (TypeError, ValueError):
+        except (InvalidOperation, ValueError, TypeError):
             pass
     if changes.get("currency") is not None:
         try:
@@ -508,4 +510,4 @@ def _run_report_sql(sql: str) -> str:
         rows = sqlro.run_readonly(sql, max_rows=200)
     except sqlro.ReadOnlySQLError as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
-    return json.dumps({"rows": rows}, ensure_ascii=False, default=str)
+    return money.json_dumps({"rows": rows}, ensure_ascii=False)

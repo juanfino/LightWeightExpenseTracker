@@ -27,6 +27,7 @@ import categorizer
 import db
 import fixed_matcher
 import inflation
+import money
 
 BAIRES = timezone(timedelta(hours=-3))
 
@@ -66,7 +67,7 @@ def build_dossier(year: int, month: int) -> dict:
     monthly_totals = {}
     for currency in _CURRENCIES:
         totals = _monthly_totals(history_rows[currency])
-        totals[(year, month)] = sum(r["amount"] for r in period_rows[currency])
+        totals[(year, month)] = sum((r["amount"] for r in period_rows[currency]), money.MONEY_ZERO)
         monthly_totals[currency] = totals
 
     ars_total = monthly_totals["ARS"][(year, month)]
@@ -139,33 +140,33 @@ def _months_available_for_currency(year: int, month: int, period_rows: list[dict
     return len(periods)
 
 
-def _monthly_totals(history_rows: list[dict]) -> dict[tuple[int, int], float]:
-    totals: dict[tuple[int, int], float] = {}
+def _monthly_totals(history_rows: list[dict]) -> dict:
+    totals = {}
     for r in history_rows:
         key = _art_period(r["created_at"])
-        totals[key] = totals.get(key, 0.0) + r["amount"]
+        totals[key] = totals.get(key, money.MONEY_ZERO) + r["amount"]
     return totals
 
 
 def _build_base(period_rows: list[dict]) -> dict:
-    total = sum(r["amount"] for r in period_rows)
+    total = sum((r["amount"] for r in period_rows), money.MONEY_ZERO)
     count = len(period_rows)
     days_in_month = 31  # daily_avg is a rough denominator, not a calendar-exact one
     by_cat: dict[str, dict] = {}
     for r in period_rows:
         name = r["category_name"] or "Sin categoría"
-        by_cat.setdefault(name, {"category": name, "total": 0.0, "subcategorias": {}})
+        by_cat.setdefault(name, {"category": name, "total": money.MONEY_ZERO, "subcategorias": {}})
         by_cat[name]["total"] += r["amount"]
         if r["subcategory_name"]:
             sub = by_cat[name]["subcategorias"]
-            sub[r["subcategory_name"]] = sub.get(r["subcategory_name"], 0.0) + r["amount"]
+            sub[r["subcategory_name"]] = sub.get(r["subcategory_name"], money.MONEY_ZERO) + r["amount"]
 
     by_category = []
     for name, d in sorted(by_cat.items(), key=lambda kv: kv[1]["total"], reverse=True):
         by_category.append({
             "category": name,
             "total": d["total"],
-            "pct": round(d["total"] / total * 100, 1) if total else 0,
+            "pct": money.statistic(d["total"] / total * 100, 1) if total else 0,
             "subcategorias": [
                 {"name": n, "total": t}
                 for n, t in sorted(d["subcategorias"].items(), key=lambda kv: kv[1], reverse=True)
@@ -175,7 +176,7 @@ def _build_base(period_rows: list[dict]) -> dict:
     return {
         "total": total,
         "count": count,
-        "daily_avg": round(total / days_in_month, 2) if total else 0.0,
+        "daily_avg": money.rounded(total / days_in_month) if total else money.MONEY_ZERO,
         "by_category": by_category,
     }
 
@@ -185,7 +186,7 @@ def _build_contrasts(year: int, month: int, monthly_totals: dict, apply_ipc: boo
     ``real_not_applicable`` — distinct from ``real_unavailable`` (ARS with no IPC data
     for that period): one says the concept doesn't apply, the other says the data is
     missing, and the narrative must not conflate them."""
-    current_total = monthly_totals.get((year, month), 0.0)
+    current_total = monthly_totals.get((year, month), money.MONEY_ZERO)
     contrasts = {}
 
     def _nominal_and_real(baseline_period: tuple[int, int] | None, label: str, is_average: bool = False,
@@ -194,7 +195,9 @@ def _build_contrasts(year: int, month: int, monthly_totals: dict, apply_ipc: boo
             available_periods = [p for p in avg_periods if p in monthly_totals]
             if not available_periods:
                 return {"available": False, "label": label}
-            baseline_total = sum(monthly_totals[p] for p in available_periods) / len(available_periods)
+            baseline_total = money.rounded(
+                sum(monthly_totals[p] for p in available_periods) / len(available_periods)
+            )
             if apply_ipc:
                 # Real comparison for an average baseline deflates each contributing month
                 # to the current period's prices, then averages — a single "average
@@ -203,7 +206,7 @@ def _build_contrasts(year: int, month: int, monthly_totals: dict, apply_ipc: boo
                     inflation.deflate(monthly_totals[p], p[0], p[1], year, month) for p in available_periods
                 ]
                 real_baseline = (
-                    sum(v for v in real_values if v is not None) / len([v for v in real_values if v is not None])
+                    money.rounded(sum(v for v in real_values if v is not None) / len([v for v in real_values if v is not None]))
                     if any(v is not None for v in real_values) else None
                 )
             else:
@@ -224,7 +227,7 @@ def _build_contrasts(year: int, month: int, monthly_totals: dict, apply_ipc: boo
             "nominal_current": current_total,
             "nominal_baseline": baseline_total,
             "nominal_delta": current_total - baseline_total,
-            "nominal_delta_pct": round((current_total - baseline_total) / baseline_total * 100, 1)
+            "nominal_delta_pct": money.statistic((current_total - baseline_total) / baseline_total * 100, 1)
             if baseline_total else None,
         }
         if not apply_ipc:
@@ -233,7 +236,7 @@ def _build_contrasts(year: int, month: int, monthly_totals: dict, apply_ipc: boo
             entry["real_current"] = real_current
             entry["real_baseline"] = real_baseline
             entry["real_delta"] = real_current - real_baseline
-            entry["real_delta_pct"] = round((real_current - real_baseline) / real_baseline * 100, 1) \
+            entry["real_delta_pct"] = money.statistic((real_current - real_baseline) / real_baseline * 100, 1) \
                 if real_baseline else None
         else:
             entry["real_unavailable"] = True
@@ -258,40 +261,40 @@ def _build_delta_attribution(year: int, month: int, period_rows: list[dict], his
     if not prev_rows:
         return {"available": False}
 
-    def _by_category(rows: list[dict]) -> dict[str, float]:
-        totals: dict[str, float] = {}
+    def _by_category(rows: list[dict]) -> dict:
+        totals = {}
         for r in rows:
             name = r["category_name"] or "Sin categoría"
-            totals[name] = totals.get(name, 0.0) + r["amount"]
+            totals[name] = totals.get(name, money.MONEY_ZERO) + r["amount"]
         return totals
 
     current_by_cat = _by_category(period_rows)
     prev_by_cat = _by_category(prev_rows)
     categories = set(current_by_cat) | set(prev_by_cat)
-    total_delta = sum(current_by_cat.values()) - sum(prev_by_cat.values())
+    total_delta = sum(current_by_cat.values(), money.MONEY_ZERO) - sum(prev_by_cat.values(), money.MONEY_ZERO)
 
     items = []
     for cat in categories:
-        delta = current_by_cat.get(cat, 0.0) - prev_by_cat.get(cat, 0.0)
+        delta = current_by_cat.get(cat, money.MONEY_ZERO) - prev_by_cat.get(cat, money.MONEY_ZERO)
         if delta == 0:
             continue
         items.append({
             "category": cat,
             "delta_nominal": delta,
-            "pct_of_total_delta": round(delta / total_delta * 100, 1) if total_delta else None,
+            "pct_of_total_delta": money.statistic(delta / total_delta * 100, 1) if total_delta else None,
         })
     items.sort(key=lambda i: abs(i["delta_nominal"]), reverse=True)
     return {"available": True, "total_delta": total_delta, "items": items}
 
 
 def _build_outliers(year: int, month: int, period_rows: list[dict], history_rows: list[dict]) -> dict:
-    by_category: dict[str, list[float]] = {}
+    by_category: dict[str, list] = {}
     for r in history_rows:
         if r["fixed_expense_id"] is not None or r["category_id"] is None:
             continue
         by_category.setdefault(r["category_name"], []).append(r["amount"])
 
-    stats: dict[str, tuple[float, float]] = {}
+    stats: dict[str, tuple] = {}
     for cat, amounts in by_category.items():
         if len(amounts) < _MIN_HISTORY_FOR_OUTLIERS:
             continue
@@ -301,7 +304,7 @@ def _build_outliers(year: int, month: int, period_rows: list[dict], history_rows
         stats[cat] = (statistics.mean(amounts), stdev)
 
     items = []
-    outlier_total = 0.0
+    outlier_total = money.MONEY_ZERO
     for r in period_rows:
         if r["fixed_expense_id"] is not None or r["category_id"] is None:
             continue
@@ -315,12 +318,12 @@ def _build_outliers(year: int, month: int, period_rows: list[dict], history_rows
                 "concept": r["concept"],
                 "amount": r["amount"],
                 "category": cat,
-                "category_mean": round(mean, 2),
-                "category_stdev": round(stdev, 2),
+                "category_mean": money.rounded(mean),
+                "category_stdev": money.rounded(stdev),
             })
             outlier_total += r["amount"]
 
-    total = sum(r["amount"] for r in period_rows)
+    total = sum((r["amount"] for r in period_rows), money.MONEY_ZERO)
     return {
         "items": items,
         "total_with_outliers": total,
@@ -347,7 +350,7 @@ def _build_fixed_expenses(year: int, month: int, currency: str) -> dict:
         }
         prev = prev_payments.get(p["id"])
         if p["paid"] and prev and prev["paid"] and prev["total_paid"]:
-            entry["delta_vs_prev_period_pct"] = round(
+            entry["delta_vs_prev_period_pct"] = money.statistic(
                 (p["total_paid"] - prev["total_paid"]) / prev["total_paid"] * 100, 1
             )
         items.append(entry)
@@ -359,8 +362,8 @@ def _build_fixed_expenses(year: int, month: int, currency: str) -> dict:
         "unpaid": unpaid,
         "count_total": len(items),
         "count_paid": sum(1 for p in items if p["paid"]),
-        "total_estimated": sum(p["estimated_amount"] or 0 for p in items),
-        "total_paid": sum(p["total_paid"] or 0 for p in items),
+        "total_estimated": sum((p["estimated_amount"] or money.MONEY_ZERO for p in items), money.MONEY_ZERO),
+        "total_paid": sum((p["total_paid"] or money.MONEY_ZERO for p in items), money.MONEY_ZERO),
     }
 
 
@@ -387,9 +390,11 @@ def _build_equivalence(year: int, month: int, ars_total: float, usd_total: float
             rate_period = {"year": int(fecha[:4]), "month": int(fecha[5:7])}
 
     available = rate is not None
-    usd_total_in_ars = round(usd_total * rate, 2) if available else None
-    combined = round(ars_total + (usd_total_in_ars or 0.0), 2)
-    usd_share_pct = round((usd_total_in_ars or 0.0) / combined * 100, 1) if combined else 0.0
+    usd_total_in_ars = money.amount(usd_total * rate) if available else None
+    combined = money.amount(ars_total + (usd_total_in_ars or money.MONEY_ZERO))
+    usd_share_pct = money.statistic(
+        (usd_total_in_ars or money.MONEY_ZERO) / combined * 100, 1
+    ) if combined else 0.0
 
     return {
         "available": available,
@@ -414,7 +419,7 @@ def _build_dollars(by_tipo: dict, equivalence: dict) -> dict:
         # the denominator.
         basis_total = equivalence["ars_total"]
         basis = "sólo pesos (sin cotización para convertir los dólares del mes)"
-    coverage_ratio = round(by_tipo["venta"]["total_ars"] / basis_total, 3) if basis_total else None
+    coverage_ratio = money.statistic(by_tipo["venta"]["total_ars"] / basis_total, 3) if basis_total else None
     return {
         "venta": by_tipo["venta"],
         "compra": by_tipo["compra"],
@@ -426,7 +431,7 @@ def _build_dollars(by_tipo: dict, equivalence: dict) -> dict:
 def _build_registration_coverage(period_rows: list[dict]) -> list[dict]:
     by_user: dict[str, dict] = {}
     for r in period_rows:
-        d = by_user.setdefault(r["user_name"], {"user": r["user_name"], "count": 0, "total": 0.0})
+        d = by_user.setdefault(r["user_name"], {"user": r["user_name"], "count": 0, "total": money.MONEY_ZERO})
         d["count"] += 1
         d["total"] += r["amount"]
     return sorted(by_user.values(), key=lambda d: d["total"], reverse=True)
@@ -444,7 +449,7 @@ def _build_taxonomy(year: int, month: int, period_rows: list[dict], history_rows
     }
 
     return {
-        "uncategorized_total": sum(r["amount"] for r in uncategorized),
+        "uncategorized_total": sum((r["amount"] for r in uncategorized), money.MONEY_ZERO),
         "uncategorized_count": len(uncategorized),
         "new_categories": sorted(current_categories - recent_categories),
         "absent_categories": sorted(recent_categories - current_categories),

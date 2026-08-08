@@ -59,24 +59,26 @@ All monetary columns use `NUMERIC(14, 2)` at the Postgres level — no `FLOAT`/`
 `DOUBLE PRECISION` for money anywhere in the live (Alembic-applied) schema, so no
 binary-floating-point precision loss at the storage layer.
 
-**However**, `pgcompat.py`'s `Row` class (the DB-API-compatibility wrapper every query
-result passes through) does this on every row it constructs:
+`pgcompat.py` preserves the `Decimal` values returned by psycopg for every `NUMERIC`
+column. Monetary input paths and DB write choke points normalize amounts through
+`money.amount()`, which quantizes to `Decimal("0.01")` with the centrally declared
+`ROUND_HALF_UP` policy. Dossier aggregation, fixed-expense matching, dollar
+equivalence, IPC deflation, dashboard totals and Telegram formatting therefore run on
+exact decimal values rather than IEEE-754 arithmetic.
 
-```python
-self._values = tuple(float(value) if isinstance(value, Decimal) else value for value in values)
-```
+The boundary back to a JSON number is explicit and deliberately late:
 
-Every `NUMERIC` column — which `psycopg` would otherwise hand back as a Python
-`Decimal` — is coerced to a Python `float` the moment it's read out of the database.
-So while storage itself is exact, **every amount the application ever computes with
-in Python (dossier aggregation, report classification payloads, dashboard totals,
-Telegram message formatting) is IEEE-754 double-precision, not `Decimal`.** This is a
-deliberate simplification (there's no `Decimal`-aware arithmetic anywhere in `db.py`,
-`dossier.py`, `bot.py`, or `dashboard.py`), not an oversight caught in this pass — but
-it does mean float rounding artifacts (e.g. `0.1 + 0.2`-style errors) are structurally
-possible in any derived total, and would need to be considered if amount precision
-requirements tighten for additional currencies (e.g. currencies with more than 2
-decimal places, or very large magnitudes).
+- Flask's application-wide JSON provider emits `Decimal` as a JSON number for every
+  `/api/*` response.
+- `report_ai.py` converts both the classification and narration payloads immediately
+  before `json.dumps`; amounts reach the model as numbers, never strings.
+- Report persistence and fingerprints use the same numeric serializer.
+
+Percentages, ratios, confidence scores and telemetry are not money. Statistics derived
+from money are rounded explicitly and converted to `float`; confidence/telemetry keep
+their existing non-monetary types. `ipc_series.value` remains a full-precision
+`Decimal` at `NUMERIC(20,12)` and is never quantized as money; only the deflated amount
+result is quantized to cents.
 
 `SCHEMA` (the large triple-quoted SQL string near the top of `db.py`, lines ~44–146)
 is **dead code** — it's a legacy SQLite-era schema definition (`INTEGER PRIMARY KEY
@@ -305,9 +307,9 @@ From `dossier._build_equivalence()`, in order, first match wins:
 4. **Unavailable** — `rate = None`, `available = False` — if none of the above found
    anything (no dollar operations ever, or none within the lookback window).
 
-When available, `usd_total_in_ars = round(usd_total * rate, 2)`,
-`combined_ars_equivalent = round(ars_total + usd_total_in_ars, 2)`, and
-`usd_share_pct = round(usd_total_in_ars / combined * 100, 1)`. This value is
+When available, `usd_total_in_ars` and `combined_ars_equivalent` are quantized to cents
+with `ROUND_HALF_UP`, and `usd_share_pct` crosses explicitly to a one-decimal derived
+statistic. This value is
 explicitly documented in code and in the LLM system prompt as reference-only — never
 summed into a real total, contrast, or partition (see `docs/REPORT_PROMPTS.md` §3.1
 for the prompt-level guarantee).

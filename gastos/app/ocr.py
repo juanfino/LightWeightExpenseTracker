@@ -1,11 +1,13 @@
 import base64
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 from datetime import date
 
 import anthropic
 import llm_usage
 import llm_limits
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +26,14 @@ _PROMPT = (
 )
 
 
-def _parse_monto(raw) -> float | None:
+def _parse_monto(raw) -> Decimal | None:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
-        return float(raw)
+        try:
+            return money.amount(raw)
+        except (InvalidOperation, ValueError, TypeError):
+            return None
     s = str(raw).strip().replace(" ", "")
     if "," in s and "." in s:
         if s.index(",") > s.index("."):
@@ -41,8 +46,8 @@ def _parse_monto(raw) -> float | None:
         # Sin separador de miles: 5580,00
         s = s.replace(",", ".")
     try:
-        return float(s)
-    except ValueError:
+        return money.amount(s)
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 

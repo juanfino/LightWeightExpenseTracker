@@ -8,8 +8,6 @@ import re
 import threading
 from contextvars import ContextVar
 from collections.abc import Mapping
-from decimal import Decimal
-
 from psycopg_pool import ConnectionPool
 
 _pools: dict[str, ConnectionPool] = {}
@@ -28,7 +26,7 @@ _INSERT_WITH_ID = {
 class Row(Mapping):
     def __init__(self, columns, values):
         self._columns = tuple(columns)
-        self._values = tuple(float(value) if isinstance(value, Decimal) else value for value in values)
+        self._values = tuple(values)
         self._data = dict(zip(self._columns, self._values))
 
     def __getitem__(self, key):

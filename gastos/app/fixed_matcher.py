@@ -14,6 +14,7 @@ suggest a match, never link on their own.
 """
 
 import re
+from decimal import Decimal
 from datetime import datetime, timezone
 
 _MIN_WORD_LEN = 3
@@ -80,7 +81,7 @@ def find_candidate_expenses(fixed_expense, expenses, limit: int = 5) -> list:
         score += 2 * len(shared)
         if fe_category_id is not None and exp["category_id"] == fe_category_id:
             score += 3
-        if estimated and exp["amount"] and abs(exp["amount"] - estimated) <= 0.2 * estimated:
+        if estimated and exp["amount"] and abs(exp["amount"] - estimated) <= Decimal("0.2") * estimated:
             score += 2
         if score > 0:
             scored.append((score, exp))

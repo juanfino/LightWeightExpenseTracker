@@ -4,6 +4,7 @@ import os
 import re
 import time
 import traceback
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -20,6 +21,7 @@ import fixed_matcher
 import pgcompat
 import auth
 import llm_limits
+import money
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +71,7 @@ NL_HISTORY_MAX_MESSAGES = 10
 
 # ── Formateo ──────────────────────────────────────────────────────────────────
 
-def fmt_amount(amount: float, currency: str = "ARS") -> str:
+def fmt_amount(amount, currency: str = "ARS") -> str:
     """2500.5 → '$2.500,50'  |  150000.0 → '$150.000'"""
     prefix = "U$S " if currency == "USD" else "$"
     if amount == int(amount):
@@ -88,13 +90,13 @@ def _separate_totals(rows) -> str:
     return " · ".join(fmt_amount(totals[c], c) for c in ("ARS", "USD") if totals[c]) or "$0"
 
 
-def _parse_cambio_token(token: str) -> float | None:
+def _parse_cambio_token(token: str) -> Decimal | None:
     """Parse an amount token using Argentine conventions: '.' = thousands sep, ',' = decimal sep."""
     cleaned = token.replace(".", "").replace(",", ".")
     try:
-        val = float(cleaned)
+        val = money.amount(cleaned)
         return val if val > 0 else None
-    except ValueError:
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 
