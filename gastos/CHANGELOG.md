@@ -1,7 +1,7 @@
 # Changelog
 
 ## 7.8.0
-- **La landing pública muestra el alcance real de la app** (gastos, ingresos, lista de compras, gastos fijos y dólares, no solo "gastos") y agrega una sección de burbujas de chat que enseña, de un vistazo, cómo se carga la información en lenguaje natural, además de mencionar foto de ticket y nota de voz.
+- **La landing pública muestra el alcance real de la app** (gastos, ingresos, lista de compras, gastos fijos y dólares, no solo "gastos") y agrega una sección de "antes → después" que enseña, de un vistazo, cómo un mensaje de voz, texto o una pregunta en lenguaje natural se convierte en un registro categorizado, además de mencionar foto de ticket y nota de voz.
 - **Login y registro se unifican en una sola pantalla de identidad** (`/login`): email + Turnstile u "Continuar con Google", sin pedir nombre ni nombre de familia, y sin el Turnstile duplicado que tenía el registro. El botón de Google usa el isotipo oficial multicolor de Google, sin recolorear.
 - **Se separa la verificación de identidad de la creación/unión a una familia.** Una identidad verificada (por email u OAuth) sin family todavía es un estado real y persistente: cualquier pedido autenticado sin membership resuelve a `/onboarding` (crear espacio o unirse a una invitación pendiente) sin importar la URL a la que apuntara, y sobrevive a cerrar la pestaña y volver más tarde. Quien ya pertenece a una familia nunca ve `/onboarding`.
 - El token de invitación pendiente viaja en una cookie firmada independiente de la sesión de Flask, para no perderse al rebotar por el login de Google, y se revalida contra la base en el momento de crear la membership (no solo al abrir el enlace).
