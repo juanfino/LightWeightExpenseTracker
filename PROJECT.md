@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists ARS/USD expenses to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.10.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.10.1 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -33,7 +33,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 - Anthropic API (`claude-haiku-4-5-20251001`) for OCR receipt scanning, voice/dollar extraction, and the natural-language intent layer (tool use / function calling); `claude-opus-4-8` (configurable, separate model tier) for the monthly report's classification and narration calls (structured JSON outputs, no tool use)
 - The national open-data time-series API at `apis.datos.gob.ar` (IPC Nacional series) — free, unauthenticated, no API key. The app's first external dependency outside Anthropic/OpenAI; see **Monthly AI report** below for its failure mode
 - Docker (Alpine base), multi-arch (`linux/arm64`, `linux/amd64`)
-- GitHub Actions → `ghcr.io/juanfino/lightweightexpensetracker` (public registry, auto-build on merge to `main`)
+- GitHub Actions → `ghcr.io/juanfino/lightweightexpensetracker` (public registry, auto-build on merge to `main`, via `.github/workflows/docker-publish.yml`). A separate workflow, `.github/workflows/test.yml`, runs on every PR and every push to `main`: it spins up a real `postgres:17-alpine` service container, runs `python -m unittest discover -s gastos/tests -p "test_*.py"`, then `postgres_smoke.py` and `postgres_web_smoke.py` — it does not publish anything, it only gates
 - Deploys are **manual**: `docker compose pull gastos && docker compose up -d gastos` on the Pi
 
 ## Key Features
@@ -154,6 +154,7 @@ header.
 | `/categorias` | List categories |
 | `/nueva_categoria Nombre Emoji Color` | Create a category (emoji/color optional) |
 | `/ayuda` | Full command + usage reference |
+| `/start` | No args: private chats get a short "connect via the dashboard" nudge (or "already connected" if authorized), non-private chats get the "private chats only" message. `/start <token>` consumes a `/vincular-telegram` deep-link token and links the chat |
 | `CambioDolar <usd> <cotizacion>` | Legacy explicit dollar-sale command |
 | photo/document image | OCR ticket scan (`ocr.py`) → confirm before saving |
 | voice note | Whisper transcription + Claude extraction (`audio.py`) → auto-save if confidence ≥ 0.9, else confirm |
@@ -166,7 +167,9 @@ header.
 - `intent.py` — natural-language intent layer via Claude tool use; returns a structured result dict (`log`/`edit`/`category`/`subcategory`/`report`/`reply`). Injects taxonomy + the user's recent expenses + ART date; performs no Telegram I/O. `edit_expense`'s `changes` can include `fixed_expense` (link by name, or `"ninguno"` to unlink)
 - `fixed_matcher.py` — matching heuristics shared by `bot.py` and `dashboard.py` so both surfaces agree on what counts as a match: `find_fixed_expense_matches` (new expense → fixed-expense definition, word-overlap) and `find_candidate_expenses` (fixed expense → already-logged unlinked expenses for a period, scored by word overlap + category + amount proximity). Also `expense_period()`, converting an expense's own UTC timestamp to a (year, month) in a given tz
 - `sqlro.py` — PostgreSQL read-only executor: `SELECT`/`WITH` only, one statement, `gastos_readonly` role, tenant RLS, timeout and row cap
-- `parser.py` — parses free-text into `{concept, amount}`; returns `None` if no valid amount
+- `pgcompat.py` — small DB-API compatibility shim so the rest of the codebase can keep sqlite-style `?` placeholders, `Row`/`Cursor` objects and `lastrowid` while PostgreSQL (via `psycopg_pool.ConnectionPool`) is the only storage engine. Owns the named connection pools (`pool()`/`current_pool()`/`select_pool()`) and the `contextvars`-based transaction-local `family_id`/`user_id` that `db.get_conn()` reads to set `app.family_id` for RLS
+- `llm_usage.py` — shared best-effort LLM cost/latency accounting: `record()` computes an estimated USD cost from a fixed per-model `MODEL_RATES` table (token-based for Anthropic models, per-audio-minute for `whisper-1`) and writes one row to `llm_calls` per call. Called by every module that makes an LLM/Whisper call (`ocr.py`, `audio.py`, `dolar.py`, `intent.py`, `report_ai.py`)
+- `parser.py` — parses free-text into `{concept, amount, currency}` (`currency` is `"USD"` when the text matches `usd`/`u$s`/`us$`/`dólar(es)`, else `"ARS"`); returns `None` if no valid amount
 - `categorizer.py` — keyword matching (accent/case-insensitive); returns `(category_id, subcategory_id)`, both nullable. `normalize()` is reused for taxonomy dup-guarding and for the history screen's concept search
 - `db.py` — raw PostgreSQL operations through psycopg pools. `get_conn()` applies the RLS-bound role and transaction-local tenant before each domain transaction; platform identity resolution and the superadmin metrics, overrides, cost settings, and error operations use the dedicated bypass role.
 - `dashboard.py` — Flask app; authenticated product routes, superadmin guards/routes and UTC → Buenos Aires conversion for all display
@@ -203,7 +206,12 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 | `ANTHROPIC_API_KEY` | No | Enables OCR, voice/dollar extraction, the natural-language intent layer, and the monthly report (2.3.0) |
 | `REPORT_ANTHROPIC_MODEL` | No | Default: `claude-opus-4-8`. Model used for the monthly report's two LLM calls (2.3.0) — separate from the Haiku model used elsewhere, since this runs a handful of times a year and quality matters more than cost |
 | `OPENAI_API_KEY` | No | Enables voice message expense entry |
+| `DATABASE_URL` | Yes | PostgreSQL connection URL, read directly by `pgcompat.pool()` |
+| `POSTGRES_PASSWORD` | Yes | Password for the `postgres` container itself (`docker-compose.yml`'s `postgres` service); not read by the Python app, only by the `postgres` image and implicitly via `DATABASE_URL` |
+| `R2_ENDPOINT`, `R2_BUCKET` | Yes | Cloudflare R2 backup destination (`backup.py`) |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Yes | Bucket-scoped R2 credentials (`backup.py`) |
 | `DASHBOARD_PORT` | No | Default: `5000`. The Pi sets `8090` to free up 5000 for Frigate |
+| `DB_POOL_<NAME>_MAX` | No | Default: `5`. Per-pool max connection count read by `pgcompat.pool(name)`, e.g. `DB_POOL_APP_MAX`; undocumented elsewhere and not currently set on the Pi |
 
 ## Known Gotchas
 

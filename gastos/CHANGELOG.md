@@ -1,6 +1,9 @@
 # Changelog
 
-## 7.10.0
+## 7.10.1
+- Auditoría de documentación (sin cambios de comportamiento): `PROJECT.md` y `README.md` corrigen versión, head de Alembic y tablas de variables de entorno desincronizadas entre sí y con el código, agregan `pgcompat.py`/`llm_usage.py` a responsabilidades de módulos, `/start` a comandos de Telegram, y mencionan el workflow de tests (`test.yml`) que corría sin documentar.
+- Nuevo `docs/CURRENCY_STATE.md`: inventario factual de cómo se maneja moneda hoy (storage, `cambios_dolar`, hardcoding en cada capa, `dossier.py`/`inflation.py`, entrada por Telegram/NL/voz/OCR, restricciones de RLS) — insumo para diseñar soporte a N monedas.
+- Nuevo `docs/REPORT_PROMPTS.md`: los dos prompts de sistema del resumen mensual (clasificación y narración) extraídos textuales, forma del payload, schemas, parámetros del modelo, qué partes de `/resumenes` son IA vs. dossier determinístico, y el gap de trazabilidad entre `reports.prompt_version` y el texto real del prompt.
 - **Se puede cargar un cambio de dólares directamente desde la web.** Hasta ahora `/dolares` solo permitía editar o eliminar cambios ya registrados por Telegram; ahora un botón "+ Agregar cambio" abre un formulario con un selector "Vendí dólares" / "Compré dólares" que adapta las etiquetas (monto, cotización y el ARS calculado dicen "obtenidos" o "gastados" según corresponda) para que quede claro en qué dirección va la operación.
 - Nuevo endpoint `POST /api/cambios/add`, mismo permiso que editar/eliminar un cambio existente (cualquier miembro activo de la familia).
 
