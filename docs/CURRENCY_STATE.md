@@ -75,9 +75,9 @@ The web read path is live:
 - the corresponding POST validation defaults omitted currency from the family row.
 
 There is intentionally no writer or settings UI yet. Every existing and newly created
-family therefore keeps the database default ARS. A writer must wait until currency
-detection, exchange operations and reporting are generalized, otherwise a BRL default
-would produce a half-working application.
+family therefore keeps the database default ARS. Detection and exchange operations are
+now generalized, but the dossier and `resumenes.html` still render a fixed ARS/USD pair;
+the writer waits for that next pass so a BRL default cannot produce a partial report.
 
 ## 4. Formatting
 
@@ -105,31 +105,41 @@ amounts show the currency's declared precision. The intended visible normalizati
 that every USD surface, including Telegram and the dashboard hero, now uses `US$`
 instead of `U$S`.
 
-## 5. Input layer — deliberately still binary
+## 5. Input layer
 
-The storage and web form catalogue accept four currencies, but automatic detection is
-not generalized in this change:
+`currency_detection.py` is the shared cheap detector. It reads codes and symbols from
+the loaded catalogue and centralizes colloquial aliases. Text, voice and the intent tool
+schemas all accept the current catalogue; adding a catalogue row makes the new code
+available without editing those schemas. Explicit ISO codes and specific symbols win.
+Ambiguous `$` and generic “pesos” resolve to `families.default_currency`, as does an
+omitted currency, on every surface.
 
-- `parser.py` recognizes USD markers, otherwise ARS;
-- the three tool schemas and prose in `intent.py` still enumerate ARS/USD;
-- `audio.py` still extracts USD vs. ARS;
-- OCR still starts at ARS and exposes the existing ARS/USD correction;
-- `dolar.py` remains a USD-operation gate.
+`parser.py` strips the detected marker, so `Hotel 200 EUR` becomes concept `Hotel`,
+amount EUR 200. An unknown all-caps currency suffix such as `Hotel 200 XYZ` raises a
+visible correction instead of becoming concept text. The exchange prefilter additionally
+requires an exchange verb or arrow; an ordinary foreign-currency expense does not spend
+an LLM call. OCR remains default-first, but its correction keyboard is built from every
+catalogue row.
 
-Consequently a Telegram message such as `Hotel 200 EUR` is not yet safe currency
-detection: the deterministic path can still treat it as ARS and include `EUR` in the
-concept. Users can record BRL/EUR through the generalized web forms; Telegram detection
-is follow-up work.
+## 6. Exchange operations
 
-## 6. Exchange operations — deliberately dollar-specific
+Migration `0014` keeps the legacy `cambios_dolar` table name while replacing its payload:
 
-`cambios_dolar` remains structurally ARS/USD-specific:
+| column | meaning |
+|---|---|
+| `amount_given` / `currency_given` | money the family handed over |
+| `amount_received` / `currency_received` | money the family obtained |
+| `rate_received_per_given` | units received for one unit given |
 
-- columns are `monto_usd`, `cotizacion` (ARS per USD) and `monto_ars`;
-- `tipo` is `venta`/`compra` by application convention;
-- bot and web reads/writes still describe dollar purchases and sales.
+Both currency columns reference `currencies(code)`, the currencies must differ and all
+three numeric values must be positive. Historical sales migrate as USD→ARS; purchases as
+ARS→USD. Their old amount sides remain exact and their familiar ARS-per-USD rate remains
+recoverable unchanged. Stored `tipo`, `monto_usd`, `monto_ars` and `cotizacion` are gone.
 
-It is not a generic from/to currency-pair table and was not changed in 7.15.0.
+Buy/sell is display-only: giving a non-default currency and receiving the default is a
+sale; the reverse is a purchase. A conversion such as BRL→EUR has no buy/sell label. The
+historical-rate endpoint requires a pair and direction, preventing unrelated series from
+being plotted together.
 
 ## 7. Dossier, reports and forecast — deliberately fixed pair
 
@@ -152,9 +162,11 @@ Regression coverage asserts:
 
 - seeded codes normalize and unknown codes fail;
 - BRL amounts round-trip PostgreSQL as exact `Decimal`;
-- migration `0013` applies from the previous head with existing values preserved;
-- the five FKs reject an unknown code;
+- migrations `0013` and `0014` preserve existing currency and exchange values;
+- the seven currency FKs reject an unknown code;
 - family-default web forms and omitted POST currency use `default_currency`;
 - server and client format USD with Argentine separators and `US$`;
 - a synthetic zero-decimal currency rounds and formats correctly;
-- existing unit tests and both PostgreSQL smoke tests run against a scratch database.
+- EUR/default/unknown-marker detection agrees across the shared input contract;
+- BRL→EUR round-trips as exact `Decimal`, has no buy/sell label and stays out of USD→ARS charts;
+- existing unit tests, the exchange-migration smoke and both PostgreSQL smokes run against a scratch database.

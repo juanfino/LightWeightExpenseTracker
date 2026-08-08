@@ -5,7 +5,7 @@ import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 import psycopg
 
@@ -40,10 +40,23 @@ TIMESTAMP_COLUMNS = {
 NUMERIC_COLUMNS = {
     "fixed_expenses": {"estimated_amount"},
     "expenses": {"amount"},
-    "cambios_dolar": {"monto_usd", "cotizacion", "monto_ars"},
+    "cambios_dolar": {
+        "amount_given", "amount_received", "rate_received_per_given",
+    },
     "ipc_series": {"value"},
     "expense_classifications": {"amount", "confidence"},
 }
+
+LEGACY_EXCHANGE_COLUMNS = {"tipo", "monto_usd", "cotizacion", "monto_ars"}
+GENERIC_EXCHANGE_COLUMNS = (
+    "amount_given",
+    "currency_given",
+    "amount_received",
+    "currency_received",
+    "rate_received_per_given",
+)
+MONEY_QUANTUM = Decimal("0.01")
+RATE_QUANTUM = Decimal("0.000000000000000001")
 
 
 def _timestamp(value):
@@ -100,6 +113,38 @@ def _canonical_row(table, columns, row):
     ]
 
 
+def _generic_exchange_rows(columns, rows):
+    """Map the Phase-0 ARS/USD exchange shape to migration 0014's direction."""
+    retained = [column for column in columns if column not in LEGACY_EXCHANGE_COLUMNS]
+    target_columns = retained + list(GENERIC_EXCHANGE_COLUMNS)
+    values = []
+    for row in rows:
+        monto_usd = Decimal(str(row["monto_usd"])).quantize(
+            MONEY_QUANTUM, rounding=ROUND_HALF_UP
+        )
+        monto_ars = Decimal(str(row["monto_ars"])).quantize(
+            MONEY_QUANTUM, rounding=ROUND_HALF_UP
+        )
+        tipo = str(row["tipo"] or "venta").lower() if "tipo" in columns else "venta"
+        if tipo == "compra":
+            directional = (
+                monto_ars, "ARS", monto_usd, "USD",
+                (monto_usd / monto_ars).quantize(RATE_QUANTUM, rounding=ROUND_HALF_UP),
+            )
+        else:
+            directional = (
+                monto_usd, "USD", monto_ars, "ARS",
+                Decimal(str(row["cotizacion"])).quantize(
+                    RATE_QUANTUM, rounding=ROUND_HALF_UP
+                ),
+            )
+        values.append(tuple(
+            [_convert("cambios_dolar", column, row[column]) for column in retained]
+            + list(directional)
+        ))
+    return target_columns, values
+
+
 def migrate(sqlite_path: str, database_url: str):
     source = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
     source.row_factory = sqlite3.Row
@@ -122,15 +167,22 @@ def migrate(sqlite_path: str, database_url: str):
                     f'SELECT * FROM "{table}" ORDER BY ' +
                     ("id" if "id" in columns else ", ".join(columns))
                 ).fetchall()
-                if source_rows:
+                expected_rows = source_rows
+                transformed_exchange = table == "cambios_dolar" and "monto_usd" in columns
+                if transformed_exchange:
+                    columns, expected_rows = _generic_exchange_rows(columns, source_rows)
+                if expected_rows:
                     quoted = ", ".join(f'"{column}"' for column in columns)
                     placeholders = ", ".join(["%s"] * len(columns))
                     override = " OVERRIDING SYSTEM VALUE" if table in IDENTITY_TABLES else ""
                     sql = f'INSERT INTO "{table}" ({quoted}){override} VALUES ({placeholders})'
-                    values = [
-                        tuple(_convert(table, column, row[column]) for column in columns)
-                        for row in source_rows
-                    ]
+                    values = (
+                        expected_rows if transformed_exchange
+                        else [
+                            tuple(_convert(table, column, row[column]) for column in columns)
+                            for row in source_rows
+                        ]
+                    )
                     with target.cursor() as cursor:
                         cursor.executemany(sql, values)
                 selected_columns = ", ".join(f'"{column}"' for column in columns)
@@ -138,14 +190,14 @@ def migrate(sqlite_path: str, database_url: str):
                 target_rows = target.execute(
                     f'SELECT {selected_columns} FROM "{table}" ORDER BY {order_columns}'
                 ).fetchall()
-                source_hash = _checksum(table, columns, source_rows)
+                source_hash = _checksum(table, columns, expected_rows)
                 target_hash = _checksum(table, columns, target_rows)
-                if len(source_rows) != len(target_rows) or source_hash != target_hash:
+                if len(expected_rows) != len(target_rows) or source_hash != target_hash:
                     mismatch = next(
                         (
                             (index, _canonical_row(table, columns, left),
                              _canonical_row(table, columns, right))
-                            for index, (left, right) in enumerate(zip(source_rows, target_rows))
+                            for index, (left, right) in enumerate(zip(expected_rows, target_rows))
                             if _canonical_row(table, columns, left)
                             != _canonical_row(table, columns, right)
                         ),
@@ -153,10 +205,10 @@ def migrate(sqlite_path: str, database_url: str):
                     )
                     raise RuntimeError(
                         f"Verificación fallida en {table}: "
-                        f"rows {len(source_rows)}/{len(target_rows)}, "
+                        f"rows {len(expected_rows)}/{len(target_rows)}, "
                         f"sha256 {source_hash}/{target_hash}, first_diff={mismatch}"
                     )
-                results[table] = {"rows": len(source_rows), "sha256": source_hash}
+                results[table] = {"rows": len(expected_rows), "sha256": source_hash}
 
             for table in IDENTITY_TABLES:
                 target.execute(

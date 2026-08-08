@@ -25,6 +25,7 @@ messages / inline-confirmation flows. It performs no Telegram I/O itself.
 
 import json
 import logging
+import copy
 from decimal import InvalidOperation
 from datetime import datetime, timedelta, timezone
 
@@ -35,6 +36,7 @@ import money
 
 import db
 import sqlro
+import currency_detection
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,7 @@ _TOOLS = [
             "properties": {
                 "concept": {"type": "string"},
                 "amount": {"type": "number"},
-                "currency": {"type": "string", "enum": ["ARS", "USD"]},
+                "currency": {"type": "string", "enum": []},
                 "date": {"type": "string", "description": "YYYY-MM-DD en zona ART; omitir si es hoy."},
                 "category": {"type": "string", "description": "Categoría de ingreso existente."},
             },
@@ -96,12 +98,12 @@ _TOOLS = [
                 "amount": {
                     "type": "number",
                     "description": (
-                        "Monto en pesos como número. Interpretá 'lucas'/'luca' como miles "
+                        "Monto en su moneda nativa como número. Interpretá 'lucas'/'luca' como miles "
                         "(100 lucas = 100000) y 'palo'/'palos' como millones. Formato argentino: "
                         "el punto es separador de miles y la coma es decimal."
                     ),
                 },
-                "currency": {"type": "string", "enum": ["ARS", "USD"], "description": "ARS por defecto; USD solo si el usuario lo aclaró explícitamente."},
+                "currency": {"type": "string", "enum": [], "description": "Omitir para usar la moneda por defecto familiar; cambiar sólo con una señal explícita."},
                 "date": {"type": "string", "description": "Fecha del gasto YYYY-MM-DD (zona ART). Omitir si es hoy."},
                 "category": {"type": "string", "description": "Nombre de una categoría EXISTENTE si el usuario la menciona explícitamente. Omitir para que el sistema la infiera."},
                 "subcategory": {"type": "string", "description": "Nombre de una subcategoría EXISTENTE si corresponde."},
@@ -136,7 +138,7 @@ _TOOLS = [
                     "description": "Solo los campos que el usuario pidió cambiar.",
                     "properties": {
                         "amount": {"type": "number", "description": "Nuevo monto en la moneda nativa del gasto."},
-                        "currency": {"type": "string", "enum": ["ARS", "USD"], "description": "Nueva moneda; no cambiar si el gasto está vinculado a un fijo."},
+                        "currency": {"type": "string", "enum": [], "description": "Nueva moneda; no cambiar si el gasto está vinculado a un fijo."},
                         "concept": {"type": "string"},
                         "category": {"type": "string", "description": "Nombre de categoría (puede no existir todavía)."},
                         "subcategory": {"type": "string"},
@@ -196,6 +198,19 @@ _TOOLS = [
     },
 ]
 
+
+def _tools_for_family() -> list[dict]:
+    tools = copy.deepcopy(_TOOLS)
+    codes = list(db.SUPPORTED_CURRENCIES)
+    for tool in tools:
+        props = tool["input_schema"].get("properties", {})
+        if "currency" in props:
+            props["currency"]["enum"] = codes
+        changes = props.get("changes", {}).get("properties", {})
+        if "currency" in changes:
+            changes["currency"]["enum"] = codes
+    return tools
+
 _SCHEMA_DOC = (
     "Esquema PostgreSQL (solo lectura):\n"
     "  expenses(id, user_id, category_id, subcategory_id, concept TEXT, amount NUMERIC, currency TEXT, raw_text TEXT, created_at TIMESTAMPTZ)\n"
@@ -209,7 +224,7 @@ _SCHEMA_DOC = (
     "(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires').\n"
     "  - Usá sintaxis PostgreSQL: EXTRACT, date_trunc, to_char e INTERVAL; nunca funciones SQLite.\n"
     "  - category_id y subcategory_id pueden ser NULL (gasto sin categorizar).\n"
-    "  - currency es ARS o USD; amount está en su moneda nativa. Nunca sumes ni compares directamente monedas distintas: filtrá por currency o agrupá por currency."
+    "  - amount está en su moneda nativa. Nunca sumes ni compares directamente monedas distintas: filtrá por currency o agrupá por currency."
 )
 
 
@@ -222,6 +237,8 @@ def _build_system_prompt(user) -> str:
     subs = db.get_all_subcategories()
     users = db.get_all_users()
     recent = db.get_recent_expenses_for_user(user["id"], limit=30)
+    currencies = db.get_currencies()
+    default_currency = db.get_family_default_currency()
 
     cat_lines = "\n".join(f"  - id={c['id']}: {c['name']}" for c in cats) or "  (ninguna)"
     income_cat_lines = "\n".join(f"  - id={c['id']}: {c['name']}" for c in income_cats) or "  (ninguna)"
@@ -249,7 +266,8 @@ def _build_system_prompt(user) -> str:
         "'marzo', 'el trimestre', etc.\n"
         "Formato numérico argentino: el punto es separador de miles y la coma es decimal. "
         "'lucas'/'luca' = miles, 'palo'/'palos' = millones.\n\n"
-        "Monedas: ARS es el valor por defecto. Si el mensaje dice USD, US$, U$S o dólares, usá USD. "
+        + currency_detection.catalogue_prompt(currencies, default_currency) + " "
+        +
         "En reportes SQL, NUNCA sumes monedas mezcladas: filtrá por currency o GROUP BY currency.\n\n"
         f"El usuario que escribe es: id={user['id']}, nombre={user['name']}.\n\n"
         "Categorías:\n" + cat_lines + "\n\n"
@@ -356,7 +374,7 @@ def route_intent(text: str, user, anthropic_api_key: str, history: list | None =
                 with llm_limits.routine_call():
                     message = client.messages.create(
                         model=_MODEL, max_tokens=1024, system=system,
-                        tools=_TOOLS, messages=messages,
+                        tools=_tools_for_family(), messages=messages,
                     )
             except Exception as e:
                 llm_usage.record("intent", _MODEL, call_started, error=e)
@@ -423,11 +441,15 @@ def _handle_log(args: dict) -> dict:
     concept = (args.get("concept") or "").strip()
     if not concept:
         return _reply("🤔 ¿Qué concepto le pongo al gasto?")
+    try:
+        currency = db.normalize_currency(args.get("currency") or db.get_family_default_currency())
+    except ValueError:
+        return _reply("⚠️ Esa moneda no está admitida. Indicá una de: " + ", ".join(db.SUPPORTED_CURRENCIES))
     return {
         "kind": "log",
         "concept": concept,
         "amount": amount,
-        "currency": db.normalize_currency(args.get("currency")),
+        "currency": currency,
         "date": (args.get("date") or "").strip() or None,
         "category": (args.get("category") or "").strip() or None,
         "subcategory": (args.get("subcategory") or "").strip() or None,
@@ -444,11 +466,15 @@ def _handle_log_income(args: dict) -> dict:
     concept = (args.get("concept") or "").strip()
     if not concept:
         return _reply("🤔 ¿Qué concepto le pongo al ingreso?")
+    try:
+        currency = db.normalize_currency(args.get("currency") or db.get_family_default_currency())
+    except ValueError:
+        return _reply("⚠️ Esa moneda no está admitida. Indicá una de: " + ", ".join(db.SUPPORTED_CURRENCIES))
     return {
         "kind": "income",
         "concept": concept,
         "amount": amount,
-        "currency": db.normalize_currency(args.get("currency")),
+        "currency": currency,
         "date": (args.get("date") or "").strip() or None,
         "category": (args.get("category") or "").strip() or None,
     }

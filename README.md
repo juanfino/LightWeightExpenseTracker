@@ -4,14 +4,14 @@ A family expense tracker: send a message like `Supermercado 150000` to a Telegra
 
 ## Current product
 
-The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.11.1**.
+The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.16.0**.
 The application now provides:
 
 - PostgreSQL tenancy enforced with forced Row-Level Security.
 - Google/email authentication, family invitations and self-service Telegram linking.
 - Per-family LLM quotas and concurrency isolation.
 - Expense entry via plain text, a natural-language conversational layer (edits, taxonomy management, read-only reports), OCR receipt-photo scanning, and voice notes — all going through the same categorization/fixed-expense-linking pipeline.
-- Expenses, fixed expenses, incomes, USD operations, shopping lists, AI monthly reports and portable CSV/ZIP exports.
+- Expenses, fixed expenses, incomes, generic currency exchanges, shopping lists, AI monthly reports and portable CSV/ZIP exports.
 - A superadmin-only operational panel for cross-family adoption, LLM usage/cost, quota overrides and recent failures.
 
 The superadmin panel uses the dedicated `gastos_superadmin` PostgreSQL role with

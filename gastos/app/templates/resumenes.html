@@ -643,7 +643,7 @@
     const cov = dollars.coverage_ratio;
     const covText = cov === null || cov === undefined
       ? "Sin gastos este mes para calcular cobertura."
-      : `Cobertura: ${(cov * 100).toFixed(0)}% del gasto del mes (${dollars.coverage_basis}) vino de pesos obtenidos vendiendo dólares.`;
+      : `Cobertura: ${(cov * 100).toFixed(0)}% del gasto del mes (${dollars.coverage_basis}) se financió convirtiendo otras monedas a ${dollars.default_currency}.`;
     function opBlock(label, op) {
       const range = op.cnt
         ? `${fmtAmount(op.total_usd, "USD")} · cotización ${fmtAmount(op.cotizacion_min, "ARS")}–${fmtAmount(op.cotizacion_max, "ARS")}`

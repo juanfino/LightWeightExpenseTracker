@@ -68,8 +68,10 @@ def datasets(timezone_name: str) -> dict[str, bytes]:
             timezone_name,
         ),
         "dolares": csv_bytes(
-            ["id", "fecha", "tipo", "monto_usd", "cotizacion", "monto_ars", "persona"],
-            [[r["id"], r["fecha"], r["tipo"], r["monto_usd"], r["cotizacion"], r["monto_ars"],
+            ["id", "fecha", "monto_entregado", "moneda_entregada", "monto_recibido",
+             "moneda_recibida", "tasa_recibida_por_entregada", "persona"],
+            [[r["id"], r["fecha"], r["amount_given"], r["currency_given"],
+              r["amount_received"], r["currency_received"], r["rate_received_per_given"],
               r["usuario"]] for r in changes],
             timezone_name,
         ),

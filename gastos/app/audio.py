@@ -8,18 +8,17 @@ import openai
 import llm_usage
 import llm_limits
 import money
+import db
+import currency_detection
 
 logger = logging.getLogger(__name__)
 
 _MODEL = "claude-haiku-4-5-20251001"
-_WHISPER_PROMPT = "Gastos en pesos argentinos o dólares: 10000, 148900, 5000, 15 USD."
-
 _EXTRACT_PROMPT = (
     "Analizá esta transcripción de un mensaje de voz sobre uno o varios gastos. "
     "Identificá cada gasto mencionado y convertí los números escritos en español a dígitos "
     "(ej: 'diez mil' → 10000, 'quinientos' → 500, 'tres mil' → 3000). "
-    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita', 'mangos') y "
-    "detectá USD cuando diga 'dólares', 'USD', 'US$' o 'U$S'; si no se aclara, usá ARS. "
+    "Manejá expresiones coloquiales argentinas (ej: 'pesos', 'lucas', 'guita', 'mangos'). "
     "El usuario puede mencionar varios gastos en una sola oración, "
     "ej: 'gasté mil en la verdulería, tres mil en la ferretería y quinientos en nafta'. "
     "Si un gasto mencionado no tiene monto claro, incluilo igual con amount null. "
@@ -29,7 +28,7 @@ _EXTRACT_PROMPT = (
     "la transcripción es ambigua, confusa o el monto es dudoso.\n"
     "Respondé ÚNICAMENTE con un array JSON válido sin explicaciones ni bloques de código:\n"
     '[{"concept": "<nombre del comercio o concepto, capitalizado>", '
-    '"amount": <monto como número float, o null si no se detecta>, "currency": "ARS" o "USD", '
+    '"amount": <monto como número float, o null si no se detecta>, "currency": <código ISO>, '
     '"confidence": <número entre 0 y 1>}, ...]'
 )
 
@@ -53,7 +52,8 @@ def _parse_confidence(raw) -> float:
     return max(0.0, min(1.0, val))
 
 
-def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
+def transcribe(audio_bytes: bytes, openai_api_key: str, currencies: list[dict] | None = None,
+               default_currency: str = "ARS") -> str:
     """Transcribe voice audio to text using Whisper. Raises RuntimeError on failure."""
     oa_client = openai.OpenAI(api_key=openai_api_key, timeout=15.0, max_retries=0)
     audio_file = io.BytesIO(audio_bytes)
@@ -62,9 +62,14 @@ def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
     try:
         call_started = llm_usage.started()
         with llm_limits.routine_call():
+            catalogue = currencies or db.get_currencies()
+            whisper_prompt = (
+                f"Gastos en {', '.join(row['code'] for row in catalogue)}. "
+                f"Moneda usual {default_currency}: 10000, 148900, 5000, 15 USD, 200 EUR."
+            )
             transcript = oa_client.audio.transcriptions.create(
                 model="whisper-1", file=audio_file, language="es",
-                prompt=_WHISPER_PROMPT, response_format="verbose_json",
+                prompt=whisper_prompt, response_format="verbose_json",
             )
         llm_usage.record("audio_whisper", "whisper-1", call_started, response=transcript)
         transcription = transcript.text.strip()
@@ -80,19 +85,23 @@ def transcribe(audio_bytes: bytes, openai_api_key: str) -> str:
     return transcription
 
 
-def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
+def extract_expenses(transcription: str, anthropic_api_key: str,
+                     currencies: list[dict] | None = None,
+                     default_currency: str = "ARS") -> list[dict]:
     """Extract one or more expenses from a transcription.
 
     Returns [{"concept": str, "amount": Decimal | None, "confidence": float}, ...].
     Raises RuntimeError on extraction failure.
     """
     try:
+        catalogue = currencies or db.get_currencies()
+        currency_rule = currency_detection.catalogue_prompt(catalogue, default_currency)
         an_client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=15.0, max_retries=0)
         call_started = llm_usage.started()
         with llm_limits.routine_call():
             message = an_client.messages.create(
                 model=_MODEL, max_tokens=512, messages=[{
-                    "role": "user", "content": f"{_EXTRACT_PROMPT}\n\nTranscripción: {transcription}",
+                    "role": "user", "content": f"{_EXTRACT_PROMPT}\n{currency_rule}\n\nTranscripción: {transcription}",
                 }],
             )
         llm_usage.record("audio_extract", _MODEL, call_started, response=message)
@@ -109,16 +118,22 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     if not isinstance(data, list):
         raise RuntimeError(f"Claude devolvió formato inesperado (esperaba array): {data!r}")
 
-    expenses = [
-        {
+    supported = {row["code"] for row in catalogue}
+    expenses = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        raw_currency = str(item.get("currency") or default_currency).upper().strip()
+        if raw_currency not in supported:
+            raise RuntimeError(
+                f"Se detectó una moneda desconocida ({raw_currency}); corregila escribiendo el código admitido."
+            )
+        expenses.append({
             "concept": (item.get("concept") or "").strip() or "Desconocido",
             "amount": _parse_amount(item.get("amount")),
-            "currency": "USD" if str(item.get("currency", "ARS")).upper() == "USD" else "ARS",
+            "currency": raw_currency,
             "confidence": _parse_confidence(item.get("confidence")),
-        }
-        for item in data
-        if isinstance(item, dict)
-    ]
+        })
 
     if not expenses:
         raise RuntimeError("Claude no detectó ningún gasto en la transcripción")
@@ -126,7 +141,9 @@ def extract_expenses(transcription: str, anthropic_api_key: str) -> list[dict]:
     return expenses
 
 
-def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str) -> dict:
+def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str,
+                           currencies: list[dict] | None = None,
+                           default_currency: str = "ARS") -> dict:
     """Transcribe voice audio and extract one or more expenses.
 
     Returns:
@@ -136,8 +153,8 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
         }
     Raises RuntimeError on transcription or extraction failure.
     """
-    transcription = transcribe(audio_bytes, openai_api_key)
+    transcription = transcribe(audio_bytes, openai_api_key, currencies, default_currency)
     return {
         "transcription": transcription,
-        "expenses": extract_expenses(transcription, anthropic_api_key),
+        "expenses": extract_expenses(transcription, anthropic_api_key, currencies, default_currency),
     }

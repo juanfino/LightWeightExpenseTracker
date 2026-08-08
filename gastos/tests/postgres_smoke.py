@@ -31,10 +31,12 @@ def main():
                     "fk_incomes_currency",
                     "fk_expense_classifications_currency",
                     "fk_families_default_currency",
+                    "fk_cambios_currency_given",
+                    "fk_cambios_currency_received",
                 ],),
             ).fetchall()
         }
-        assert len(fk_names) == 5, fk_names
+        assert len(fk_names) == 7, fk_names
         try:
             conn.execute("UPDATE families SET default_currency = 'ZZZ' WHERE id = 1")
             conn.commit()
@@ -43,6 +45,12 @@ def main():
         else:
             raise AssertionError("currency FK accepted an unknown code")
     assert db.get_recent_expenses()
+    cambio_id = db.registrar_cambio(
+        "2026-08-08", "100.00", "BRL", "18.25", "EUR", user["name"]
+    )
+    cambio = dict(db.get_cambios_historial()[0])
+    assert cambio["id"] == cambio_id
+    assert cambio["rate_received_per_given"] == Decimal("0.182500000000000000")
     assert db.get_expense_years()
     assert db.get_expenses_today()
     assert db.get_months_with_data()
