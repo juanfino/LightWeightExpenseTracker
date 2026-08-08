@@ -1,8 +1,12 @@
 # Changelog
 
-## 7.9.0
+## 7.10.0
 - **Se puede cargar un cambio de dólares directamente desde la web.** Hasta ahora `/dolares` solo permitía editar o eliminar cambios ya registrados por Telegram; ahora un botón "+ Agregar cambio" abre un formulario con un selector "Vendí dólares" / "Compré dólares" que adapta las etiquetas (monto, cotización y el ARS calculado dicen "obtenidos" o "gastados" según corresponda) para que quede claro en qué dirección va la operación.
 - Nuevo endpoint `POST /api/cambios/add`, mismo permiso que editar/eliminar un cambio existente (cualquier miembro activo de la familia).
+
+## 7.9.0
+- El checklist "Primeros pasos" del dashboard ya no muestra "Invitar a alguien a tu grupo" a quienes no son owner de la familia — solo el owner puede crear invitaciones, así que mostrárselo a un miembro llevaba a un callejón sin salida en `/familia`.
+- Se agrega un botón para cerrar el checklist manualmente antes de completar los 3 pasos, con estado persistido por membership (`memberships.onboarding_dismissed_at`, migración `0009`) — no reaparece en otro dispositivo ni navegador, y volver a crear o unirte a otra familia lo muestra de nuevo.
 
 ## 7.8.1
 - Se corrige el espaciado entre el texto y el botón "Conectar mi Telegram" en `/vincular-telegram`: la clase `mt-16` usada ahí nunca existió en el CSS, así que el botón quedaba pegado al párrafo.

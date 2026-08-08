@@ -226,10 +226,18 @@ def index():
         ),
     }
     onboarding["complete"] = all(onboarding.values())
+    onboarding["is_owner"] = g.current_user["role"] == "owner"
+    onboarding["dismissed"] = g.current_user["onboarding_dismissed"]
     return render_template(
         "index.html", year=now.year, month=now.month,
         month_label=_month_label(now.year, now.month), onboarding=onboarding,
     )
+
+
+@app.route("/api/onboarding/dismiss", methods=["POST"])
+def api_onboarding_dismiss():
+    auth.dismiss_onboarding(g.current_user["id"])
+    return jsonify({"ok": True})
 
 
 @app.route("/superadmin")
