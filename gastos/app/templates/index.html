@@ -629,7 +629,7 @@ a.onboarding-step:hover { background:var(--surface2); }
           <option value="">Todos</option>
         </select>
       </div>
-      <div class="user-filter"><span>Moneda:</span><select id="currency-select"><option value="ARS">ARS</option><option value="USD">USD</option></select></div>
+      <div class="user-filter"><span>Moneda:</span><select id="currency-select">{% for currency in currency_catalog %}<option value="{{ currency.code }}"{% if currency.code == default_currency %} selected{% endif %}>{{ currency.code }}</option>{% endfor %}</select></div>
       <div class="view-toggle">
         <button class="view-btn active" id="btn-view-monthly">Mensual</button>
         <button class="view-btn" id="btn-view-annual">Anual</button>
@@ -798,7 +798,7 @@ a.onboarding-step:hover { background:var(--surface2); }
   let currentMonth  = {{ month }};
   let currentView   = 'monthly';
   let activeUser    = '';
-  let activeCurrency = 'ARS';
+  let activeCurrency = {{ default_currency|tojson }};
   let expandedCat   = null;
 
   window.userColors = {};
@@ -874,13 +874,7 @@ a.onboarding-step:hover { background:var(--surface2); }
   }
 
   // ── Number formatting ──────────────────────────────────────────────────────
-  function fmtAmount(n, currency) {
-    if (n === null || n === undefined) return "—";
-    const isWhole = Math.abs(n - Math.round(n)) < 0.005;
-    const prefix = (currency || activeCurrency) === 'USD' ? 'U$S ' : '$';
-    if (isWhole) return prefix + Math.round(n).toLocaleString("es-AR");
-    return prefix + n.toLocaleString("es-AR", {minimumFractionDigits:2, maximumFractionDigits:2});
-  }
+  const fmtAmount = (n, currency) => MoneyFormat.formatAmount(n, currency || activeCurrency);
 
   function formatARS(n) {
     if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
@@ -1516,7 +1510,7 @@ a.onboarding-step:hover { background:var(--surface2); }
     widget.style.display = '';
     const countPaid  = rows.filter(r => r.paid).length;
     const total      = rows.length;
-    const totals = ['ARS', 'USD'].map(currency => ({
+    const totals = [...new Set(rows.map(r => r.currency))].map(currency => ({
       currency,
       estimated: rows.filter(r => r.currency === currency).reduce((s, r) => s + (r.estimated_amount || 0), 0),
       paid: rows.filter(r => r.currency === currency && r.paid).reduce((s, r) => s + (r.actual_amount || 0), 0),

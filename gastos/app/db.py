@@ -14,14 +14,39 @@ import money
 
 logger = logging.getLogger(__name__)
 
-# Las monedas son deliberadamente pocas: un gasto conserva siempre su valor
-# original y la aplicación nunca convierte ni suma importes de distinta moneda.
-SUPPORTED_CURRENCIES = ("ARS", "USD")
 DEFAULT_CURRENCY = "ARS"
+SUPPORTED_CURRENCIES: tuple[str, ...] = ()
+_CURRENCY_METADATA: dict[str, dict] = {}
+
+
+def refresh_currencies() -> tuple[str, ...]:
+    """Refresh installation-level currency metadata after migrations run."""
+    global SUPPORTED_CURRENCIES, _CURRENCY_METADATA
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT code, symbol, decimal_places FROM currencies ORDER BY code"
+        ).fetchall()
+    _CURRENCY_METADATA = {row["code"]: dict(row) for row in rows}
+    SUPPORTED_CURRENCIES = tuple(_CURRENCY_METADATA)
+    return SUPPORTED_CURRENCIES
+
+
+def get_currencies() -> list[dict]:
+    """Return the global catalogue used by forms and formatters."""
+    if not _CURRENCY_METADATA:
+        refresh_currencies()
+    return [dict(_CURRENCY_METADATA[code]) for code in SUPPORTED_CURRENCIES]
+
+
+def get_currency(currency: str | None) -> dict:
+    code = normalize_currency(currency)
+    return dict(_CURRENCY_METADATA[code])
 
 
 def normalize_currency(currency: str | None) -> str:
     """Return a supported ISO currency, defaulting to ARS for legacy callers."""
+    if not _CURRENCY_METADATA:
+        refresh_currencies()
     value = (currency or DEFAULT_CURRENCY).upper().strip()
     if value not in SUPPORTED_CURRENCIES:
         raise ValueError(f"Moneda inválida: {currency}")
@@ -183,6 +208,7 @@ def init_db(users: dict | None = None, *, user_emails: dict | None = None):
     alembic_cfg = Config(os.path.join(project_dir, "alembic.ini"))
     alembic_cfg.set_main_option("script_location", os.path.join(project_dir, "migrations"))
     command.upgrade(alembic_cfg, "head")
+    refresh_currencies()
     pgcompat.set_family_id(1)
     import seed
     with get_conn() as conn:
@@ -203,6 +229,16 @@ def init_db(users: dict | None = None, *, user_emails: dict | None = None):
     superadmin_email = os.environ.get("SUPERADMIN_EMAIL", "").strip().casefold()
     if superadmin_email:
         _bootstrap_superadmin(superadmin_email)
+
+
+def get_family_default_currency() -> str:
+    """Return the current family's default for inputs with no explicit currency."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT default_currency FROM families "
+            "WHERE id = NULLIF(current_setting('app.family_id', true), '')::integer"
+        ).fetchone()
+    return normalize_currency(row["default_currency"] if row else DEFAULT_CURRENCY)
 
 
 def get_daily_quote(family_id: int, local_date, language: str = "es-AR"):

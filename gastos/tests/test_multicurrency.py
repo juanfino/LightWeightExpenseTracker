@@ -30,6 +30,22 @@ class MultiCurrencyDBTests(unittest.TestCase):
         self.assertEqual(sum(row["total"] for row in ars), 1000)
         self.assertEqual(sum(row["total"] for row in usd), 25)
 
+    def test_supported_currencies_come_from_seeded_reference_data(self):
+        self.assertEqual(set(db.SUPPORTED_CURRENCIES), {"ARS", "USD", "BRL", "EUR"})
+        for code in ("ars", "USD", " brl ", "EUR"):
+            self.assertEqual(db.normalize_currency(code), code.strip().upper())
+        with self.assertRaises(ValueError):
+            db.normalize_currency("ZZZ")
+
+    def test_brl_round_trips_as_decimal(self):
+        expense_id = db.create_expense_full(
+            self.user["id"], None, "Brasil", "1234.56", "2026-07-03", currency="BRL"
+        )
+
+        stored = db.get_expense_by_id(expense_id)
+        self.assertEqual(stored["currency"], "BRL")
+        self.assertEqual(str(stored["amount"]), "1234.56")
+
     def test_fixed_expense_requires_matching_currency_and_locks_changes(self):
         usd_fixed = db.create_fixed_expense("Hosting", 20, None, currency="USD")
         ars_expense = db.create_expense_full(

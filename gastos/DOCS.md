@@ -4,7 +4,7 @@ Registro de gastos familiares via Telegram con dashboard web.
 
 ## Monedas
 
-La moneda por defecto es **ARS**. Para registrar un gasto en dólares escribí, por ejemplo, `Netflix 15 USD` o `Hotel 200 dólares`; el bot también lo reconoce por voz. En el dashboard podés elegir ARS/USD al agregar o editar un gasto, y el Historial permite filtrarlos. Los totales siempre se muestran separados: la app no convierte dólares ni los suma con pesos.
+La moneda por defecto sigue siendo **ARS**. Para registrar un gasto en dólares escribí, por ejemplo, `Netflix 15 USD` o `Hotel 200 dólares`; el bot también lo reconoce por voz. En los formularios del dashboard podés elegir ARS, USD, BRL o EUR al agregar o editar un gasto, ingreso o fijo, y Movimientos permite filtrarlos. Los importes en dólares usan el símbolo **US$**. Los totales siempre se muestran separados: la app no convierte ni suma monedas distintas.
 
 Los gastos fijos también tienen moneda y un pago hereda la de su fijo. Un gasto vinculado a un fijo no puede cambiar de moneda hasta desvincularse. El OCR parte de ARS: antes de confirmar el ticket se puede elegir USD.
 

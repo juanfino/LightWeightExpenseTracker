@@ -28,6 +28,17 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(json.loads(encoded), {"amount": 8500.0, "created_at": "2026-08-08 12:30:00"})
         self.assertNotIn('"8500.00"', encoded)
 
+    def test_formatting_separates_currency_metadata_from_reader_separators(self):
+        usd = {"code": "USD", "symbol": "US$", "decimal_places": 2}
+
+        self.assertEqual(money.format_amount(Decimal("5580.50"), usd), "US$ 5.580,50")
+        self.assertEqual(money.format_amount(Decimal("5580.00"), usd), "US$ 5.580")
+
+    def test_formatting_honors_non_two_decimal_currency(self):
+        zero_decimal = {"code": "CLP", "symbol": "CLP$", "decimal_places": 0}
+
+        self.assertEqual(money.format_amount(Decimal("1234.50"), zero_decimal), "CLP$ 1.235")
+
     @patch("inflation.db.get_ipc_value")
     def test_deflate_keeps_index_precision_and_quantizes_money(self, get_ipc_value):
         get_ipc_value.side_effect = [
