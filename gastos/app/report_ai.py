@@ -11,9 +11,11 @@ Performs no DB I/O and no Telegram/Flask I/O — report.py owns persistence and
 orchestration; this module only talks to the Anthropic API.
 """
 
+import hashlib
 import json
 import logging
 import os
+from functools import cache
 
 import anthropic
 import llm_usage
@@ -162,6 +164,48 @@ _ANALYZE_SYSTEM = (
     "specific worth noting (e.g. a new recurring USD subscription)."
 )
 
+_CLASSIFY_CALL_CONFIG = {
+    "max_tokens": 16000,
+    "thinking": {"type": "adaptive"},
+    "output_config": {
+        "effort": "high",
+        "format": {"type": "json_schema", "schema": _CLASSIFY_SCHEMA},
+    },
+    "system": _CLASSIFY_SYSTEM,
+}
+
+_ANALYZE_CALL_CONFIG = {
+    "max_tokens": 8000,
+    "thinking": {"type": "adaptive"},
+    "output_config": {
+        "effort": "high",
+        "format": {"type": "json_schema", "schema": _ANALYZE_SCHEMA},
+    },
+    "system": _ANALYZE_SYSTEM,
+}
+
+
+def _derive_prompt_version(classify_config: dict, analyze_config: dict) -> str:
+    """Return a stable identifier for the response-shaping report configuration.
+
+    The model and user payload are deliberately absent: the former is persisted in
+    reports.model, while the latter is the report's input rather than prompt config.
+    """
+    canonical = json.dumps(
+        {"classify": classify_config, "analyze": analyze_config},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"report-v1-{digest[:12]}:sha256:{digest}"
+
+
+@cache
+def prompt_version() -> str:
+    """Fingerprint the exact system prompts, schemas and response parameters."""
+    return _derive_prompt_version(_CLASSIFY_CALL_CONFIG, _ANALYZE_CALL_CONFIG)
+
 
 def model_name() -> str:
     return os.environ.get("REPORT_ANTHROPIC_MODEL", _DEFAULT_MODEL)
@@ -208,15 +252,9 @@ def classify_expenses(dossier: dict, variable: list[dict], prior_classifications
         call_started = llm_usage.started()
         with llm_limits.summary_call():
             message = client.messages.create(
-            model=model_name(),
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            output_config={
-                "effort": "high",
-                "format": {"type": "json_schema", "schema": _CLASSIFY_SCHEMA},
-            },
-            system=_CLASSIFY_SYSTEM,
-            messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
+                model=model_name(),
+                messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
+                **_CLASSIFY_CALL_CONFIG,
             )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:
@@ -250,15 +288,9 @@ def analyze(dossier: dict) -> dict | None:
         call_started = llm_usage.started()
         with llm_limits.summary_call():
             message = client.messages.create(
-            model=model_name(),
-            max_tokens=8000,
-            thinking={"type": "adaptive"},
-            output_config={
-                "effort": "high",
-                "format": {"type": "json_schema", "schema": _ANALYZE_SCHEMA},
-            },
-            system=_ANALYZE_SYSTEM,
-            messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
+                model=model_name(),
+                messages=[{"role": "user", "content": money.json_dumps(payload, ensure_ascii=False)}],
+                **_ANALYZE_CALL_CONFIG,
             )
         llm_usage.record("resumen", model_name(), call_started, response=message)
     except Exception as e:

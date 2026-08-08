@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.11.2
+- `reports.prompt_version` deja de depender de una etiqueta manual: cada resumen nuevo guarda una identificación legible y un SHA-256 derivados de los dos prompts, sus schemas y los parámetros reales de respuesta; el modelo sigue auditado por separado y las filas históricas conservan su valor original.
+
 ## 7.11.1
 - Los montos se mantienen como `Decimal` exactos desde PostgreSQL hasta los bordes HTTP/LLM, con redondeo monetario centralizado a 2 decimales mediante `ROUND_HALF_UP`; las respuestas JSON y ambos payloads de Resúmenes siguen exponiendo números, nunca strings.
 - Los cálculos del dossier, equivalencias, IPC, gastos fijos, ingresos y cambios de dólares eliminan mezclas accidentales con `float`; el índice IPC conserva sus 12 decimales de precisión.

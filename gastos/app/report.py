@@ -20,7 +20,6 @@ import money
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_VERSION = "3"
 _CLASSIFICATION_LOOKBACK_MONTHS = 6
 _CURRENCIES = ("ARS", "USD")
 
@@ -52,7 +51,7 @@ def generate_report(year: int, month: int) -> dict:
         year=year,
         month=month,
         model=report_ai.model_name(),
-        prompt_version=_PROMPT_VERSION,
+        prompt_version=report_ai.prompt_version(),
         dossier_json=money.json_dumps(dossier, ensure_ascii=False),
         output_json=money.json_dumps(output, ensure_ascii=False) if output is not None else None,
         fingerprint=fp,
