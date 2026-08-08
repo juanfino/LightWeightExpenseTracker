@@ -126,7 +126,8 @@ def resolve_session(token: str | None):
             """
             SELECT u.id, u.email, u.name, u.color, u.is_superadmin, u.telegram_id,
                    s.csrf_token, s.expires_at,
-                   m.family_id, m.role, f.name AS family_name, f.timezone
+                   m.family_id, m.role, f.name AS family_name, f.timezone,
+                   m.onboarding_dismissed_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             LEFT JOIN memberships m ON m.user_id = u.id AND m.active
@@ -142,7 +143,7 @@ def resolve_session(token: str | None):
             "is_superadmin": row[4], "telegram_id": row[5],
             "csrf_token": row[6], "expires_at": row[7],
             "family_id": row[8], "role": row[9], "family_name": row[10],
-            "timezone": row[11],
+            "timezone": row[11], "onboarding_dismissed": row[12] is not None,
         }
 
 
@@ -165,6 +166,19 @@ def user_has_active_membership(user_id: int) -> bool:
             "SELECT 1 FROM memberships WHERE user_id = %s AND active",
             (user_id,),
         ).fetchone())
+
+
+def dismiss_onboarding(user_id: int) -> None:
+    """Manually hide the dashboard's onboarding checklist for this membership.
+
+    Scoped to the active membership (not the user) so leaving and joining or
+    creating a different family starts the checklist fresh.
+    """
+    with platform_transaction() as raw:
+        raw.execute(
+            "UPDATE memberships SET onboarding_dismissed_at = now() WHERE user_id = %s AND active",
+            (user_id,),
+        )
 
 
 def issue_otp(

@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.9.0
+- El checklist "Primeros pasos" del dashboard ya no muestra "Invitar a alguien a tu grupo" a quienes no son owner de la familia — solo el owner puede crear invitaciones, así que mostrárselo a un miembro llevaba a un callejón sin salida en `/familia`.
+- Se agrega un botón para cerrar el checklist manualmente antes de completar los 3 pasos, con estado persistido por membership (`memberships.onboarding_dismissed_at`, migración `0009`) — no reaparece en otro dispositivo ni navegador, y volver a crear o unirte a otra familia lo muestra de nuevo.
+
 ## 7.8.1
 - Se corrige el espaciado entre el texto y el botón "Conectar mi Telegram" en `/vincular-telegram`: la clase `mt-16` usada ahí nunca existió en el CSS, así que el botón quedaba pegado al párrafo.
 - Se agrega una confirmación visual ("Enlace copiado") al copiar el enlace de invitación en `/familia`, en vez de copiar en silencio.
