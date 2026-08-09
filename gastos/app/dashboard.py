@@ -1526,29 +1526,47 @@ def api_cambios_historial():
 
 @app.route("/api/cambios/por_mes")
 def api_cambios_por_mes():
-    rows = db.get_cambios_por_mes(12)
+    try:
+        given = db.normalize_currency(request.args.get("currency_given") or "USD")
+        received = db.normalize_currency(request.args.get("currency_received") or "ARS")
+        if given == received:
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Par de monedas inválido"}), 400
+    rows = db.get_cambios_por_mes(12, given, received)
     return jsonify([dict(r) for r in rows])
 
 
 @app.route("/api/cambios/cotizacion_historica")
 def api_cambios_cotizacion_historica():
-    rows = db.get_cambios_cotizacion_historica()
-    return jsonify([dict(r) for r in rows])
+    try:
+        given = db.normalize_currency(request.args.get("currency_given") or "USD")
+        received = db.normalize_currency(request.args.get("currency_received") or "ARS")
+        if given == received:
+            raise ValueError
+    except ValueError:
+        return jsonify({"error": "Par de monedas inválido"}), 400
+    rows = db.get_cambios_cotizacion_historica(given, received)
+    result = []
+    for row in rows:
+        item = dict(row)
+        if item.get("fecha"):
+            item["fecha"] = item["fecha"].strftime("%Y-%m-%d")
+        result.append(item)
+    return jsonify(result)
 
 
 @app.route("/api/cambios/add", methods=["POST"])
 def api_cambios_add():
-    data       = request.get_json(silent=True) or {}
-    fecha      = (data.get("fecha") or "").strip()
-    monto_usd  = data.get("monto_usd")
-    cotizacion = data.get("cotizacion")
-    tipo       = (data.get("tipo") or "venta").strip().lower()
+    data = request.get_json(silent=True) or {}
+    fecha = (data.get("fecha") or "").strip()
+    amount_given = data.get("amount_given")
+    amount_received = data.get("amount_received")
+    currency_given = data.get("currency_given")
+    currency_received = data.get("currency_received")
 
-    if not fecha or monto_usd is None or cotizacion is None:
+    if not fecha or amount_given is None or amount_received is None or not currency_given or not currency_received:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
-
-    if tipo not in ("venta", "compra"):
-        return jsonify({"ok": False, "error": "Tipo inválido (venta/compra)"}), 400
 
     try:
         datetime.strptime(fecha, "%Y-%m-%d")
@@ -1556,15 +1574,21 @@ def api_cambios_add():
         return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
 
     try:
-        monto_usd = money.amount(monto_usd)
-        cotizacion = money.amount(cotizacion)
-        if monto_usd <= 0 or cotizacion <= 0:
+        amount_given = money.amount(amount_given)
+        amount_received = money.amount(amount_received)
+        currency_given = db.normalize_currency(currency_given)
+        currency_received = db.normalize_currency(currency_received)
+        if amount_given <= 0 or amount_received <= 0 or currency_given == currency_received:
             raise ValueError
     except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Montos inválidos"}), 400
 
-    cambio_id = db.registrar_cambio(fecha, monto_usd, cotizacion, g.current_user["name"], tipo=tipo)
-    return jsonify({"ok": True, "id": cambio_id, "monto_ars": monto_usd * cotizacion})
+    cambio_id = db.registrar_cambio(
+        fecha, amount_given, currency_given, amount_received, currency_received,
+        g.current_user["name"],
+    )
+    return jsonify({"ok": True, "id": cambio_id,
+                    "rate_received_per_given": amount_received / amount_given})
 
 
 @app.route("/api/cambios/<int:cambio_id>", methods=["DELETE"])
@@ -1577,17 +1601,15 @@ def api_cambios_delete(cambio_id: int):
 
 @app.route("/api/cambios/<int:cambio_id>", methods=["PUT"])
 def api_cambios_update(cambio_id: int):
-    data       = request.get_json(silent=True) or {}
-    fecha      = (data.get("fecha") or "").strip()
-    monto_usd  = data.get("monto_usd")
-    cotizacion = data.get("cotizacion")
-    tipo       = (data.get("tipo") or "").strip().lower() or None
+    data = request.get_json(silent=True) or {}
+    fecha = (data.get("fecha") or "").strip()
+    amount_given = data.get("amount_given")
+    amount_received = data.get("amount_received")
+    currency_given = data.get("currency_given")
+    currency_received = data.get("currency_received")
 
-    if not fecha or monto_usd is None or cotizacion is None:
+    if not fecha or amount_given is None or amount_received is None or not currency_given or not currency_received:
         return jsonify({"ok": False, "error": "Faltan campos requeridos"}), 400
-
-    if tipo is not None and tipo not in ("venta", "compra"):
-        return jsonify({"ok": False, "error": "Tipo inválido (venta/compra)"}), 400
 
     try:
         datetime.strptime(fecha, "%Y-%m-%d")
@@ -1595,16 +1617,20 @@ def api_cambios_update(cambio_id: int):
         return jsonify({"ok": False, "error": "Fecha inválida (YYYY-MM-DD)"}), 400
 
     try:
-        monto_usd = money.amount(monto_usd)
-        cotizacion = money.amount(cotizacion)
-        if monto_usd <= 0 or cotizacion <= 0:
+        amount_given = money.amount(amount_given)
+        amount_received = money.amount(amount_received)
+        currency_given = db.normalize_currency(currency_given)
+        currency_received = db.normalize_currency(currency_received)
+        if amount_given <= 0 or amount_received <= 0 or currency_given == currency_received:
             raise ValueError
     except (ValueError, TypeError, InvalidOperation):
         return jsonify({"ok": False, "error": "Montos inválidos"}), 400
 
-    updated = db.update_cambio(cambio_id, fecha, monto_usd, cotizacion, tipo=tipo)
+    updated = db.update_cambio(
+        cambio_id, fecha, amount_given, currency_given, amount_received, currency_received
+    )
     if updated:
-        return jsonify({"ok": True, "monto_ars": monto_usd * cotizacion})
+        return jsonify({"ok": True, "rate_received_per_given": amount_received / amount_given})
     return jsonify({"ok": False, "error": "Cambio no encontrado"}), 404
 
 

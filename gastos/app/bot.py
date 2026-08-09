@@ -15,7 +15,8 @@ import parser as msg_parser
 import categorizer
 import ocr as ocr_module
 import audio as audio_module
-import dolar as dolar_module
+import exchange as exchange_module
+import currency_detection
 import intent as intent_module
 import fixed_matcher
 import pgcompat
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 BAIRES = timezone(timedelta(hours=-3))
 
-# Umbral de confianza para registrar automáticamente (voz y dólar) sin pedir
+# Umbral de confianza para registrar automáticamente (voz y cambios) sin pedir
 # confirmación. Conservador: solo lo muy claro se guarda solo.
 AUTOSAVE_CONFIDENCE = 0.9
 
@@ -50,9 +51,8 @@ pending_amount_edit: dict[int, int] = {}
 pending_fixed_direct: dict[int, dict] = {}
 # Gasto esperando selección de subcategoría, keyed por chat_id → expense_id
 pending_subcategory: dict[int, int] = {}
-# Operación de dólar (compra/venta) pendiente de confirmación, keyed por chat_id.
-# Structure: {"tipo": str, "monto_usd": float, "cotizacion": float}
-pending_dolar: dict[int, dict] = {}
+# Cambio direccional pendiente de confirmación, keyed por chat_id.
+pending_exchange: dict[int, dict] = {}
 # Mutación en lenguaje natural pendiente de confirmación (edición o taxonomía),
 # keyed por chat_id. Structure: {"kind": "edit"|"category"|"subcategory", ...}
 pending_nl_confirm: dict[int, dict] = {}
@@ -91,6 +91,16 @@ def _parse_cambio_token(token: str) -> Decimal | None:
         return val if val > 0 else None
     except (InvalidOperation, ValueError, TypeError):
         return None
+
+
+def _currency_buttons(prefix: str) -> list[list[InlineKeyboardButton]]:
+    buttons = [
+        InlineKeyboardButton(
+            f"{row['symbol']} {row['code']}", callback_data=f"{prefix}:{row['code']}"
+        )
+        for row in db.get_currencies()
+    ]
+    return [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
 
 
 def fmt_date(dt_str: str) -> str:
@@ -420,7 +430,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    data["currency"] = "ARS"  # OCR is deliberately ARS-first; the confirmation can correct it.
+    data["currency"] = db.get_family_default_currency()
     pending_ocr[chat_id] = data
 
     fecha_str = data["fecha"].strftime("%d/%m/%Y")
@@ -430,7 +440,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await status_msg.edit_text(
         f"🧾 <b>Ticket detectado</b>\n"
         f"🏪 Comercio: {comercio_str}\n"
-        f"💰 Monto: {fmt_amount(data['monto'])}\n"
+        f"💰 Monto: {fmt_amount(data['monto'], data['currency'])}\n"
         f"📅 Fecha: {fecha_str}{fecha_note}\n\n"
         "¿Guardamos?",
         parse_mode="HTML",
@@ -439,10 +449,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("✅ Sí, guardar", callback_data="ocr:confirm"),
                 InlineKeyboardButton("❌ Cancelar", callback_data="ocr:cancel"),
             ],
-            [
-                InlineKeyboardButton("$ ARS", callback_data="ocr:currency:ARS"),
-                InlineKeyboardButton("U$S USD", callback_data="ocr:currency:USD"),
-            ],
+            *_currency_buttons("ocr:currency"),
         ]),
     )
 
@@ -499,7 +506,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
             subcategory_id=item["subcategory_id"],
             concept=item["concept"],
             amount=item["amount"],
-            currency=item.get("currency", "ARS"),
+            currency=item.get("currency", db.get_family_default_currency()),
             raw_text=f"[VOZ] {item['transcription']}",
         )
     except Exception as e:
@@ -520,7 +527,7 @@ async def _register_voice_expense(chat_id: int, bot, user: dict, item: dict) -> 
         parse_mode="HTML",
         reply_markup=keyboard,
     )
-    await _maybe_offer_fixed_link(chat_id, bot, expense_id, item["concept"], item.get("currency", "ARS"))
+    await _maybe_offer_fixed_link(chat_id, bot, expense_id, item["concept"], item.get("currency", db.get_family_default_currency()))
 
 
 async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes,
@@ -529,6 +536,8 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
     callback "voice:retry" para poder reintentar sin volver a grabar."""
     openai_api_key = context.bot_data.get("openai_api_key", "")
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
+    currencies = db.get_currencies()
+    default_currency = db.get_family_default_currency()
 
     async def _fail(e: Exception, where: str) -> None:
         logger.error("Error %s audio: %s", where, e)
@@ -543,18 +552,22 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
         )
 
     try:
-        transcription = await asyncio.to_thread(audio_module.transcribe, audio_bytes, openai_api_key)
+        transcription = await asyncio.to_thread(
+            audio_module.transcribe, audio_bytes, openai_api_key, currencies, default_currency
+        )
     except Exception as e:
         await _fail(e, "transcribiendo")
         return
 
-    # Si el audio suena a operación de dólar, intentar interpretarlo como tal.
-    if dolar_module.looks_like_dolar(transcription):
-        op = dolar_module.parse_dolar(transcription, anthropic_api_key)
+    # Prefiltro barato antes de interpretar un posible cambio de moneda.
+    if exchange_module.looks_like_exchange(transcription, currencies):
+        op = exchange_module.parse_exchange(
+            transcription, anthropic_api_key, currencies, default_currency
+        )
         if op is not None:
             pending_voice_retry.pop(chat_id, None)
             await status_msg.delete()
-            await _handle_dolar_operation(chat_id, bot, user, op)
+            await _handle_exchange_operation(chat_id, bot, user, op)
             return
 
     # Si la transcripción tiene señales de intención conversacional (edición,
@@ -567,7 +580,10 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
         return
 
     try:
-        expenses = await asyncio.to_thread(audio_module.extract_expenses, transcription, anthropic_api_key)
+        expenses = await asyncio.to_thread(
+            audio_module.extract_expenses, transcription, anthropic_api_key,
+            currencies, default_currency,
+        )
     except Exception as e:
         await _fail(e, "extrayendo gastos de")
         return
@@ -595,7 +611,7 @@ async def _process_voice_audio(chat_id: int, bot, user: dict, audio_bytes: bytes
         item = {
             "concept": expense["concept"],
             "amount": expense["amount"],
-            "currency": expense.get("currency", "ARS"),
+            "currency": expense.get("currency", default_currency),
             "category_id": category_id,
             "subcategory_id": subcategory_id,
             "transcription": transcription,
@@ -769,7 +785,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     subcategory_id=subcategory_id,
                 concept=concept,
                 amount=data["monto"],
-                currency=data.get("currency", "ARS"),
+                currency=data.get("currency", db.get_family_default_currency()),
                 raw_text=f"[OCR] {concept} {data['monto']}",
                 )
             except Exception as e:
@@ -786,7 +802,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
             )
             await _maybe_offer_fixed_link(
-                chat_id, context.bot, expense_id, concept, data.get("currency", "ARS")
+                chat_id, context.bot, expense_id, concept, data.get("currency", db.get_family_default_currency())
             )
         elif response in ("no", "n", "cancelar"):
             del pending_ocr[chat_id]
@@ -802,14 +818,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending_nl_confirm.pop(chat_id, None)
     pending_nl_pick.pop(chat_id, None)
 
-    # Si el mensaje suena a operación de dólar, intentar interpretarlo como tal.
+    currencies = db.get_currencies()
+    default_currency = db.get_family_default_currency()
+
+    # Si el mensaje suena a cambio de moneda, intentar interpretarlo como tal.
     anthropic_api_key = context.bot_data.get("anthropic_api_key", "")
 
     # Fast path explícito para ingresos. El formato neutro "concepto monto"
     # conserva para siempre su significado histórico de gasto.
     income_match = re.match(r"(?i)^ingreso\s*:\s*(.+)$", text)
     if income_match:
-        parsed_income = msg_parser.parse_message(income_match.group(1))
+        try:
+            parsed_income = msg_parser.parse_message(
+                income_match.group(1), currencies, default_currency
+            )
+        except currency_detection.UnknownCurrencyError as exc:
+            await update.message.reply_text(
+                f"⚠️ No reconozco la moneda <b>{exc.token}</b>. Usá una de: "
+                + ", ".join(db.SUPPORTED_CURRENCIES), parse_mode="HTML",
+            )
+            return
         if parsed_income is None:
             await update.message.reply_text(
                 "❓ No pude entender el ingreso. Ejemplo: "
@@ -820,21 +848,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = {
             "concept": parsed_income["concept"],
             "amount": parsed_income["amount"],
-            "currency": parsed_income.get("currency", "ARS"),
+            "currency": parsed_income.get("currency", default_currency),
             "date": datetime.now(BAIRES).strftime("%Y-%m-%d"),
         }
         await _nl_do_income(chat_id, context.bot, user, result)
         return
 
-    if anthropic_api_key and dolar_module.looks_like_dolar(text):
+    if anthropic_api_key and exchange_module.looks_like_exchange(text, currencies):
         if await _routine_quota_exhausted(update.effective_message):
             return
-        op = dolar_module.parse_dolar(text, anthropic_api_key)
+        op = exchange_module.parse_exchange(
+            text, anthropic_api_key, currencies, default_currency
+        )
         if op is not None:
-            await _handle_dolar_operation(chat_id, context.bot, user, op)
+            await _handle_exchange_operation(chat_id, context.bot, user, op)
             return
 
-    parsed = msg_parser.parse_message(text)
+    try:
+        parsed = msg_parser.parse_message(text, currencies, default_currency)
+    except currency_detection.UnknownCurrencyError as exc:
+        await update.message.reply_text(
+            f"⚠️ No reconozco la moneda <b>{exc.token}</b>. Usá una de: "
+            + ", ".join(db.SUPPORTED_CURRENCIES), parse_mode="HTML",
+        )
+        return
+    except ValueError:
+        await update.message.reply_text(
+            "⚠️ El mensaje menciona monedas incompatibles. Indicá una sola moneda para el gasto."
+        )
+        return
 
     # Camino rápido determinista: "concepto monto" simple, sin señales de intención
     # conversacional → se guarda al instante (comportamiento histórico). Todo lo demás
@@ -871,7 +913,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             subcategory_id=subcategory_id,
             concept=parsed["concept"],
             amount=parsed["amount"],
-            currency=parsed.get("currency", "ARS"),
+            currency=parsed.get("currency", default_currency),
             raw_text=text,
         )
     except Exception as e:
@@ -887,7 +929,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ <b>Gasto registrado</b>\n"
         f"📋 {parsed['concept']}\n"
-        f"💰 {fmt_amount(parsed['amount'], parsed.get('currency', 'ARS'))}\n"
+        f"💰 {fmt_amount(parsed['amount'], parsed.get('currency', default_currency))}\n"
         f"{_cat_line(cat_icon, cat_name, subcategory_id)}\n"
         f"👤 {user['name']}\n"
         f"<code>#ID{expense_id}</code>",
@@ -895,7 +937,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard,
     )
 
-    await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, parsed["concept"], parsed.get("currency", "ARS"))
+    await _maybe_offer_fixed_link(
+        chat_id, context.bot, expense_id, parsed["concept"],
+        parsed.get("currency", default_currency),
+    )
 
 
 async def cmd_gastos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1120,10 +1165,10 @@ async def cmd_ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "   Mandá un audio: \"gasté 30 mil en la verdulería\".\n"
         "   Si es claro, se registra solo; si no, te pido confirmar.\n"
         "\n"
-        "💵 <b>DÓLARES (compra/venta)</b>\n"
+        "💱 <b>CAMBIOS DE MONEDA</b>\n"
         "   Escribí o mandá audio en lenguaje natural:\n"
         "   \"vendí 500 dólares a 1700\"\n"
-        "   \"compré 1000 dólares a 1550 cada uno\"\n"
+        "   \"cambié 100 reales por 18 euros\"\n"
         "\n"
         "📊 <b>CONSULTAS</b>\n"
         "   /gastos     → resumen del mes\n"
@@ -1422,7 +1467,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not data:
             await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
             return
-        data["currency"] = cb.rsplit(":", 1)[1]
+        try:
+            data["currency"] = db.normalize_currency(cb.rsplit(":", 1)[1])
+        except ValueError:
+            await query.answer("Moneda no admitida.", show_alert=True)
+            return
         await query.answer(f"Moneda: {data['currency']}")
         return
 
@@ -1445,7 +1494,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_id=subcategory_id,
                 concept=concept,
                 amount=ocr_data["monto"],
-                currency=ocr_data.get("currency", "ARS"),
+                currency=ocr_data.get("currency", db.get_family_default_currency()),
                 raw_text=f"[OCR] {concept} {ocr_data['monto']}",
             )
         except Exception as e:
@@ -1463,7 +1512,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=keyboard,
         )
-        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept, ocr_data.get("currency", "ARS"))
+        await _maybe_offer_fixed_link(chat_id, context.bot, expense_id, concept, ocr_data.get("currency", db.get_family_default_currency()))
         return
 
     elif cb == "ocr:cancel":
@@ -1487,7 +1536,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 subcategory_id=item["subcategory_id"],
                 concept=item["concept"],
                 amount=item["amount"],
-                currency=item.get("currency", "ARS"),
+                currency=item.get("currency", db.get_family_default_currency()),
                 raw_text=f"[VOZ] {item['transcription']}",
             )
         except Exception as e:
@@ -1506,7 +1555,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard,
         )
         await _maybe_offer_fixed_link(
-            chat_id, context.bot, expense_id, item["concept"], item.get("currency", "ARS")
+            chat_id, context.bot, expense_id, item["concept"], item.get("currency", db.get_family_default_currency())
         )
         if state["queue"]:
             await _send_next_voice_confirmation(chat_id, context.bot)
@@ -1536,22 +1585,24 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _process_voice_audio(chat_id, context.bot, user, audio_bytes, query.message, context)
         return
 
-    if cb == "dolar:confirm":
-        op = pending_dolar.pop(chat_id, None)
+    if cb == "exchange:confirm":
+        op = pending_exchange.pop(chat_id, None)
         if not op:
             await query.answer("⏱ Esta confirmación ya expiró.", show_alert=True)
             return
         fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
-        db.registrar_cambio(fecha_str, op["monto_usd"], op["cotizacion"], user["name"], tipo=op["tipo"])
-        titulo = "Venta registrada" if op["tipo"] == "venta" else "Compra registrada"
+        db.registrar_cambio(
+            fecha_str, op["amount_given"], op["currency_given"],
+            op["amount_received"], op["currency_received"], user["name"],
+        )
         await query.edit_message_text(
-            f"✅ <b>{titulo}</b>\n{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}",
+            f"✅ <b>Cambio registrado</b>\n{_exchange_summary(op)}",
             parse_mode="HTML",
         )
         return
 
-    elif cb == "dolar:cancel":
-        pending_dolar.pop(chat_id, None)
+    elif cb == "exchange:cancel":
+        pending_exchange.pop(chat_id, None)
         await query.edit_message_text("❌ Operación cancelada.")
         return
 
@@ -1722,7 +1773,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fe_id = int(fe_id_str)
         fe = db.get_fixed_expense_by_id(fe_id)
         if target == "none":
-            pending_fixed_direct[chat_id] = {"fixed_expense_id": fe_id, "concept": fe["concept"] if fe else "", "currency": fe["currency"] if fe else "ARS"}
+            pending_fixed_direct[chat_id] = {"fixed_expense_id": fe_id, "concept": fe["concept"] if fe else "", "currency": fe["currency"] if fe else db.get_family_default_currency()}
             est_str = f" (estimado: {fmt_amount(fe['estimated_amount'], fe['currency'])})" if fe and fe["estimated_amount"] else ""
             await query.edit_message_text(
                 f"💰 ¿Cuánto pagaste por <b>{fe['concept'] if fe else 'este gasto fijo'}</b>?{est_str}\nEnviá el monto:",
@@ -1816,57 +1867,58 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("💰 Enviá el nuevo monto:")
 
 
-# ── Dólar (compra / venta) ─────────────────────────────────────────────────────
+# ── Cambios de moneda ─────────────────────────────────────────────────────────
 
-def _dolar_summary(tipo: str, monto_usd: float, cotizacion: float) -> str:
-    """Texto del cuerpo de una operación de dólar (sin encabezado)."""
-    monto_ars = monto_usd * cotizacion
-    verbo = "Vendiste" if tipo == "venta" else "Compraste"
-    ars_label = "ARS obtenidos" if tipo == "venta" else "ARS pagados"
+def _exchange_summary(op: dict) -> str:
+    """Directional wording, with buy/sell derived only around the family default."""
+    label = exchange_module.derived_trade_label(op, db.get_family_default_currency())
+    if label == "venta":
+        heading = f"Vendiste {op['currency_given']}"
+    elif label == "compra":
+        heading = f"Compraste {op['currency_received']}"
+    else:
+        heading = "Conversión"
     fecha_display = datetime.now(BAIRES).strftime("%d/%m/%Y")
     return (
-        f"💵 {verbo}: {fmt_amount(monto_usd, 'USD')}\n"
-        f"💱 Cotización: {fmt_amount(cotizacion)}\n"
-        f"💰 {ars_label}: {fmt_amount(monto_ars)}\n"
+        f"💱 {heading}\n"
+        f"↗️ Entregaste: {fmt_amount(op['amount_given'], op['currency_given'])}\n"
+        f"↘️ Recibiste: {fmt_amount(op['amount_received'], op['currency_received'])}\n"
+        f"📐 Tasa: {op['rate_received_per_given']:.6f} {op['currency_received']}/{op['currency_given']}\n"
         f"📅 Fecha: {fecha_display}"
     )
 
 
-async def _register_dolar_and_announce(chat_id: int, bot, user: dict, op: dict) -> None:
-    """Registra una operación de dólar y avisa."""
+async def _register_exchange_and_announce(chat_id: int, bot, user: dict, op: dict) -> None:
     fecha_str = datetime.now(BAIRES).strftime("%Y-%m-%d")
-    db.registrar_cambio(fecha_str, op["monto_usd"], op["cotizacion"], user["name"], tipo=op["tipo"])
-    titulo = "Venta registrada" if op["tipo"] == "venta" else "Compra registrada"
+    db.registrar_cambio(
+        fecha_str, op["amount_given"], op["currency_given"],
+        op["amount_received"], op["currency_received"], user["name"],
+    )
     await bot.send_message(
         chat_id=chat_id,
-        text=f"✅ <b>{titulo}</b>\n{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}",
+        text=f"✅ <b>Cambio registrado</b>\n{_exchange_summary(op)}",
         parse_mode="HTML",
     )
 
 
-async def _handle_dolar_operation(chat_id: int, bot, user: dict, op: dict) -> None:
+async def _handle_exchange_operation(chat_id: int, bot, user: dict, op: dict) -> None:
     """Registra directo si la confianza es alta; si no, pide confirmación inline."""
     if op["confidence"] >= AUTOSAVE_CONFIDENCE:
-        await _register_dolar_and_announce(chat_id, bot, user, op)
+        await _register_exchange_and_announce(chat_id, bot, user, op)
         return
 
-    pending_dolar[chat_id] = {
-        "tipo": op["tipo"],
-        "monto_usd": op["monto_usd"],
-        "cotizacion": op["cotizacion"],
-    }
-    titulo = "venta" if op["tipo"] == "venta" else "compra"
+    pending_exchange[chat_id] = dict(op)
     await bot.send_message(
         chat_id=chat_id,
         text=(
-            f"💱 Entendí una <b>{titulo}</b> de dólares:\n"
-            f"{_dolar_summary(op['tipo'], op['monto_usd'], op['cotizacion'])}\n\n"
+            "💱 Entendí este <b>cambio de moneda</b>:\n"
+            f"{_exchange_summary(op)}\n\n"
             "¿Registramos?"
         ),
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Sí, registrar", callback_data="dolar:confirm"),
-            InlineKeyboardButton("❌ Cancelar",      callback_data="dolar:cancel"),
+            InlineKeyboardButton("✅ Sí, registrar", callback_data="exchange:confirm"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="exchange:cancel"),
         ]]),
     )
 
@@ -1896,10 +1948,12 @@ async def handle_cambiodolar(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(_fmt_error, parse_mode="HTML")
         return
 
-    await _register_dolar_and_announce(
-        update.message.chat_id, context.bot, user,
-        {"tipo": "venta", "monto_usd": monto_usd, "cotizacion": cotizacion},
-    )
+    amount_received = money.amount(monto_usd * cotizacion)
+    await _register_exchange_and_announce(update.message.chat_id, context.bot, user, {
+        "amount_given": monto_usd, "currency_given": "USD",
+        "amount_received": amount_received, "currency_received": "ARS",
+        "rate_received_per_given": cotizacion, "confidence": 1.0,
+    })
 
 
 # ── Capa de intención — handlers ──────────────────────────────────────────────
@@ -2036,7 +2090,7 @@ async def _nl_do_income(chat_id: int, bot, user, result: dict) -> None:
     category_id = _resolve_income_category(result["concept"], result.get("category"))
     income_id = db.create_income(
         user["id"], result["concept"], result["amount"],
-        result.get("currency", "ARS"), date_str, category_id,
+        result.get("currency", db.get_family_default_currency()), date_str, category_id,
     )
     category = db.get_income_category(category_id) if category_id else None
     await bot.send_message(
@@ -2096,7 +2150,7 @@ async def _nl_do_log(chat_id: int, bot, user, text: str, result: dict) -> None:
     teclado de editar/categoría — nada queda irreversible)."""
     concept = result["concept"]
     amount = result["amount"]
-    currency = result.get("currency", "ARS")
+    currency = result.get("currency", db.get_family_default_currency())
     date_str = result.get("date")
     category_id, subcategory_id = _resolve_log_category(concept, result.get("category"), result.get("subcategory"))
     try:

@@ -3,3 +3,4 @@ Telegram.md
 __pycache__/
 *.pyc
 design-ref/
+gastos/.venv/

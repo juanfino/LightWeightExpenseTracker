@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.16.0
+- La migración `0014` convierte `cambios_dolar` en operaciones direccionales genéricas (`amount_given/currency_given` → `amount_received/currency_received`) con tasa explícita “recibida por entregada”; migra ventas y compras USD/ARS sin perder montos ni la cotización resultante y elimina `tipo` del almacenamiento.
+- Texto, voz y lenguaje natural detectan ARS, USD, BRL y EUR desde el catálogo y usan `families.default_currency` cuando no hay señal explícita; `$` y “pesos” son relativos a ese default, una moneda desconocida se informa y OCR permite corregir con todo el catálogo.
+- **Dólares** pasa a llamarse **Cambios** en el menú y en la página (la ruta `/dolares` y el template conservan su nombre); el historial, alta, edición, resumen y gráficos admiten cualquier par y la cotización histórica se filtra por par y dirección.
+- La cobertura del dossier mide cuánto gasto se financió convirtiendo cualquier otra moneda a la moneda por defecto. `families.default_currency` todavía no tiene writer: el dossier y `resumenes.html` siguen deliberadamente limitados a bloques ARS/USD hasta el próximo pase.
+
 ## 7.15.0
 - La migración `0013` agrega el catálogo global `currencies` con ARS, USD, BRL y EUR (código, símbolo y decimales), y reemplaza los cinco `CHECK` históricos por claves foráneas sin alterar los datos existentes.
 - `families.currency` pasa a llamarse `default_currency`; los formularios web lo usan cuando no se indica moneda, aunque todavía no existe una pantalla que permita cambiarlo y todas las familias conservan ARS hasta que se generalice la capa de entrada.

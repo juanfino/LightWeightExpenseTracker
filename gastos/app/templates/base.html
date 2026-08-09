@@ -718,7 +718,7 @@
           <a href="{{ url_for('history', period=period_value) }}"  class="tab-link {% block nav_history %}{% endblock %}">Movimientos</a>
           <a href="{{ url_for('incomes_page', period=period_value) }}" class="tab-link {% block nav_incomes %}{% endblock %}">Ingresos</a>
           <a href="{{ url_for('fijos_page', period=period_value) }}"    class="tab-link {% block nav_fijos %}{% endblock %}">Fijos</a>
-          <a href="{{ url_for('dolares_page', period=period_value) }}"  class="tab-link {% block nav_dolares %}{% endblock %}">Dólares</a>
+          <a href="{{ url_for('dolares_page', period=period_value) }}"  class="tab-link {% block nav_dolares %}{% endblock %}">Cambios</a>
           <a href="{{ url_for('resumenes_page', period=period_value) }}" class="tab-link {% block nav_resumenes %}{% endblock %}">Resúmenes</a>
           <a href="/lista" class="tab-link nav-shopping {% block nav_shopping %}{% endblock %}">Lista de compras{% if shopping_pending_count %} · {{ shopping_pending_count }}{% endif %}</a>
         </nav>
@@ -780,7 +780,7 @@
     <a href="{{ url_for('history', period=period_value) }}"  class="tab-link {{ self.nav_history() }}">Movimientos</a>
     <a href="{{ url_for('incomes_page', period=period_value) }}" class="tab-link {{ self.nav_incomes() }}">Ingresos</a>
     <a href="{{ url_for('fijos_page', period=period_value) }}"    class="tab-link {{ self.nav_fijos() }}">Fijos</a>
-    <a href="{{ url_for('dolares_page', period=period_value) }}"  class="tab-link {{ self.nav_dolares() }}">Dólares</a>
+    <a href="{{ url_for('dolares_page', period=period_value) }}"  class="tab-link {{ self.nav_dolares() }}">Cambios</a>
     <a href="{{ url_for('resumenes_page', period=period_value) }}" class="tab-link {{ self.nav_resumenes() }}">Resúmenes</a>
     <a href="/lista" class="tab-link nav-shopping {{ self.nav_shopping() }}">Lista de compras{% if shopping_pending_count %} · {{ shopping_pending_count }}{% endif %}</a>
   </nav>

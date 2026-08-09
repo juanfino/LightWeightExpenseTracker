@@ -4,9 +4,9 @@ Registro de gastos familiares via Telegram con dashboard web.
 
 ## Monedas
 
-La moneda por defecto sigue siendo **ARS**. Para registrar un gasto en dólares escribí, por ejemplo, `Netflix 15 USD` o `Hotel 200 dólares`; el bot también lo reconoce por voz. En los formularios del dashboard podés elegir ARS, USD, BRL o EUR al agregar o editar un gasto, ingreso o fijo, y Movimientos permite filtrarlos. Los importes en dólares usan el símbolo **US$**. Los totales siempre se muestran separados: la app no convierte ni suma monedas distintas.
+La moneda por defecto sigue siendo **ARS**. Si no indicás otra, texto, voz y modo conversacional usan esa moneda. Para elegir otra escribí su código o nombre, por ejemplo `Netflix 15 USD`, `Hotel 200 EUR` o `Taxi 80 reales`; el marcador se quita del concepto. `$` y “pesos” significan la moneda por defecto de la familia. Si escribís un código desconocido después del monto, el bot avisa para que lo corrijas. Los formularios aceptan ARS, USD, BRL y EUR y los totales nunca mezclan monedas.
 
-Los gastos fijos también tienen moneda y un pago hereda la de su fijo. Un gasto vinculado a un fijo no puede cambiar de moneda hasta desvincularse. El OCR parte de ARS: antes de confirmar el ticket se puede elegir USD.
+Los gastos fijos también tienen moneda y un pago hereda la de su fijo. Un gasto vinculado a un fijo no puede cambiar de moneda hasta desvincularse. El OCR parte de la moneda por defecto y, antes de confirmar, permite elegir cualquiera del catálogo.
 
 ## Configuración
 
@@ -24,7 +24,7 @@ La app se configura mediante variables de entorno:
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Sí | Credenciales OAuth de Google |
 | `RESEND_API_KEY` | Sí | Envío de códigos de acceso por email |
 | `TURNSTILE_SECRET` | Sí | Secreto privado para verificar Turnstile del lado del servidor |
-| `ANTHROPIC_API_KEY` | No | Habilita el OCR de tickets, la extracción por voz/dólar y el modo conversacional en lenguaje natural |
+| `ANTHROPIC_API_KEY` | No | Habilita el OCR de tickets, la extracción por voz/cambios y el modo conversacional en lenguaje natural |
 | `OPENAI_API_KEY` | No | Habilita la transcripción de mensajes de voz (Whisper) |
 | `DATABASE_URL` | Sí | URL de conexión a PostgreSQL |
 | `DASHBOARD_PORT` | No | Puerto del dashboard (default: `5000`) |
@@ -52,9 +52,9 @@ Los gastos conversacionales se registran solos (podés editarlos con los botones
 
 Si está configurada la `OPENAI_API_KEY` (además de `ANTHROPIC_API_KEY`), le podés mandar un audio al bot en vez de escribir, ej. "gasté 30 mil en la verdulería". Si el monto queda claro se registra solo (con teclado para editar); si no, pide confirmación.
 
-### Dólares (compra/venta)
+### Cambios de moneda
 
-Con `ANTHROPIC_API_KEY` configurada, también se pueden registrar operaciones de cambio en lenguaje natural (texto o audio): `vendí 500 dólares a 1700`, `compré 1000 dólares a 1550 cada uno`. Sigue funcionando el comando clásico `CambioDolar <monto_usd> <cotizacion>` (registra una venta). Desde la web, el botón "+ Agregar cambio" en `/dolares` permite cargar una compra o una venta sin pasar por Telegram.
+Con `ANTHROPIC_API_KEY` configurada, se pueden registrar conversiones direccionales por texto o audio: `vendí 500 dólares a 1700`, `compré 1000 dólares a 1550 cada uno` o `cambié 100 reales por 18 euros`. La app muestra compra/venta sólo cuando una de las monedas es la moneda por defecto; entre dos monedas extranjeras muestra simplemente la dirección. Sigue funcionando `CambioDolar <monto_usd> <cotizacion>` como atajo USD→ARS. En **Cambios** (`/dolares`) se puede cargar, editar o eliminar cualquier par y elegir qué par/dirección graficar.
 
 ## Comandos
 
@@ -79,9 +79,9 @@ También se puede mandar una foto o documento de imagen de un ticket: el bot ext
 
 ## Dashboard
 
-En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **mangoteca** arriba a la izquierda. Allí aparece una frase breve que cambia cada día local y se mantiene estable al refrescar. El menú principal contiene Movimientos, Ingresos, Fijos, Dólares y Resúmenes; al final, separada visualmente por no representar dinero registrado, está **Lista de compras**.
+En la URL pública, `/` muestra la presentación del servicio; `/privacy` y `/terms` contienen las páginas legales. El acceso se hace con Google o con un código de seis dígitos enviado por email; Google muestra siempre el selector para evitar entrar por error con otra cuenta abierta en el dispositivo. Una vez autenticado, el Dashboard vive en `/dashboard` y se abre tocando el logo **mangoteca** arriba a la izquierda. Allí aparece una frase breve que cambia cada día local y se mantiene estable al refrescar. El menú principal contiene Movimientos, Ingresos, Fijos, Cambios y Resúmenes; al final, separada visualmente por no representar dinero registrado, está **Lista de compras**.
 
-Dashboard, Movimientos, Ingresos, Fijos, Dólares y Resúmenes comparten el mismo **período contable**. Al cambiar el mes con las flechas, las demás pantallas se abren en ese mismo período. Si estás viendo un mes anterior, el selector se destaca suavemente y ofrece **Volver al mes actual**. En Movimientos, los filtros siguen siendo independientes: podés elegir “Todos” o acotar más la búsqueda sin cambiar el período que verás al ir a otra pantalla.
+Dashboard, Movimientos, Ingresos, Fijos, Cambios y Resúmenes comparten el mismo **período contable**. Al cambiar el mes con las flechas, las demás pantallas se abren en ese mismo período. Si estás viendo un mes anterior, el selector se destaca suavemente y ofrece **Volver al mes actual**. En Movimientos, los filtros siguen siendo independientes: podés elegir “Todos” o acotar más la búsqueda sin cambiar el período que verás al ir a otra pantalla.
 
 Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, el selector de apariencia y **Cerrar sesión**. La apariencia puede seguir al sistema o fijarse en modo oscuro/claro; la elección queda guardada en ese navegador. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú agrega Sistema (backup/restauración global de la base) y el acceso al panel operativo global.
 
@@ -122,7 +122,7 @@ En **Lista de compras** (`/lista`), toda la familia comparte los productos pendi
 
 Telegram entiende `falta detergente`, `necesitamos dos leches`, `compré el detergente` y `qué falta comprar`. Un mensaje con monto es un gasto; algo faltante o necesario sin monto pertenece a la lista.
 
-En **Exportar** (`/exportar`) cualquier miembro activo puede descargar CSV de Movimientos, Gastos fijos, Dólares, Ingresos, Lista y Taxonomía, o un ZIP con todo. Incluyen el nombre de la persona, pero no emails ni identificadores de Telegram. Para Excel en español, usar **Datos → Desde texto/CSV** y elegir coma.
+En **Exportar** (`/exportar`) cualquier miembro activo puede descargar CSV de Movimientos, Gastos fijos, Cambios, Ingresos, Lista y Taxonomía, o un ZIP con todo. Incluyen el nombre de la persona, pero no emails ni identificadores de Telegram. Para Excel en español, usar **Datos → Desde texto/CSV** y elegir coma.
 
 En **Fijos** se configuran gastos que se repiten, como alquiler, internet o cuotas. En **Resúmenes**, cada generación usa IA sobre los datos del grupo, consume una de las 15 generaciones mensuales disponibles y puede tardar cerca de un minuto. **Preferencias del relato** permite que cualquier integrante elija énfasis, tono, extensión, un foco libre y si admite sugerencias; es una configuración compartida y se aplica recién al generar o regenerar, sin modificar el resumen que ya está en pantalla. Sólo cambia el texto narrativo: totales, gráficos y tarjetas siguen saliendo directamente de los datos. Si el mes tuvo gastos en dólares, aparecen con el mismo protagonismo que los pesos — total, tres clases de gasto (fijo/recurrente/excepcional), fijos y quién registró tienen su propio bloque en dólares, sin mezclarse con los pesos en ninguna suma. Debajo del total aparece, sólo si ese mes tuvo gasto en USD, una línea de referencia con el equivalente en pesos a la cotización del mes — es sólo para dimensionar, ningún cálculo de la página la usa.
 

@@ -2,6 +2,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 import money
+import currency_detection
 
 
 # Matches a number that may use:
@@ -12,12 +13,6 @@ import money
 _NUMBER_RE = re.compile(
     r"\b(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\b"
 )
-
-_USD_RE = re.compile(
-    r"(?:(?<!\w)(?:usd|u\$s|us\$)(?!\w)|\bd[oó]lares?\b)",
-    re.IGNORECASE,
-)
-
 
 def _normalize_amount(raw: str) -> Decimal | None:
     """
@@ -83,7 +78,8 @@ def _normalize_amount(raw: str) -> Decimal | None:
         return None
 
 
-def parse_message(text: str) -> dict | None:
+def parse_message(text: str, currencies: list[dict] | None = None,
+                  default_currency: str = "ARS") -> dict | None:
     """
     Parsea un mensaje de texto en {concept, amount}.
 
@@ -97,10 +93,11 @@ def parse_message(text: str) -> dict | None:
     Retorna None si no se puede extraer un monto válido.
     """
     text = text.strip()
-    currency = "USD" if _USD_RE.search(text) else "ARS"
-    # Currency words are annotations, not part of the concept. Removing them also
-    # lets both "Netflix USD 15" and "Netflix 15 dólares" hit the fast path.
-    text = _USD_RE.sub("", text).strip()
+    catalogue = currencies or [
+        {"code": "ARS", "symbol": "$"}, {"code": "USD", "symbol": "US$"},
+        {"code": "BRL", "symbol": "R$"}, {"code": "EUR", "symbol": "€"},
+    ]
+    currency, text, _ = currency_detection.detect_and_strip(text, catalogue, default_currency)
     matches = list(_NUMBER_RE.finditer(text))
     if not matches:
         return None

@@ -82,7 +82,7 @@ def build_dossier(year: int, month: int) -> dict:
             "first_expense_date": db.get_first_expense_date(),
             "months_available": len(months_with_data),
         },
-        "dollars": _build_dollars(by_tipo, equivalence),
+        "dollars": _build_dollars(year, month, by_tipo, equivalence),
         "equivalence": equivalence,
         "recurrence_evidence": _build_recurrence_evidence(period_rows, history_rows),
         "currencies": {
@@ -409,7 +409,7 @@ def _build_equivalence(year: int, month: int, ars_total: float, usd_total: float
     }
 
 
-def _build_dollars(by_tipo: dict, equivalence: dict) -> dict:
+def _build_dollars(year: int, month: int, by_tipo: dict, equivalence: dict) -> dict:
     if equivalence["available"] or not equivalence["usd_total"]:
         basis_total = equivalence["combined_ars_equivalent"]
         basis = "pesos + dólares equivalentes" if equivalence["usd_total"] else "sólo pesos"
@@ -419,12 +419,15 @@ def _build_dollars(by_tipo: dict, equivalence: dict) -> dict:
         # the denominator.
         basis_total = equivalence["ars_total"]
         basis = "sólo pesos (sin cotización para convertir los dólares del mes)"
-    coverage_ratio = money.statistic(by_tipo["venta"]["total_ars"] / basis_total, 3) if basis_total else None
+    converted_into_default = db.get_converted_into_default_total(year, month)
+    coverage_ratio = money.statistic(converted_into_default / basis_total, 3) if basis_total else None
     return {
         "venta": by_tipo["venta"],
         "compra": by_tipo["compra"],
         "coverage_ratio": coverage_ratio,
         "coverage_basis": basis,
+        "converted_into_default": converted_into_default,
+        "default_currency": db.get_family_default_currency(),
     }
 
 

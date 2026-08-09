@@ -3,6 +3,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from alembic import command
 from alembic.config import Config
@@ -1862,51 +1863,76 @@ def get_fixed_expense_monthly_summary(year: int, month: int,
     }
 
 
-# ── Cambios de Dólar ──────────────────────────────────────────────────────────
+# ── Cambios de moneda ─────────────────────────────────────────────────────────
 
-def registrar_cambio(fecha: str, monto_usd: float, cotizacion: float, usuario: str, tipo: str = "venta") -> int:
-    monto_usd = money.amount(monto_usd)
-    cotizacion = money.amount(cotizacion)
-    monto_ars = money.amount(monto_usd * cotizacion)
+def registrar_cambio(fecha: str, amount_given, currency_given, amount_received=None,
+                     currency_received=None, usuario=None, tipo: str | None = None) -> int:
+    """Store a directional exchange.
+
+    The persisted rate is always units received per one unit given. The small
+    legacy-call adapter keeps ``registrar_cambio(fecha, usd, rate, user, tipo=...)``
+    usable by older integrations while every application caller uses the generic
+    contract.
+    """
+    if str(currency_given).upper().strip() not in SUPPORTED_CURRENCIES:
+        monto_usd = money.amount(amount_given)
+        cotizacion = money.amount(currency_given)
+        legacy_user = amount_received
+        monto_ars = money.amount(monto_usd * cotizacion)
+        if tipo == "compra":
+            amount_given, currency_given = monto_ars, "ARS"
+            amount_received, currency_received = monto_usd, "USD"
+        else:
+            amount_given, currency_given = monto_usd, "USD"
+            amount_received, currency_received = monto_ars, "ARS"
+        usuario = legacy_user
+    amount_given = money.amount(amount_given)
+    amount_received = money.amount(amount_received)
+    currency_given = normalize_currency(currency_given)
+    currency_received = normalize_currency(currency_received)
+    if amount_given <= 0 or amount_received <= 0 or currency_given == currency_received:
+        raise ValueError("Cambio de moneda inválido")
+    rate = amount_received / amount_given
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO cambios_dolar (fecha, monto_usd, cotizacion, monto_ars, usuario, tipo)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (fecha, monto_usd, cotizacion, monto_ars, usuario, tipo),
+            "INSERT INTO cambios_dolar (fecha, amount_given, currency_given, amount_received,"
+            " currency_received, rate_received_per_given, usuario) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (fecha, amount_given, currency_given, amount_received, currency_received, rate, usuario),
         )
         return cur.lastrowid
 
 
 def get_cambios_resumen_mes(year: int, month: int) -> dict:
     with get_conn() as conn:
-        row = conn.execute(
+        rows = conn.execute(
             """
-            SELECT COALESCE(SUM(monto_usd), 0)  AS total_usd,
-                   COALESCE(AVG(cotizacion), 0)  AS cotizacion_promedio,
-                   COALESCE(SUM(monto_ars), 0)  AS total_ars
+            SELECT currency_given, currency_received, COUNT(*) AS cnt,
+                   COALESCE(SUM(amount_given), 0) AS total_given,
+                   COALESCE(SUM(amount_received), 0) AS total_received,
+                   COALESCE(AVG(rate_received_per_given), 0) AS average_rate
             FROM cambios_dolar
             WHERE strftime('%Y', fecha) = ?
               AND strftime('%m', fecha) = ?
+            GROUP BY currency_given, currency_received
+            ORDER BY currency_given, currency_received
             """,
             (str(year), f"{month:02d}"),
-        ).fetchone()
-    return {
-        "total_usd_mes":          row["total_usd"],
-        "cotizacion_promedio_mes": row["cotizacion_promedio"],
-        "total_ars_mes":          row["total_ars"],
-    }
+        ).fetchall()
+    return {"operations": [dict(row) for row in rows]}
 
 
 def get_cambios_historial(limit: int = 50) -> list:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, fecha, monto_usd, cotizacion, monto_ars, usuario, tipo"
+            "SELECT id, fecha, amount_given, currency_given, amount_received,"
+            " currency_received, rate_received_per_given, usuario"
             " FROM cambios_dolar ORDER BY fecha DESC LIMIT ?",
             (limit,),
         ).fetchall()
 
 
-def get_cambios_por_mes(months: int = 12) -> list:
+def get_cambios_por_mes(months: int = 12, currency_given: str = "USD",
+                        currency_received: str = "ARS") -> list:
     from datetime import date
     today = date.today()
     start_m = today.month - months + 1
@@ -1918,23 +1944,26 @@ def get_cambios_por_mes(months: int = 12) -> list:
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT strftime('%Y-%m', fecha)    AS mes,
-                   COALESCE(SUM(monto_usd), 0) AS total_usd,
-                   COALESCE(SUM(monto_ars), 0) AS total_ars,
-                   COALESCE(AVG(cotizacion), 0) AS cotizacion_promedio
+            SELECT strftime('%Y-%m', fecha) AS mes,
+                   COALESCE(SUM(amount_given), 0) AS total_given,
+                   COALESCE(SUM(amount_received), 0) AS total_received,
+                   COALESCE(AVG(rate_received_per_given), 0) AS average_rate
             FROM cambios_dolar
-            WHERE fecha >= ?
+            WHERE fecha >= ? AND currency_given = ? AND currency_received = ?
             GROUP BY mes
             ORDER BY mes ASC
             """,
-            (start_date,),
+            (start_date, normalize_currency(currency_given), normalize_currency(currency_received)),
         ).fetchall()
 
 
-def get_cambios_cotizacion_historica() -> list:
+def get_cambios_cotizacion_historica(currency_given: str = "USD",
+                                     currency_received: str = "ARS") -> list:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT fecha, cotizacion FROM cambios_dolar ORDER BY fecha ASC"
+            "SELECT fecha, rate_received_per_given FROM cambios_dolar"
+            " WHERE currency_given = ? AND currency_received = ? ORDER BY fecha ASC",
+            (normalize_currency(currency_given), normalize_currency(currency_received)),
         ).fetchall()
 
 
@@ -1955,15 +1984,26 @@ def get_latest_cotizacion_upto(year: int, month: int, lookback_months: int = 12)
     with get_conn() as conn:
         row = conn.execute(
             """
-            SELECT fecha, cotizacion, tipo
+            SELECT fecha, amount_given, currency_given, amount_received,
+                   currency_received, rate_received_per_given
             FROM cambios_dolar
             WHERE fecha < ? AND fecha >= ?
+              AND ((currency_given='USD' AND currency_received='ARS')
+                OR (currency_given='ARS' AND currency_received='USD'))
             ORDER BY fecha DESC
             LIMIT 1
             """,
             (period_start, lookback_start),
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    result = dict(row)
+    result["cotizacion"] = (
+        result["rate_received_per_given"] if result["currency_given"] == "USD"
+        else money.amount(result["amount_given"] / result["amount_received"])
+    )
+    result["tipo"] = "venta" if result["currency_given"] == "USD" else "compra"
+    return result
 
 
 # ── Resúmenes mensuales (IA) ────────────────────────────────────────────────
@@ -2086,38 +2126,60 @@ def get_months_with_data() -> list[str]:
 
 
 def get_cambios_resumen_mes_by_tipo(year: int, month: int) -> dict:
-    """Dollar operations for the month split by tipo (venta/compra) — always both keys
-    present (zeroed if that side had no operations), per the report's "both sides,
-    always" requirement."""
+    """Legacy ARS/USD report shape with buy/sell derived, never stored."""
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT tipo,
-                   COUNT(*)                     AS cnt,
-                   COALESCE(SUM(monto_usd), 0)  AS total_usd,
-                   COALESCE(SUM(monto_ars), 0)  AS total_ars,
-                   COALESCE(AVG(cotizacion), 0) AS cotizacion_promedio,
-                   COALESCE(MIN(cotizacion), 0) AS cotizacion_min,
-                   COALESCE(MAX(cotizacion), 0) AS cotizacion_max
+            SELECT amount_given, currency_given, amount_received,
+                   currency_received, rate_received_per_given
             FROM cambios_dolar
             WHERE strftime('%Y', fecha) = ? AND strftime('%m', fecha) = ?
-            GROUP BY tipo
+              AND ((currency_given='USD' AND currency_received='ARS')
+                OR (currency_given='ARS' AND currency_received='USD'))
             """,
             (str(year), f"{month:02d}"),
         ).fetchall()
-    by_tipo = {r["tipo"]: dict(r) for r in rows}
     empty = {"cnt": 0, "total_usd": money.MONEY_ZERO, "total_ars": money.MONEY_ZERO,
              "cotizacion_promedio": money.MONEY_ZERO, "cotizacion_min": money.MONEY_ZERO,
              "cotizacion_max": money.MONEY_ZERO}
-    return {tipo: by_tipo.get(tipo, dict(empty)) for tipo in ("venta", "compra")}
+    result = {"venta": dict(empty), "compra": dict(empty)}
+    rates = {"venta": [], "compra": []}
+    for row in rows:
+        tipo = "venta" if row["currency_given"] == "USD" else "compra"
+        usd = row["amount_given"] if tipo == "venta" else row["amount_received"]
+        ars = row["amount_received"] if tipo == "venta" else row["amount_given"]
+        rate = row["rate_received_per_given"] if tipo == "venta" else money.amount(ars / usd)
+        result[tipo]["cnt"] += 1
+        result[tipo]["total_usd"] += usd
+        result[tipo]["total_ars"] += ars
+        rates[tipo].append(rate)
+    for tipo in ("venta", "compra"):
+        if rates[tipo]:
+            result[tipo]["cotizacion_promedio"] = sum(rates[tipo], money.MONEY_ZERO) / len(rates[tipo])
+            result[tipo]["cotizacion_min"] = min(rates[tipo])
+            result[tipo]["cotizacion_max"] = max(rates[tipo])
+    return result
+
+
+def get_converted_into_default_total(year: int, month: int) -> Decimal:
+    """Amount of the family default received by giving any other currency."""
+    default = get_family_default_currency()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount_received), 0) AS total FROM cambios_dolar"
+            " WHERE strftime('%Y', fecha)=? AND strftime('%m', fecha)=?"
+            " AND currency_received=? AND currency_given<>?",
+            (str(year), f"{month:02d}", default, default),
+        ).fetchone()
+    return row["total"]
 
 
 def get_cambios_for_period(year: int, month: int) -> list[dict]:
-    """Raw dollar-operation rows for the month — the report fingerprint's dollar-ops
-    input (id, fecha, monto_usd, cotizacion, tipo only; no derived totals)."""
+    """Directional exchange facts used by the report fingerprint."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, fecha, monto_usd, cotizacion, tipo FROM cambios_dolar"
+            "SELECT id, fecha, amount_given, currency_given, amount_received,"
+            " currency_received, rate_received_per_given FROM cambios_dolar"
             " WHERE strftime('%Y', fecha) = ? AND strftime('%m', fecha) = ?"
             " ORDER BY id",
             (str(year), f"{month:02d}"),
@@ -2331,21 +2393,21 @@ def get_recent_classifications_before(year: int, month: int, lookback_months: in
     return result
 
 
-def update_cambio(cambio_id: int, fecha: str, monto_usd: float, cotizacion: float, tipo: str | None = None) -> bool:
-    monto_usd = money.amount(monto_usd)
-    cotizacion = money.amount(cotizacion)
-    monto_ars = money.amount(monto_usd * cotizacion)
+def update_cambio(cambio_id: int, fecha: str, amount_given, currency_given: str,
+                  amount_received, currency_received: str) -> bool:
+    amount_given = money.amount(amount_given)
+    amount_received = money.amount(amount_received)
+    currency_given = normalize_currency(currency_given)
+    currency_received = normalize_currency(currency_received)
+    if amount_given <= 0 or amount_received <= 0 or currency_given == currency_received:
+        raise ValueError("Cambio de moneda inválido")
+    rate = amount_received / amount_given
     with get_conn() as conn:
-        if tipo is None:
-            cur = conn.execute(
-                "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=? WHERE id=?",
-                (fecha, monto_usd, cotizacion, monto_ars, cambio_id),
-            )
-        else:
-            cur = conn.execute(
-                "UPDATE cambios_dolar SET fecha=?, monto_usd=?, cotizacion=?, monto_ars=?, tipo=? WHERE id=?",
-                (fecha, monto_usd, cotizacion, monto_ars, tipo, cambio_id),
-            )
+        cur = conn.execute(
+            "UPDATE cambios_dolar SET fecha=?, amount_given=?, currency_given=?,"
+            " amount_received=?, currency_received=?, rate_received_per_given=? WHERE id=?",
+            (fecha, amount_given, currency_given, amount_received, currency_received, rate, cambio_id),
+        )
         return cur.rowcount > 0
 
 

@@ -8,6 +8,7 @@ from support import authenticated_client
 
 
 def main():
+    db.init_db({"100": "Web Smoke"})
     client, _csrf_headers = authenticated_client(dashboard)
     user = db.get_user_by_telegram_id("100")
     pgcompat.set_family_id(user["family_id"])
@@ -40,7 +41,7 @@ def main():
              if row["concept"] == "Decimal fixed smoke"),
         next(row["amount"] for row in client.get("/api/incomes").get_json()
              if row["concept"] == "Decimal income smoke"),
-        client.get("/api/cambios/resumen").get_json()["total_usd_mes"],
+        client.get("/api/cambios/resumen").get_json()["operations"][0]["total_received"],
     ]
     assert all(isinstance(value, (int, float)) and not isinstance(value, bool)
                for value in numeric_samples), numeric_samples

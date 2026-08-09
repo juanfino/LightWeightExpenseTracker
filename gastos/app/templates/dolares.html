@@ -1,676 +1,124 @@
 {% extends "base.html" %}
-{% block title %}Dólares — mangoteca{% endblock %}
+{% block title %}Cambios — mangoteca{% endblock %}
 {% block nav_dolares %}active{% endblock %}
 
 {% block extra_styles %}
-.chart-wrap {
-  position: relative;
-  height: 260px;
-}
-
-.charts-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-@media (max-width: 800px) {
-  .charts-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Sortable headers (same as history.html) ── */
-th.sortable {
-  cursor: pointer;
-  user-select: none;
-}
-th.sortable:hover { color: var(--text2); }
-th.sort-asc::after  { content: " ▲"; font-size: 9px; opacity: .7; }
-th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
-
-/* ── Edit modal (same as fijos.html) ── */
-.modal-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.55);
-  z-index: 100;
-  align-items: center;
-  justify-content: center;
-}
-.modal-backdrop.open { display: flex; }
-.modal {
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  border-radius: 14px;
-  padding: 24px;
-  width: 100%;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.modal-title  { font-size: 16px; font-weight: 600; }
-.form-row     { display: flex; flex-direction: column; gap: 6px; }
-.form-label   { font-size: 12px; font-weight: 500; color: var(--text2); }
-.form-row input { width: 100%; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-
-/* ── Tipo toggle (same pattern as the dashboard's Mensual/Anual toggle) ── */
-.view-toggle { display: flex; align-items: center; gap: 3px; background: var(--bg3); border-radius: 10px; padding: 3px; }
-.view-btn { flex: 1; padding: 9px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--text2); background: none; border: none; cursor: pointer; transition: background 0.15s, color 0.15s; font-family: var(--font-sans); }
-.view-btn.active { background: var(--accent); color: var(--on-accent); }
-.view-btn:hover:not(.active) { color: var(--text); }
+.chart-wrap { position: relative; height: 260px; }
+.charts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-bottom:24px; }
+.pair-control { display:flex; gap:8px; align-items:end; flex-wrap:wrap; }
+.pair-control .form-row { min-width:120px; }
+.modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; align-items:center; justify-content:center; }
+.modal-backdrop.open { display:flex; }
+.modal { background:var(--surface); border:1px solid var(--border2); border-radius:14px; padding:24px; width:100%; max-width:440px; display:flex; flex-direction:column; gap:16px; }
+.modal-title { font-size:16px; font-weight:600; }
+.form-row { display:flex; flex-direction:column; gap:6px; }
+.form-label { font-size:12px; font-weight:500; color:var(--text2); }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; }
+th.sortable { cursor:pointer; user-select:none; }
+@media (max-width:800px) { .charts-grid { grid-template-columns:1fr; } }
 {% endblock %}
 
 {% block content %}
 <div class="container">
-
   {% include "_period_control.html" %}
+  <div class="page-header"><div class="page-title">Cambios</div></div>
 
-  <!-- Page header -->
-  <div class="page-header">
-    <div class="page-title">Dólares</div>
-  </div>
-
-  <!-- Stat strip -->
   <div class="stat-strip">
-    <div class="stat-cell">
-      <div class="stat-label">USD cambiado este mes</div>
-      <div class="stat-value" id="val-usd">—</div>
-    </div>
-    <div class="stat-cell">
-      <div class="stat-label">Cotización promedio</div>
-      <div class="stat-value" id="val-cot">—</div>
-    </div>
-    <div class="stat-cell" style="border-right:none">
-      <div class="stat-label">ARS obtenidos este mes</div>
-      <div class="stat-value" id="val-ars">—</div>
-    </div>
+    <div class="stat-cell"><div class="stat-label">Operaciones este mes</div><div class="stat-value" id="val-count">—</div></div>
+    <div class="stat-cell"><div class="stat-label">Pares usados</div><div class="stat-value" id="val-pairs">—</div></div>
+    <div class="stat-cell" style="border-right:none"><div class="stat-label">Monedas involucradas</div><div class="stat-value" id="val-currencies">—</div></div>
   </div>
 
-  <!-- ── USD por mes (full width) ──────────────────────────────────────────── -->
   <div class="card mt-24">
-    <div class="section-title" style="margin-bottom:16px">USD cambiado por mes</div>
-    <div class="chart-wrap">
-      <canvas id="chart-usd-mes"></canvas>
+    <div class="section-header">
+      <div class="section-title">Histórico por par y dirección</div>
+      <div class="pair-control">
+        <div class="form-row"><label class="form-label">Entregada</label><select id="chart-given">{% for c in currency_catalog %}<option value="{{ c.code }}"{% if c.code == 'USD' %} selected{% endif %}>{{ c.code }}</option>{% endfor %}</select></div>
+        <div class="form-row"><label class="form-label">Recibida</label><select id="chart-received">{% for c in currency_catalog %}<option value="{{ c.code }}"{% if c.code == default_currency %} selected{% endif %}>{{ c.code }}</option>{% endfor %}</select></div>
+      </div>
+    </div>
+    <div class="charts-grid">
+      <div><div class="section-title" id="volume-title">Volumen mensual</div><div class="chart-wrap"><canvas id="chart-volume"></canvas></div></div>
+      <div><div class="section-title" id="rate-title">Tasa histórica</div><div class="chart-wrap"><canvas id="chart-rate"></canvas></div></div>
     </div>
   </div>
 
-  <!-- ── Charts ─────────────────────────────────────────────────────────────── -->
-  <div class="charts-grid mt-24">
-    <div class="card">
-      <div class="section-title" style="margin-bottom:16px">Evolución de la cotización</div>
-      <div class="chart-wrap">
-        <canvas id="chart-cotizacion"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-title" style="margin-bottom:16px">ARS obtenidos por mes</div>
-      <div class="chart-wrap">
-        <canvas id="chart-por-mes"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Historial table ────────────────────────────────────────────────────── -->
   <div class="section-header">
     <div class="section-title">Historial de cambios</div>
-    <button class="btn btn-primary" id="btn-add-cambio">+ Agregar cambio</button>
+    <button class="btn btn-primary" id="btn-add">+ Agregar cambio</button>
   </div>
-
   <div class="card">
-   <div style="overflow-x:auto">
-    <table id="historial-table" class="rtable">
-      <thead>
-        <tr>
-          <th class="sortable" data-sort="fecha">Fecha</th>
-          <th class="sortable" data-sort="usuario">Usuario</th>
-          <th class="sortable" data-sort="tipo">Tipo</th>
-          <th class="sortable mono" data-sort="monto_usd">USD</th>
-          <th class="sortable mono" data-sort="cotizacion">Cotización</th>
-          <th class="sortable mono" data-sort="monto_ars">ARS obtenidos</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="historial-tbody"></tbody>
-    </table>
-   </div>
-    <div id="historial-empty" class="empty-state" style="display:none">
-      <div class="empty-state-icon"><i class="ti ti-currency-dollar"></i></div>
-      <div class="empty-state-title">Todavía no registraste cambios de dólares</div>
-      <p class="empty-state-copy">Desde Telegram o acá abajo: cargá cuánto compraste o vendiste y a qué cotización.</p>
-      <button class="btn btn-primary" onclick="document.getElementById('btn-add-cambio').click()">Agregar cambio</button>
-    </div>
-  </div>
-
-</div>
-
-<!-- ── Delete confirmation modal (same style as history.html) ─────────────── -->
-<div id="modal-delete" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
-     align-items:center; justify-content:center; z-index:100;">
-  <div class="card" style="max-width:360px; width:90%">
-    <div class="section-title" style="margin-bottom:12px">¿Eliminar este cambio?</div>
-    <p style="font-size:13px; color:var(--muted); margin-bottom:20px" id="delete-modal-text"></p>
-    <div style="display:flex; gap:10px; justify-content:flex-end">
-      <button class="btn" id="btn-delete-cancel">Cancelar</button>
-      <button class="btn btn-danger" id="btn-delete-confirm">Eliminar</button>
+    <div style="overflow-x:auto"><table id="history-table" class="rtable">
+      <thead><tr><th>Fecha</th><th>Usuario</th><th>Lectura</th><th class="mono">Entregaste</th><th class="mono">Recibiste</th><th class="mono">Tasa</th><th></th></tr></thead>
+      <tbody id="history-body"></tbody>
+    </table></div>
+    <div id="history-empty" class="empty-state" style="display:none">
+      <div class="empty-state-icon"><i class="ti ti-arrows-exchange"></i></div>
+      <div class="empty-state-title">Todavía no registraste cambios</div>
+      <p class="empty-state-copy">Cargá qué moneda entregaste y cuál recibiste.</p>
+      <button class="btn btn-primary" onclick="document.getElementById('btn-add').click()">Agregar cambio</button>
     </div>
   </div>
 </div>
 
-<!-- ── Add modal ──────────────────────────────────────────────────────────── -->
-<div class="modal-backdrop" id="modal-add">
-  <div class="modal">
-    <div class="modal-title">Agregar cambio</div>
-    <div class="form-row">
-      <label class="form-label">¿Qué hiciste?</label>
-      <div class="view-toggle" id="add-tipo-toggle">
-        <button type="button" class="view-btn active" data-tipo="venta">Vendí dólares</button>
-        <button type="button" class="view-btn" data-tipo="compra">Compré dólares</button>
-      </div>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Fecha</label>
-      <input type="date" id="add-fecha">
-    </div>
-    <div class="form-row">
-      <label class="form-label" id="add-usd-label">Monto USD vendido</label>
-      <input type="number" id="add-usd" min="0.01" step="0.01" placeholder="Ej: 1000">
-    </div>
-    <div class="form-row">
-      <label class="form-label" id="add-cot-label">Cotización de venta</label>
-      <input type="number" id="add-cot" min="0.01" step="0.01" placeholder="Ej: 1400">
-    </div>
-    <div class="form-row">
-      <label class="form-label" id="add-ars-label">ARS obtenidos (calculado)</label>
-      <input type="text" id="add-ars-preview" disabled style="color:var(--text2)">
-    </div>
-    <span id="add-error" style="font-size:12px; color:var(--danger); display:none"></span>
-    <div class="modal-footer">
-      <button class="btn" id="btn-add-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="btn-add-save">Guardar</button>
-    </div>
-  </div>
-</div>
+<div class="modal-backdrop" id="modal-form"><div class="modal">
+  <div class="modal-title" id="form-title">Agregar cambio</div>
+  <div class="form-row"><label class="form-label">Fecha</label><input type="date" id="form-date"></div>
+  <div class="form-row"><label class="form-label">Moneda entregada</label><select id="form-given-currency">{% for c in currency_catalog %}<option value="{{ c.code }}"{% if c.code == 'USD' %} selected{% endif %}>{{ c.symbol }} {{ c.code }}</option>{% endfor %}</select></div>
+  <div class="form-row"><label class="form-label">Monto entregado</label><input type="number" min="0.01" step="0.01" id="form-given"></div>
+  <div class="form-row"><label class="form-label">Moneda recibida</label><select id="form-received-currency">{% for c in currency_catalog %}<option value="{{ c.code }}"{% if c.code == default_currency %} selected{% endif %}>{{ c.symbol }} {{ c.code }}</option>{% endfor %}</select></div>
+  <div class="form-row"><label class="form-label">Monto recibido</label><input type="number" min="0.01" step="0.01" id="form-received"></div>
+  <div class="form-row"><label class="form-label">Tasa (recibida por entregada)</label><input type="text" id="form-rate" disabled></div>
+  <span id="form-error" style="font-size:12px;color:var(--danger);display:none"></span>
+  <div class="modal-footer"><button class="btn" id="form-cancel">Cancelar</button><button class="btn btn-primary" id="form-save">Guardar</button></div>
+</div></div>
 
-<!-- ── Edit modal (same style as fijos.html) ─────────────────────────────── -->
-<div class="modal-backdrop" id="modal-edit">
-  <div class="modal">
-    <div class="modal-title">Editar cambio</div>
-    <div class="form-row">
-      <label class="form-label">Fecha</label>
-      <input type="date" id="edit-fecha">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Tipo</label>
-      <select id="edit-tipo">
-        <option value="venta">Venta</option>
-        <option value="compra">Compra</option>
-      </select>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Monto USD</label>
-      <input type="number" id="edit-usd" min="0.01" step="0.01" placeholder="Ej: 1000">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Cotización</label>
-      <input type="number" id="edit-cot" min="0.01" step="0.01" placeholder="Ej: 1400">
-    </div>
-    <div class="form-row">
-      <label class="form-label">ARS obtenidos (calculado)</label>
-      <input type="text" id="edit-ars-preview" disabled style="color:var(--text2)">
-    </div>
-    <span id="edit-error" style="font-size:12px; color:var(--danger); display:none"></span>
-    <div class="modal-footer">
-      <button class="btn" id="btn-edit-cancel">Cancelar</button>
-      <button class="btn btn-primary" id="btn-edit-save">Guardar</button>
-    </div>
-  </div>
-</div>
+<div class="modal-backdrop" id="modal-delete"><div class="modal" style="max-width:360px">
+  <div class="modal-title">¿Eliminar este cambio?</div><p style="font-size:13px;color:var(--muted)">Esta acción no se puede deshacer.</p>
+  <div class="modal-footer"><button class="btn" id="delete-cancel">Cancelar</button><button class="btn btn-danger" id="delete-confirm">Eliminar</button></div>
+</div></div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-  // ── Formatting ───────────────────────────────────────────────────────────────
-  const fmtARS = n => MoneyFormat.formatAmount(n, "ARS");
-  const fmtUSD = n => MoneyFormat.formatAmount(n, "USD");
+const DEFAULT_CURRENCY = {{ default_currency|tojson }};
+const fmt = (n, c) => MoneyFormat.formatAmount(n, c);
+let changes = [], editingId = null, deletingId = null, volumeChart = null, rateChart = null;
+const css = getComputedStyle(document.documentElement);
+const accent = css.getPropertyValue('--accent').trim();
+const green = css.getPropertyValue('--green').trim();
 
-  function fmtMes(ym) {
-    const MONTHS_ES = ["","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-    const [y, m] = ym.split("-");
-    return MONTHS_ES[parseInt(m, 10)] + " " + y;
-  }
+function tradeLabel(row) {
+  if (row.currency_received === DEFAULT_CURRENCY && row.currency_given !== DEFAULT_CURRENCY) return 'Venta de ' + row.currency_given;
+  if (row.currency_given === DEFAULT_CURRENCY && row.currency_received !== DEFAULT_CURRENCY) return 'Compra de ' + row.currency_received;
+  return row.currency_given + ' → ' + row.currency_received;
+}
+function rateText(row) { return Number(row.rate_received_per_given).toLocaleString('es-AR', {maximumFractionDigits:6}) + ' ' + row.currency_received + '/' + row.currency_given; }
+function rowHtml(row) { return `<tr><td class="mono" data-label="Fecha">${row.fecha}</td><td data-label="Usuario">${row.usuario}</td><td data-label="Lectura">${tradeLabel(row)}</td><td class="mono" data-label="Entregaste">${fmt(row.amount_given,row.currency_given)}</td><td class="mono" data-label="Recibiste">${fmt(row.amount_received,row.currency_received)}</td><td class="mono" data-label="Tasa">${rateText(row)}</td><td class="cell-actions"><div style="display:flex;gap:6px"><button class="btn" title="Editar" aria-label="Editar cambio" onclick="openEdit(${row.id})"><i class="ti ti-pencil"></i></button><button class="btn btn-danger" title="Eliminar" aria-label="Eliminar cambio" onclick="openDelete(${row.id})"><i class="ti ti-trash"></i></button></div></td></tr>`; }
+function renderHistory() { const empty=!changes.length; document.getElementById('history-table').style.display=empty?'none':''; document.getElementById('history-empty').style.display=empty?'block':'none'; document.getElementById('history-body').innerHTML=changes.map(rowHtml).join(''); }
+async function loadHistory() { changes=await (await fetch('/api/cambios/historial')).json(); renderHistory(); }
+async function loadSummary() { const data=await (await fetch('/api/cambios/resumen?year={{ year }}&month={{ month }}')).json(); const ops=data.operations||[]; document.getElementById('val-count').textContent=ops.reduce((n,r)=>n+Number(r.cnt),0); document.getElementById('val-pairs').textContent=ops.length; document.getElementById('val-currencies').textContent=new Set(ops.flatMap(r=>[r.currency_given,r.currency_received])).size; }
 
-  // ── Chart defaults ───────────────────────────────────────────────────────────
-  const _css      = getComputedStyle(document.documentElement);
-  const cssVar    = (n, fallback) => (_css.getPropertyValue(n).trim() || fallback);
-  const gridColor = cssVar('--track', 'oklch(1 0 0 / 0.06)');
-  const tickColor = cssVar('--text3', '#5a5a6a');
-  const ACCENT    = cssVar('--accent', 'oklch(0.78 0.15 75)');
-  const GREEN     = cssVar('--green', 'oklch(0.72 0.14 155)');
-  const BLUE      = 'oklch(0.72 0.11 230)';
-  const tint      = (color, alpha) => `color-mix(in oklab, ${color} ${Math.round(alpha * 100)}%, transparent)`;
+async function loadCharts() {
+  const given=document.getElementById('chart-given').value, received=document.getElementById('chart-received').value;
+  if (given===received) return;
+  const q=new URLSearchParams({currency_given:given,currency_received:received});
+  const [monthly,rates]=await Promise.all([fetch('/api/cambios/por_mes?'+q).then(r=>r.json()),fetch('/api/cambios/cotizacion_historica?'+q).then(r=>r.json())]);
+  if(volumeChart) volumeChart.destroy(); if(rateChart) rateChart.destroy();
+  document.getElementById('volume-title').textContent=`Volumen ${given} → ${received}`;
+  document.getElementById('rate-title').textContent=`Tasa ${received} por ${given}`;
+  volumeChart=new Chart(document.getElementById('chart-volume'),{type:'bar',data:{labels:monthly.map(r=>r.mes),datasets:[{label:given+' entregados',data:monthly.map(r=>r.total_given),backgroundColor:accent},{label:received+' recibidos',data:monthly.map(r=>r.total_received),backgroundColor:green}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true}},plugins:{tooltip:{callbacks:{label:c=>fmt(c.raw,c.datasetIndex?received:given)}}}}});
+  rateChart=new Chart(document.getElementById('chart-rate'),{type:'line',data:{labels:rates.map(r=>r.fecha),datasets:[{label:received+'/'+given,data:rates.map(r=>r.rate_received_per_given),borderColor:accent,tension:.25}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:false}}}});
+}
+document.getElementById('chart-given').addEventListener('change',loadCharts); document.getElementById('chart-received').addEventListener('change',loadCharts);
 
-  Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
-  Chart.defaults.font.size   = 12;
-
-  // ── Load & render summary ────────────────────────────────────────────────────
-  async function loadResumen() {
-    const res  = await fetch("/api/cambios/resumen?year={{ year }}&month={{ month }}");
-    const data = await res.json();
-    document.getElementById("val-usd").textContent = fmtUSD(data.total_usd_mes);
-    document.getElementById("val-cot").textContent = fmtARS(data.cotizacion_promedio_mes);
-    document.getElementById("val-ars").textContent = fmtARS(data.total_ars_mes);
-  }
-
-  // ── Charts ───────────────────────────────────────────────────────────────────
-  let usdMesChart = null;
-  async function loadUsdMes() {
-    const res  = await fetch("/api/cambios/por_mes");
-    const all  = await res.json();
-    const rows = all.slice(-6);
-    if (usdMesChart) { usdMesChart.destroy(); }
-    usdMesChart = new Chart(document.getElementById("chart-usd-mes"), {
-      type: "bar",
-      data: {
-        labels: rows.map(r => fmtMes(r.mes)),
-        datasets: [{
-          label: "USD cambiado",
-          data: rows.map(r => r.total_usd),
-          backgroundColor: BLUE,
-          borderColor: BLUE,
-          borderWidth: 1,
-          borderRadius: 4,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
-          y: {
-            ticks: { color: tickColor, callback: fmtUSD },
-            grid: { color: gridColor },
-          },
-        },
-      },
-    });
-  }
-
-  let cotChart = null;
-  async function loadCotizacion() {
-    const res  = await fetch("/api/cambios/cotizacion_historica");
-    const rows = await res.json();
-    if (cotChart) { cotChart.destroy(); }
-    const labels = rows.map(r => r.fecha);
-    const values = rows.map(r => r.cotizacion);
-    cotChart = new Chart(document.getElementById("chart-cotizacion"), {
-      type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: "Cotización",
-          data: values,
-          borderColor: ACCENT,
-          backgroundColor: tint(ACCENT, 0.12),
-          borderWidth: 2,
-          pointRadius: rows.length <= 20 ? 4 : 2,
-          fill: true,
-          tension: 0.3,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: tickColor, maxTicksLimit: 8 }, grid: { color: gridColor } },
-          y: {
-            ticks: { color: tickColor, callback: fmtARS },
-            grid: { color: gridColor },
-          },
-        },
-      },
-    });
-  }
-
-  let mesChart = null;
-  async function loadPorMes() {
-    const res  = await fetch("/api/cambios/por_mes");
-    const rows = await res.json();
-    if (mesChart) { mesChart.destroy(); }
-    mesChart = new Chart(document.getElementById("chart-por-mes"), {
-      type: "bar",
-      data: {
-        labels: rows.map(r => fmtMes(r.mes)),
-        datasets: [{
-          label: "ARS obtenidos",
-          data: rows.map(r => r.total_ars),
-          backgroundColor: GREEN,
-          borderColor: GREEN,
-          borderWidth: 1,
-          borderRadius: 4,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
-          y: {
-            ticks: { color: tickColor, callback: fmtARS },
-            grid: { color: gridColor },
-          },
-        },
-      },
-    });
-  }
-
-  // ── Historial: state & sorting ───────────────────────────────────────────────
-  let allCambios = [];
-  let sortCol    = "fecha";
-  let sortDir    = -1; // -1 = desc, 1 = asc
-
-  function sortCambios() {
-    allCambios.sort(function(a, b) {
-      var av = a[sortCol];
-      var bv = b[sortCol];
-      if (sortCol === "monto_usd" || sortCol === "cotizacion" || sortCol === "monto_ars") {
-        return sortDir * ((av || 0) - (bv || 0));
-      }
-      av = (av || "").toLowerCase();
-      bv = (bv || "").toLowerCase();
-      return sortDir * av.localeCompare(bv);
-    });
-  }
-
-  function updateSortHeaders() {
-    document.querySelectorAll("#historial-table th[data-sort]").forEach(function(th) {
-      th.classList.remove("sort-asc", "sort-desc");
-      if (th.dataset.sort === sortCol) {
-        th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
-      }
-    });
-  }
-
-  document.querySelectorAll("#historial-table th[data-sort]").forEach(function(th) {
-    th.addEventListener("click", function() {
-      var col = this.dataset.sort;
-      if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
-      sortCambios();
-      renderHistorial();
-      updateSortHeaders();
-    });
-  });
-
-  // ── Row builder ──────────────────────────────────────────────────────────────
-  function tipoBadge(tipo) {
-    const t = (tipo || "venta").toLowerCase();
-    const isVenta = t !== "compra";
-    const color = isVenta ? "var(--green)" : "var(--amber)";
-    const label = isVenta ? "Venta" : "Compra";
-    return '<span style="font-weight:700;color:' + color + '">' + label + '</span>';
-  }
-
-  function buildRow(r) {
-    return '<tr id="crow-' + r.id + '">'
-      + '<td class="mono" data-label="Fecha" style="color:var(--text2)">' + r.fecha + '</td>'
-      + '<td data-label="Usuario">' + r.usuario + '</td>'
-      + '<td data-label="Tipo">' + tipoBadge(r.tipo) + '</td>'
-      + '<td class="mono" data-label="USD">' + fmtUSD(r.monto_usd) + '</td>'
-      + '<td class="mono" data-label="Cotización">' + fmtARS(r.cotizacion) + '</td>'
-      + '<td class="mono" data-label="ARS obtenidos">' + fmtARS(r.monto_ars) + '</td>'
-      + '<td class="cell-actions"><div style="display:flex;gap:6px">'
-      +   '<button class="btn" style="padding:4px 10px;font-size:12px" title="Editar" onclick="openEdit(' + r.id + ')">'
-      +     '<i class="ti ti-pencil"></i>'
-      +   '</button>'
-      +   '<button class="btn btn-danger" style="padding:4px 10px;font-size:12px" title="Eliminar" onclick="confirmDelete(' + r.id + ')">'
-      +     '<i class="ti ti-trash"></i>'
-      +   '</button>'
-      + '</div></td>'
-      + '</tr>';
-  }
-
-  function renderHistorial() {
-    const tbody   = document.getElementById("historial-tbody");
-    const tableEl = document.getElementById("historial-table");
-    const emptyEl = document.getElementById("historial-empty");
-    if (!allCambios.length) {
-      tableEl.style.display = "none";
-      emptyEl.style.display = "block";
-      return;
-    }
-    tableEl.style.display = "";
-    emptyEl.style.display = "none";
-    tbody.innerHTML = allCambios.map(buildRow).join("");
-  }
-
-  async function loadHistorial() {
-    const res  = await fetch("/api/cambios/historial");
-    allCambios = await res.json();
-    sortCambios();
-    renderHistorial();
-    updateSortHeaders();
-  }
-
-  // ── Delete ───────────────────────────────────────────────────────────────────
-  let pendingDeleteId = null;
-
-  function confirmDelete(id) {
-    pendingDeleteId = id;
-    const r = allCambios.find(function(c) { return c.id === id; });
-    document.getElementById("delete-modal-text").textContent =
-      r ? (fmtUSD(r.monto_usd) + " a $" + r.cotizacion + " el " + r.fecha + ". Esta acción no se puede deshacer.")
-        : "Esta acción no se puede deshacer.";
-    document.getElementById("modal-delete").style.display = "flex";
-  }
-
-  document.getElementById("btn-delete-cancel").addEventListener("click", function() {
-    document.getElementById("modal-delete").style.display = "none";
-    pendingDeleteId = null;
-  });
-
-  document.getElementById("btn-delete-confirm").addEventListener("click", async function() {
-    if (!pendingDeleteId) return;
-    const id = pendingDeleteId;
-    document.getElementById("modal-delete").style.display = "none";
-    pendingDeleteId = null;
-    const res = await fetch("/api/cambios/" + id, { method: "DELETE" });
-    if (res.ok) {
-      allCambios = allCambios.filter(function(c) { return c.id !== id; });
-      renderHistorial();
-    } else {
-      alert("Error al eliminar el cambio.");
-    }
-  });
-
-  // ── Add modal ──────────────────────────────────────────────────────────────────
-  let addTipo = "venta";
-
-  const ADD_COPY = {
-    venta:  { usdLabel: "Monto USD vendido",  cotLabel: "Cotización de venta",  arsLabel: "ARS obtenidos (calculado)" },
-    compra: { usdLabel: "Monto USD comprado", cotLabel: "Cotización de compra", arsLabel: "ARS gastados (calculado)" },
-  };
-
-  function updateAddCopy() {
-    const copy = ADD_COPY[addTipo];
-    document.getElementById("add-usd-label").textContent = copy.usdLabel;
-    document.getElementById("add-cot-label").textContent = copy.cotLabel;
-    document.getElementById("add-ars-label").textContent = copy.arsLabel;
-  }
-
-  document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(btn) {
-    btn.addEventListener("click", function() {
-      addTipo = btn.dataset.tipo;
-      document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(b) {
-        b.classList.toggle("active", b === btn);
-      });
-      updateAddCopy();
-    });
-  });
-
-  function updateAddArsPreview() {
-    const usd = parseFloat(document.getElementById("add-usd").value);
-    const cot = parseFloat(document.getElementById("add-cot").value);
-    document.getElementById("add-ars-preview").value =
-      (!isNaN(usd) && !isNaN(cot) && usd > 0 && cot > 0) ? fmtARS(usd * cot) : "—";
-  }
-
-  document.getElementById("add-usd").addEventListener("input", updateAddArsPreview);
-  document.getElementById("add-cot").addEventListener("input", updateAddArsPreview);
-
-  function openAddModal() {
-    addTipo = "venta";
-    document.querySelectorAll("#add-tipo-toggle .view-btn").forEach(function(b) {
-      b.classList.toggle("active", b.dataset.tipo === "venta");
-    });
-    updateAddCopy();
-    const today = new Date();
-    document.getElementById("add-fecha").value =
-      today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
-    document.getElementById("add-usd").value = "";
-    document.getElementById("add-cot").value = "";
-    document.getElementById("add-ars-preview").value = "—";
-    document.getElementById("add-error").style.display = "none";
-    document.getElementById("modal-add").classList.add("open");
-    document.getElementById("add-usd").focus();
-  }
-
-  document.getElementById("btn-add-cambio").addEventListener("click", openAddModal);
-
-  document.getElementById("btn-add-cancel").addEventListener("click", function() {
-    document.getElementById("modal-add").classList.remove("open");
-  });
-
-  document.getElementById("modal-add").addEventListener("click", function(e) {
-    if (e.target === this) this.classList.remove("open");
-  });
-
-  document.getElementById("btn-add-save").addEventListener("click", async function() {
-    const errEl     = document.getElementById("add-error");
-    const fecha     = document.getElementById("add-fecha").value;
-    const monto_usd = parseFloat(document.getElementById("add-usd").value);
-    const cotizacion = parseFloat(document.getElementById("add-cot").value);
-
-    errEl.style.display = "none";
-
-    if (!fecha)                    { errEl.textContent = "La fecha es obligatoria."; errEl.style.display = "inline"; return; }
-    if (isNaN(monto_usd) || monto_usd <= 0) { errEl.textContent = "Monto USD inválido."; errEl.style.display = "inline"; return; }
-    if (isNaN(cotizacion) || cotizacion <= 0) { errEl.textContent = "Cotización inválida."; errEl.style.display = "inline"; return; }
-
-    const res  = await fetch("/api/cambios/add", {
-      method:  "POST",
-      headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({fecha, tipo: addTipo, monto_usd, cotizacion}),
-    });
-    const data = await res.json().catch(function() { return {}; });
-
-    if (!data.ok) {
-      errEl.textContent  = data.error || "Error al guardar.";
-      errEl.style.display = "inline";
-      return;
-    }
-
-    document.getElementById("modal-add").classList.remove("open");
-    await loadHistorial();
-    loadResumen();
-    loadUsdMes();
-    loadCotizacion();
-    loadPorMes();
-  });
-
-  // ── Edit modal ───────────────────────────────────────────────────────────────
-  let editingId = null;
-
-  function updateArsPreview() {
-    const usd = parseFloat(document.getElementById("edit-usd").value);
-    const cot = parseFloat(document.getElementById("edit-cot").value);
-    document.getElementById("edit-ars-preview").value =
-      (!isNaN(usd) && !isNaN(cot) && usd > 0 && cot > 0) ? fmtARS(usd * cot) : "—";
-  }
-
-  document.getElementById("edit-usd").addEventListener("input", updateArsPreview);
-  document.getElementById("edit-cot").addEventListener("input", updateArsPreview);
-
-  function openEdit(id) {
-    const r = allCambios.find(function(c) { return c.id === id; });
-    if (!r) return;
-    editingId = id;
-    document.getElementById("edit-fecha").value        = r.fecha;
-    document.getElementById("edit-tipo").value         = (r.tipo || "venta").toLowerCase();
-    document.getElementById("edit-usd").value          = r.monto_usd;
-    document.getElementById("edit-cot").value          = r.cotizacion;
-    document.getElementById("edit-error").style.display = "none";
-    updateArsPreview();
-    document.getElementById("modal-edit").classList.add("open");
-    document.getElementById("edit-usd").focus();
-  }
-
-  document.getElementById("btn-edit-cancel").addEventListener("click", function() {
-    document.getElementById("modal-edit").classList.remove("open");
-    editingId = null;
-  });
-
-  document.getElementById("modal-edit").addEventListener("click", function(e) {
-    if (e.target === this) {
-      this.classList.remove("open");
-      editingId = null;
-    }
-  });
-
-  document.getElementById("btn-edit-save").addEventListener("click", async function() {
-    const errEl     = document.getElementById("edit-error");
-    const fecha     = document.getElementById("edit-fecha").value;
-    const tipo      = document.getElementById("edit-tipo").value;
-    const monto_usd = parseFloat(document.getElementById("edit-usd").value);
-    const cotizacion = parseFloat(document.getElementById("edit-cot").value);
-
-    errEl.style.display = "none";
-
-    if (!fecha)                    { errEl.textContent = "La fecha es obligatoria."; errEl.style.display = "inline"; return; }
-    if (isNaN(monto_usd) || monto_usd <= 0) { errEl.textContent = "Monto USD inválido."; errEl.style.display = "inline"; return; }
-    if (isNaN(cotizacion) || cotizacion <= 0) { errEl.textContent = "Cotización inválida."; errEl.style.display = "inline"; return; }
-
-    const res  = await fetch("/api/cambios/" + editingId, {
-      method:  "PUT",
-      headers: {"Content-Type": "application/json"},
-      body:    JSON.stringify({fecha, tipo, monto_usd, cotizacion}),
-    });
-    const data = await res.json().catch(function() { return {}; });
-
-    if (!data.ok) {
-      errEl.textContent  = data.error || "Error al guardar.";
-      errEl.style.display = "inline";
-      return;
-    }
-
-    // Update local data and re-render the changed row
-    const idx = allCambios.findIndex(function(c) { return c.id === editingId; });
-    if (idx !== -1) {
-      allCambios[idx] = Object.assign({}, allCambios[idx], {
-        fecha,
-        tipo,
-        monto_usd,
-        cotizacion,
-        monto_ars: data.monto_ars,
-      });
-      const tr = document.getElementById("crow-" + editingId);
-      if (tr) tr.outerHTML = buildRow(allCambios[idx]);
-    }
-
-    document.getElementById("modal-edit").classList.remove("open");
-    editingId = null;
-  });
-
-  // ── Init ─────────────────────────────────────────────────────────────────────
-  loadResumen();
-  loadUsdMes();
-  loadCotizacion();
-  loadPorMes();
-  loadHistorial();
+function updateRate(){const a=Number(document.getElementById('form-given').value),b=Number(document.getElementById('form-received').value),gc=document.getElementById('form-given-currency').value,rc=document.getElementById('form-received-currency').value;document.getElementById('form-rate').value=a>0&&b>0?(b/a).toLocaleString('es-AR',{maximumFractionDigits:8})+' '+rc+'/'+gc:'—';}
+document.getElementById('form-given').addEventListener('input',updateRate);document.getElementById('form-received').addEventListener('input',updateRate);document.getElementById('form-given-currency').addEventListener('change',updateRate);document.getElementById('form-received-currency').addEventListener('change',updateRate);
+function openForm(row){editingId=row?.id||null;document.getElementById('form-title').textContent=row?'Editar cambio':'Agregar cambio';document.getElementById('form-date').value=row?.fecha||new Date().toISOString().slice(0,10);document.getElementById('form-given-currency').value=row?.currency_given||'USD';document.getElementById('form-received-currency').value=row?.currency_received||DEFAULT_CURRENCY;document.getElementById('form-given').value=row?.amount_given||'';document.getElementById('form-received').value=row?.amount_received||'';document.getElementById('form-error').style.display='none';updateRate();document.getElementById('modal-form').classList.add('open');}
+function openEdit(id){openForm(changes.find(r=>r.id===id));} document.getElementById('btn-add').addEventListener('click',()=>openForm(null)); document.getElementById('form-cancel').addEventListener('click',()=>document.getElementById('modal-form').classList.remove('open'));
+document.getElementById('form-save').addEventListener('click',async()=>{const payload={fecha:document.getElementById('form-date').value,amount_given:Number(document.getElementById('form-given').value),currency_given:document.getElementById('form-given-currency').value,amount_received:Number(document.getElementById('form-received').value),currency_received:document.getElementById('form-received-currency').value};const err=document.getElementById('form-error');if(!payload.fecha||payload.amount_given<=0||payload.amount_received<=0||payload.currency_given===payload.currency_received){err.textContent='Completá montos positivos y dos monedas distintas.';err.style.display='inline';return;}const res=await fetch(editingId?'/api/cambios/'+editingId:'/api/cambios/add',{method:editingId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await res.json();if(!res.ok){err.textContent=data.error||'Error al guardar.';err.style.display='inline';return;}document.getElementById('modal-form').classList.remove('open');await Promise.all([loadHistory(),loadSummary(),loadCharts()]);});
+function openDelete(id){deletingId=id;document.getElementById('modal-delete').classList.add('open');} document.getElementById('delete-cancel').addEventListener('click',()=>document.getElementById('modal-delete').classList.remove('open'));document.getElementById('delete-confirm').addEventListener('click',async()=>{if(!deletingId)return;await fetch('/api/cambios/'+deletingId,{method:'DELETE'});document.getElementById('modal-delete').classList.remove('open');deletingId=null;await Promise.all([loadHistory(),loadSummary(),loadCharts()]);});
+loadSummary();loadHistory();loadCharts();
 </script>
 {% endblock %}
