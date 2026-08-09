@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.17.2
+- Nuevo `docs/CONTEXTUAL_HELP_AUDIT.md`: auditoría de ayuda contextual de cara a las primeras familias externas — clasifica cada concepto de la app en "de dominio" (no necesita ayuda) o "mecánica del sistema" (inventada por la app), inventario completo por pantalla y por el bot, un vocabulario cerrado de patrones de ayuda ya usados en el producto, y lotes de implementación propuestos. Sin cambios de comportamiento, schema ni lógica.
+- Los cinco hallazgos más relevantes: el vínculo de un gasto a un fijo y por qué su "período" es independiente de la fecha; que elegir categoría por botón en Telegram aprende una keyword en silencio; que "quién registró" no es "quién pagó" fuera de Resúmenes (donde sí está aclarado); que crear una familia no avisa que todos los miembros ven todos los gastos; y que `/ayuda` no menciona OCR, el lenguaje natural para cargar/editar/consultar, ingresos por chat ni la lista de compras.
+- De paso, quedan documentados dos gaps de generalización a N monedas no relacionados con ayuda contextual (las tarjetas de resumen mensual de Ingresos y el `/gastos` de Telegram siguen hardcodeados a ARS/USD) — quedan para un ticket de código aparte, no se tocan en esta sesión.
+
 ## 7.17.1
 - Auditoría de documentación posterior a la serie 7.11–7.17 (nueve PRs, moneda + resúmenes). Sin cambios de comportamiento, schema ni lógica.
 - `PROJECT.md`: versión corregida a 7.17.0, `family_report_preferences` y el FK de `report_forecasts.currency` sumados a la sección de Database (ocho FKs de moneda en total, no siete), `forecast.py` agregado a Module Responsibilities (faltaba), fila de `/editar ID moneda VALOR` agregada a Telegram Commands, selector de moneda predeterminada agregado a la fila de `/familia` en Screens, gotchas nuevas (inmutabilidad de forecasts, precedencia del período compartido, alcance real del cambio de moneda predeterminada, bypass de Turnstile/email vía `FLASK_ENV`/`TESTING`), backlog de "consolidar sparkline queries" removido por estar ya resuelto.
