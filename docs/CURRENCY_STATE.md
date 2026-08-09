@@ -1,6 +1,8 @@
 # Currency Handling — Current State
 
-Code-derived snapshot after the 7.17.0 end-to-end N-currency work.
+Code-derived, living reference for currency handling — not a frozen pre-change snapshot.
+Current as of the 7.17.0 end-to-end N-currency work; keep it in sync whenever currency-related
+code changes rather than treating it as historical.
 
 ## 1. Reference data and validation
 
@@ -172,7 +174,7 @@ Regression coverage asserts:
 - seeded codes normalize and unknown codes fail;
 - BRL amounts round-trip PostgreSQL as exact `Decimal`;
 - migrations `0013` and `0014` preserve existing currency and exchange values;
-- the seven currency FKs reject an unknown code;
+- all eight currency FKs (five from migration `0013`, two from `0014`, one from `0015`) reject an unknown code;
 - family-default web forms and omitted POST currency use `default_currency`;
 - server and client format USD with Argentine separators and `US$`;
 - a synthetic zero-decimal currency rounds and formats correctly;

@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists catalogue-backed currency amounts to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.16.0 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.17.0 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -20,7 +20,7 @@ Family expense tracker. Users send plain-text messages to a Telegram bot; the ap
 
 **Process model:** Flask runs in a daemon thread; `python-telegram-bot` long polling blocks the main thread. Known tradeoff, accepted.
 
-**Database:** PostgreSQL 17 with Alembic (current head: `0015`). Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `telegram_link_tokens` and global `infrastructure_cost_settings`/`quotes`/`currencies`; `quotes` and `currencies` are curated installation-level content with no `family_id`, tenant RLS or CRUD UI. `currencies` seeds exactly ARS, USD, BRL and EUR with code, display symbol and decimal count; adding another supported currency is an installation-level insert. Tenant tables include `reports`, `expense_classifications` and `report_forecasts`; their monetary currency columns and `families.default_currency` use plain FKs to the global catalogue. The default is owner-writable from `/familia` and changes future implicit input/report primacy only—existing rows retain their currency. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role used by `/superadmin` for cross-family reads. Amounts retain their native currency and timestamps are UTC; families store their display timezone.
+**Database:** PostgreSQL 17 with Alembic (current head: `0015`). Platform tables are `families`, `users`, `memberships`, `sessions`, `otp_codes`, `oauth_identities`, `invitations`, `telegram_link_tokens` and global `infrastructure_cost_settings`/`quotes`/`currencies`; `quotes` and `currencies` are curated installation-level content with no `family_id`, tenant RLS or CRUD UI. Only `families`, `users` and `memberships` carry their own RLS policies among the platform tables — `sessions`, `otp_codes`, `oauth_identities`, `invitations` and `telegram_link_tokens` have none, and rely solely on role-based `GRANT`s plus `gastos_superadmin` access for cross-identity reads. `currencies` seeds exactly ARS, USD, BRL and EUR with code, display symbol and decimal count; adding another supported currency is an installation-level insert. Tenant tables include `reports`, `expense_classifications`, `family_report_preferences` and `report_forecasts`; their monetary currency columns, `families.default_currency` and `report_forecasts.currency` use plain FKs to the global catalogue (eight such FKs in total as of migration `0015`, one per currency-bearing column). The default is owner-writable from `/familia` and changes future implicit input/report primacy only—existing rows retain their currency. Tenant rows carry `family_id NOT NULL` with forced RLS on transaction-local `app.family_id`; composite tenant foreign keys reject cross-family references. Normal and read-only roles remain subject to RLS; `gastos_superadmin` is the dedicated `BYPASSRLS` role used by `/superadmin` for cross-family reads. Amounts retain their native currency and timestamps are UTC; families store their display timezone.
 
 **Money arithmetic and display:** psycopg `NUMERIC` values stay as Python `Decimal` throughout application arithmetic. `money.py` centralizes two-place storage arithmetic with `ROUND_HALF_UP`, exact server formatting, and the explicit conversion to JSON numbers at HTTP, report-persistence and LLM boundaries. Symbol and display precision come from currency metadata; thousands/decimal separators independently come from the reader convention (currently Rioplatense Spanish). Browser surfaces all use `static/money.js`, configured once from `base.html` with that catalogue and `es-AR`, instead of template-local helpers. Percentages, ratios and confidence remain deliberate non-money statistics; `ipc_series.value` retains its full `NUMERIC(20,12)` precision.
 
@@ -106,7 +106,7 @@ Both report calls cross the explicit numeric JSON boundary immediately before se
 | `/dolares?period=YYYY-MM` | `dolares.html` | **Cambios**: generic directional conversions, selected-period pair summary, history, pair-scoped rate/volume charts and add/edit/delete forms |
 | `/resumenes?period=YYYY-MM` | `resumenes.html` | Monthly AI-generated N-currency report for the shared period; default currency primary, additional period currencies collapsible, and all three historical dossier shapes compatible. `/resumenes/YYYY-MM` redirects here. |
 | `/config` | `config.html` | System: backup status + "Backup ahora"; restore is SSH-only. Superadmin-only (7.5.4) — a global full-DB backup trigger, not a per-family feature |
-| `/familia` | `family.html` | Members, invitations, family rename, logical removal, ownership transfer, leave/delete actions |
+| `/familia` | `family.html` | Members, invitations, family rename, owner-only default-currency selection from the catalogue (never converts existing history), logical removal, ownership transfer, leave/delete actions |
 | `/vincular-telegram` | `telegram_link.html` | Telegram deep link, desktop QR and live connected status |
 | `/superadmin` | `superadmin.html` | Superadmin-only cross-family operational metrics, AI/cost analysis, quota overrides and recent failures |
 
@@ -161,6 +161,7 @@ header.
 | `/editar ID monto VALOR` | Edit an expense's amount |
 | `/editar ID categoria NOMBRE` | Edit an expense's category |
 | `/editar ID fecha DD/MM/AAAA` | Edit an expense's date |
+| `/editar ID moneda VALOR` | Edit an expense's currency (catalogue codes only; refused if the expense is linked to a fixed expense) |
 | `/recat CONCEPTO CATEGORÍA` | Bulk-reassign expenses matching a concept to a category |
 | `/borrar ID` | Delete an expense |
 | `/add_keyword PALABRA CATEGORÍA` | Add a keyword → category mapping |
@@ -198,6 +199,7 @@ header.
 - `seed.py` — `create_family_defaults(conn, family_id)` creates generic taxonomy for a new family; schema changes are Alembic-only
 - `dossier.py` — deterministic N-currency aggregation for the monthly report. It returns one same-shape block per period currency plus the family default and a top-level `equivalence.items` map of reference-only pair valuations from family exchange history.
 - `inflation.py` — IPC Nacional fetch/cache/estimate/deflate (2.3.0), ARS only; `refresh()` hits `apis.datos.gob.ar`, `deflate()` converts a nominal amount between two periods' prices, returning `None` (not a silent nominal fallback) when an index is missing
+- `forecast.py` — deterministic next-month forecast (7.14.0), no LLM involved; method id `category_median_iqr_tail_v1`. Per currency it combines active fixed definitions, habitual-category median/IQR estimates and a historical tail/IQR bucket (fixed-only below three months of history), applies inflation factors only where `inflation.py` declares a series, and persists one immutable row per report/currency — stored forecasts are never recomputed, and target-month actuals are read back read-only for the backtest comparison
 - `report_ai.py` — the two Claude calls behind the monthly report: `classify_expenses()` (recurring/exceptional per variable expense, currency-scoped) and `analyze()` (N-currency narration with hard symbol, inflation, equivalence, materiality and short-history guarantees). Structured JSON outputs, adaptive thinking, `REPORT_ANTHROPIC_MODEL` (default `claude-opus-4-8`).
 - `report_preferences.py` — canonical defaults, strict web validation and tolerant storage resolution for the family's shared narrative settings. Available emphasis keys correspond only to deterministic dossier/forecast structures; default preferences add no soft prompt guidance.
 - `report.py` — orchestrates dossier → classify → analyze → persist for the monthly report (2.3.0); computes the append-only-friendly `fingerprint()` (period-local facts only, no derived values). `_build_partitions()` (7.7.0) produces one recurring/exceptional split per currency. Degrades to a dossier-only report (`llm_ok=0`) if either LLM call fails rather than losing the generation entirely
@@ -239,34 +241,41 @@ Environment variables only — no HA Supervisor dependency. On the Pi, loaded fr
 - **Subcategory inference is silent:** no extra Telegram prompts after category assignment.
 - **DNS staleness on long-running containers:** `resolv.conf` can go stale if the host network changes. Mitigated by `dns: [8.8.8.8, 1.1.1.1]` and healthcheck in `docker-compose.yml`. Symptom: `[Errno -3] Try again` in bot logs while container shows `Up`.
 - **Whisper returns written numbers:** Whisper transcribes verbatim — "diez mil" stays as text. Claude (`audio.py`) normalizes them to digits before saving. If you bypass `audio.py` and use Whisper output directly, amounts will be `null`.
-- **Always `git pull` locally before starting a Claude Code session** — CC builds from local disk, not from GitHub.
+- **Always sync local git state before starting an agent session** — see AGENTS.md's sync/branch ritual. This applies to any coding agent, not just one tool: agents that work from a local checkout (Claude Code included) build from local disk, not by re-fetching from GitHub each turn.
 - **Dockerfile build context is the repo root** (not `gastos/`): `docker build -f gastos/Dockerfile .`
 - **2.0.0 fixed-expense migration is lossy by design:** old `fixed_expense_payments` rows with no linked expense (from the old "✓ Ya lo pagué" flag-only flow) had no amount to migrate and were dropped rather than fabricated from `estimated_amount`. Check the startup logs after upgrading a DB that predates 2.0.0 for the converted/dropped counts, and re-link any dropped months by hand via the new "ya lo pagué" candidate search.
 - **Date-only writes are always stored at `03:00:00` UTC** (`create_expense_full`, `update_expense`, `update_expense_fields`, the fixed-expense "pay" flow) — that's exactly midnight ART, chosen so the stored UTC date and the ART-displayed date are always the same calendar day, at every month/year boundary, regardless of whether a query adjusts for the `-3h` offset or reads `created_at` raw (the codebase does both, inconsistently, elsewhere). Don't "improve" this by storing a different time-of-day without re-verifying that invariant.
 - **The IPC time-series API is unauthenticated and has no SLA.** `inflation.refresh()` catches every failure and leaves the cache as-is — report generation never blocks on it, and the dossier explicitly flags `inflation_unavailable` so the model doesn't narrate un-deflated numbers as if they were real. If real IPC data looks stale on the dashboard, check `apis.datos.gob.ar` directly before assuming a code bug.
 - **`fixed_expense_year`/`month` vs. cash-basis reporting are two different partitions, on purpose.** The monthly report groups by the expense's own ART date (`dossier.py`, `db.get_expenses_for_period_art`), not by the fixed-expense period fields — otherwise fixed + variable wouldn't sum to the report's own total. Don't switch the report's queries to the `fixed_expense_year`/`month` columns to "simplify" — that's a different, deliberately separate concept (see the 2.1.0 changelog entry on why the two are independent).
+- **Stored forecasts are immutable by design (7.14.0).** `report_forecasts` rows are insert-only — `db.save_report_forecast()` only ever `INSERT`s, and the `gastos_app` role isn't even granted `UPDATE` on the table at the DB level. Target-month actuals shown next to a stored forecast are computed read-only at display time (`forecast.actuals()`) and never rewrite the frozen row. Don't "fix" a forecast after the fact by updating it — regenerating the *report* that produced it does not touch forecasts from other reports either.
+- **The shared accounting period resolves in a fixed precedence order (7.12.0):** explicit `?period=YYYY-MM` in the URL, then the unsigned `gastos_period` cookie, then the family's local current month (`dashboard.py`'s `_prepare_period_context()`). An invalid or out-of-range value in either the URL or the cookie is silently discarded, not surfaced as an error — don't assume a bad period value produces a visible failure.
+- **Changing `families.default_currency` is a display/default-input switch only, never a conversion.** `db.set_family_default_currency()` does exactly one `UPDATE families SET default_currency = ...` — it does not touch `expenses`, `incomes`, `fixed_expenses`, `cambios_dolar` or historical `reports` rows, and the `/familia` success message says so explicitly. It changes which currency new implicit input defaults to and which currency is the primary block of *future* reports; it never rewrites or reclassifies anything already stored.
+- **`FLASK_ENV=development` or `TESTING=1` bypass Turnstile verification and email sending in `auth.py`.** These are dev/test-only escape hatches, not documented `.env` variables — never set either on the Pi's `~/.env`, or login/OTP verification silently stops being enforced.
 - **The Postgres `strftime()` compat function (`migrations/0001`) already applies the ART timezone shift internally** — it does `value AT TIME ZONE 'America/Argentina/Buenos_Aires'` before formatting. Call it directly on `created_at`; wrapping it in an extra `datetime(created_at, '-3 hours')` (a leftover from an earlier SQLite-style query) double-applies the shift and silently misfiles any expense from the first three hours of ART on the 1st of a month into the previous month (found and fixed in 7.7.0, in `get_expenses_for_period_art`/`get_expenses_excluding_period`/`get_months_with_data`). The native `date(timestamptz)` function is different — it has no built-in TZ conversion (it truncates in the session's `TimeZone`, which is UTC), so `date(datetime(created_at, '-3 hours'))` elsewhere in `db.py` (e.g. `get_first_expense_date`) is correct as-is and should NOT be "simplified" to match.
 
 ## Infrastructure Philosophy
 
 The `docker-compose.yml` on the Pi (`/home/juanfino/docker-compose.yml`) is the **operational source of truth** — it is managed manually and may include services from multiple unrelated projects. The copy committed to this repo exists for **auditing and history only** and is not read directly by the Pi.
 
-When CC modifies `docker-compose.yml` as part of a PR, the relevant changes must be manually applied to the Pi's copy. The repo copy should then be updated to match.
+When an agent modifies `docker-compose.yml` as part of a PR, the relevant changes must be manually applied to the Pi's copy. The repo copy should then be updated to match. This rule is tool-independent — it applies to any agent's PR, not only Claude Code's.
 
 The Pi is intended to host multiple independent projects. A single global compose file on the host is preferred over per-project compose files to keep service management centralized.
 
 ## Active Backlog
 
-- Clean up / review `/api/weekly` endpoint
-- Consolidate sparkline queries
+- Clean up / review `/api/weekly` endpoint — still a standalone, unused-by-the-UI route (`dashboard.py`'s own comment confirms it's not surfaced anywhere in the templates)
 - Automate Pi deployments via Tailscale (when warranted)
 
 ## Workflow & Conventions
 
-- **Division of labor:** Claude (architecture/design/prompts) → Claude Code (implementation) → Juampi (git, deploy, reporting)
-- `config.yaml` is the canonical version source; `CHANGELOG.md` is the canonical change record — both must be updated at the end of every deployable session
+These conventions apply regardless of which AI tool is doing the work — this project is now worked on by more than one coding agent, not exclusively Claude Code. Where a detail is genuinely specific to one tool, it's called out explicitly rather than stated as a general rule.
+
+- **Division of labor:** a design/architecture assistant drafts prompts and decisions → a coding agent implements them (historically Claude Code; other agents now also work on this repo) → Juampi handles git operations, deploy, and reporting
+- `config.yaml` is the canonical version source; `CHANGELOG.md` is the canonical change record — both must be updated at the end of every deployable session, tool-independent (see CLAUDE.md → Versioning)
 - Version bumps: patch (`1.x.x`) for bugfixes, minor (`x.x.0`) for features, major for breaking config/DB schema changes
-- Multiple related changes consolidated into single CC prompts — avoid noisy PR chains
-- Merging PRs is a manual step by design
-- Conversations with Claude in Spanish; code and CC prompts in English
+- Multiple related changes consolidated into a single agent session/PR — avoid noisy PR chains
+- Merging PRs is a manual step by design, regardless of which agent opened them
+- Conversations with the assistant happen in Spanish; code and agent prompts/instructions are in English
+- `docker-compose.yml` in this repo is audit-only — see **Infrastructure Philosophy** above; this is a repo-wide rule, not tied to any one agent
 - `categorizer.categorize()` always returns `(category_id, subcategory_id)` — all expense creation flows must pass both
+- **Claude Code specific:** `CLAUDE.md` is auto-loaded as project context only by Claude Code (see AGENTS.md's documentation map); other agents rely on `AGENTS.md`/`PROJECT.md` being read explicitly or supplied as context
