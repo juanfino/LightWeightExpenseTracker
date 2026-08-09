@@ -4,7 +4,9 @@ Factual, code-derived description of the two LLM calls behind `/resumenes`, the
 per-family compilation layer for the narrative call, and how the page turns their output
 into UI. It traces `report_ai.py`, `report_preferences.py`, `report.py`, `dossier.py`,
 `forecast.py` and `templates/resumenes.html`, including the deterministic forecast that
-may be supplied to narration.
+may be supplied to narration. This is a living reference, not a frozen pre-change
+snapshot — update it alongside any change to the report prompts, schemas or rendering
+logic it describes.
 
 ---
 

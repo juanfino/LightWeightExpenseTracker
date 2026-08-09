@@ -4,7 +4,7 @@ A family expense tracker: send a message like `Supermercado 150000` to a Telegra
 
 ## Current product
 
-The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.16.0**.
+The multi-tenant roadmap (Phases 0–8) is complete. The current app version is **7.17.0**.
 The application now provides:
 
 - PostgreSQL tenancy enforced with forced Row-Level Security.
@@ -51,7 +51,7 @@ without being sent to the family Telegram chat.
 - Google always shows the account selector; email OTP reaches the verified sender
 - `/dashboard` redirects to `/login` without a session and private APIs return `401`
 - Bot responds in Telegram
-- The database reports Alembic head `0010`
+- The database reports Alembic head `0015`
 - The configured superadmin can open `/superadmin`; a regular family admin receives `403`
 - The avatar popup opens above page content and exposes the applicable administration, export and logout actions
 

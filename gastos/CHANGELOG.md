@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.17.1
+- Auditoría de documentación posterior a la serie 7.11–7.17 (nueve PRs, moneda + resúmenes). Sin cambios de comportamiento, schema ni lógica.
+- `PROJECT.md`: versión corregida a 7.17.0, `family_report_preferences` y el FK de `report_forecasts.currency` sumados a la sección de Database (ocho FKs de moneda en total, no siete), `forecast.py` agregado a Module Responsibilities (faltaba), fila de `/editar ID moneda VALOR` agregada a Telegram Commands, selector de moneda predeterminada agregado a la fila de `/familia` en Screens, gotchas nuevas (inmutabilidad de forecasts, precedencia del período compartido, alcance real del cambio de moneda predeterminada, bypass de Turnstile/email vía `FLASK_ENV`/`TESTING`), backlog de "consolidar sparkline queries" removido por estar ya resuelto.
+- `README.md`: versión y head de Alembic corregidos (`7.16.0`→`7.17.0`, `0010`→`0015`).
+- `CLAUDE.md`: `pgcompat.py`, `llm_usage.py` e `inflation.py` agregados a Module Responsibilities (existían en el código pero no tenían entrada propia).
+- `docs/CURRENCY_STATE.md` y `docs/REPORT_PROMPTS.md`: verificados contra el código y confirmados como referencias vivas y precisas (no snapshots pre-cambio superadas) — se corrige el conteo de FKs de moneda (siete→ocho) y se reformula la introducción de ambos para dejar explícito que deben mantenerse al día, no tratarse como históricos.
+- `PROJECT.md`: sección "Workflow & Conventions" generalizada — el reparto de trabajo, el bump de versión/changelog y la regla de `docker-compose.yml` de dos copias ya no se describen en términos de una sola herramienta; lo específico de Claude Code queda marcado como tal.
+
 ## 7.17.0
 - Los resúmenes derivan sus bloques de las monedas realmente usadas en el período más la moneda predeterminada familiar; total, contrastes, partición, cobertura y forecast permanecen separados por moneda, con IPC sólo donde existe una serie.
 - Cada moneda no predeterminada muestra una equivalencia de referencia en la moneda principal usando exclusivamente cambios propios (operación directa del mes → inversa del mes → última del par en 12 meses → no disponible); nunca se incorpora a totales ni comparaciones.
