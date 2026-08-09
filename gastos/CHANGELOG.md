@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.17.0
+- Los resúmenes derivan sus bloques de las monedas realmente usadas en el período más la moneda predeterminada familiar; total, contrastes, partición, cobertura y forecast permanecen separados por moneda, con IPC sólo donde existe una serie.
+- Cada moneda no predeterminada muestra una equivalencia de referencia en la moneda principal usando exclusivamente cambios propios (operación directa del mes → inversa del mes → última del par en 12 meses → no disponible); nunca se incorpora a totales ni comparaciones.
+- **Resúmenes** mantiene la moneda principal desplegada y agrupa las adicionales en paneles colapsables para conservar legibilidad con muchas monedas; siguen renderizando tanto el formato anterior a 7.7.0 como el par fijo ARS/USD posterior.
+- El owner puede cambiar la moneda predeterminada desde **Familia** entre las monedas del catálogo. El cambio sólo afecta entradas sin moneda explícita y futuros resúmenes: no convierte ni modifica gastos, ingresos, fijos o reportes existentes.
+- La migración `0015` reemplaza el `CHECK` ARS/USD de `report_forecasts.currency` por una FK al catálogo global, y los prompts del informe preservan sus garantías de moneda, inflación, equivalencia, materialidad e historial corto para N monedas.
+
 ## 7.16.0
 - La migración `0014` convierte `cambios_dolar` en operaciones direccionales genéricas (`amount_given/currency_given` → `amount_received/currency_received`) con tasa explícita “recibida por entregada”; migra ventas y compras USD/ARS sin perder montos ni la cotización resultante y elimina `tipo` del almacenamiento.
 - Texto, voz y lenguaje natural detectan ARS, USD, BRL y EUR desde el catálogo y usan `families.default_currency` cuando no hay señal explícita; `$` y “pesos” son relativos a ese default, una moneda desconocida se informa y OCR permite corregir con todo el catálogo.

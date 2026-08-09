@@ -1,8 +1,6 @@
 # Currency Handling — Current State
 
-Code-derived snapshot after the 7.15.0 currency-foundations work. This document
-separates the generalized foundation that exists now from the deliberately binary
-input/report layers that remain for later work.
+Code-derived snapshot after the 7.17.0 end-to-end N-currency work.
 
 ## 1. Reference data and validation
 
@@ -56,11 +54,8 @@ though the current four rows all specify two display places. Supporting a future
 currency requiring more than two stored fractional digits would additionally require a
 storage-precision migration.
 
-### Known later constraint
-
-`report_forecasts.currency` still has `ck_forecast_currency` limited to ARS/USD. The
-forecast and dossier remain a fixed pair by explicit scope; migration `0013` does not
-pretend that layer is generalized.
+Migration `0015` replaces `report_forecasts.currency`'s historical ARS/USD check with
+`fk_report_forecasts_currency`, so persisted forecasts accept every catalogue row.
 
 ## 3. Family default
 
@@ -74,10 +69,11 @@ The web read path is live:
 - new fixed-expense and income forms use it;
 - the corresponding POST validation defaults omitted currency from the family row.
 
-There is intentionally no writer or settings UI yet. Every existing and newly created
-family therefore keeps the database default ARS. Detection and exchange operations are
-now generalized, but the dossier and `resumenes.html` still render a fixed ARS/USD pair;
-the writer waits for that next pass so a BRL default cannot produce a partial report.
+The owner can select any catalogue currency from `/familia`. Members can see the value
+but cannot change it. The UI and success message state explicitly that this is not a
+conversion: existing expenses, incomes, fixed expenses and append-only reports keep
+their stored currencies. The new default applies to future implicit input and becomes
+the primary block of future reports.
 
 ## 4. Formatting
 
@@ -141,20 +137,33 @@ sale; the reverse is a purchase. A conversion such as BRL→EUR has no buy/sell 
 historical-rate endpoint requires a pair and direction, preventing unrelated series from
 being plotted together.
 
-## 7. Dossier, reports and forecast — deliberately fixed pair
+## 7. Dossier, reports and forecast
 
-`dossier.py` still builds exactly `currencies.ARS` and `currencies.USD`. It preserves
-parallel, same-shape blocks and never sums currencies; the reference-only
-`equivalence` block remains USD→ARS using `cambios_dolar`. IPC applies only to ARS.
+`dossier.py` derives its ordered currency set from currencies used by expenses in the
+period plus `families.default_currency`; the default is always first and preserves a
+coherent empty-period shape. `report.py` partitions exactly that set and `forecast.py`
+forecasts it. Every block remains same-shape and currency-scoped.
 
-`resumenes.html` still renders the binary pair, `report.py` partitions only those two,
-`forecast.py` forecasts them, `report_forecasts` constrains them, and report prompts
-still describe `$`/`U$S`. These are known, explicit follow-ups, not accidental claims of
-end-to-end N-currency reporting.
+`inflation.has_series(code)` is the explicit capability boundary. The module still
+acquires exactly one series—Argentina's national CPI for ARS. ARS can expose real
+figures (or `real_unavailable` when observations are missing); all other currencies
+expose `real_not_applicable` and are never silently narrated as inflation-adjusted.
 
-The dashboard's current “other currency” summary also remains an ARS/USD-era binary
-presentation. Currency-scoped queries and storage accept the catalogue, but a dynamic
-multi-block dashboard/report presentation is separate work.
+`equivalence.items` values every non-default period currency in the family default.
+For each direct pair, the fallback is current-period foreign→default, current-period
+default→foreign, latest operation in either direction within 12 months, then explicit
+unavailable. Rates come only from the family's own operations; there is no indirect
+path and no external FX source. These values are reference-only and never feed totals,
+contrasts, partitions or forecasts. Legacy ARS/USD aliases remain in newly generated
+dossiers so numeric regression comparisons retain their 7.7–7.16 contract.
+
+`resumenes.html` renders the default currency as the expanded primary report and puts
+additional active currencies in collapsed detail panels containing their hero,
+partition, forecast, equivalence and registration coverage. This avoids a wall at four
+currencies. Client normalization handles all three persisted shapes: pre-7.7
+single-currency, 7.7–7.16 fixed ARS/USD, and 7.17+ dynamic N-currency.
+
+The main dashboard's summary remains a separate presentation and is not changed here.
 
 ## 8. Verification contract
 

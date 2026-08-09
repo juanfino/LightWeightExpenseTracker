@@ -74,6 +74,14 @@ class PromptVersionTests(unittest.TestCase):
             report_ai.prompt_version(warm), report_ai.prompt_version(direct)
         )
 
+    def test_hard_rules_generalize_materiality_and_symbols_beyond_usd(self):
+        system = report_ai._ANALYZE_CALL_CONFIG["system"]
+        self.assertIn("for EVERY non-default currency", system)
+        self.assertIn("share_pct >= 10", system)
+        self.assertIn("currency_metadata.<code>.symbol", system)
+        self.assertIn("real_not_applicable", system)
+        self.assertIn("If available is false", system)
+
     def test_suggestion_toggle_replaces_only_the_blanket_ban(self):
         off_config, _ = report_ai.compile_analyze_config({"allow_suggestions": False})
         on_config, _ = report_ai.compile_analyze_config({"allow_suggestions": True})

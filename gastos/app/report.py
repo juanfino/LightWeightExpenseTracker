@@ -23,7 +23,6 @@ import money
 logger = logging.getLogger(__name__)
 
 _CLASSIFICATION_LOOKBACK_MONTHS = 6
-_CURRENCIES = ("ARS", "USD")
 
 
 def generate_report(year: int, month: int) -> dict:
@@ -33,10 +32,14 @@ def generate_report(year: int, month: int) -> dict:
     inflation.refresh()
     preferences = report_preferences.from_storage(db.get_report_preferences())
     dossier = dossier_module.build_dossier(year, month)
-    computed_forecast = forecast_module.build_forecast(year, month)
+    currencies = list(dossier["currencies"])
+    computed_forecast = forecast_module.build_forecast(year, month, currencies)
     if "forecast" in preferences["emphasis"] or preferences["allow_suggestions"]:
         dossier["forecast"] = computed_forecast
-    all_variable = [e for cur in _CURRENCIES for e in dossier["currencies"][cur]["variable_expenses"]]
+    all_variable = [
+        expense for block in dossier["currencies"].values()
+        for expense in block["variable_expenses"]
+    ]
 
     prior_classifications = db.get_recent_classifications_before(
         year, month, lookback_months=_CLASSIFICATION_LOOKBACK_MONTHS
@@ -44,7 +47,7 @@ def generate_report(year: int, month: int) -> dict:
     classifications = report_ai.classify_expenses(dossier, all_variable, prior_classifications)
 
     partitions = _build_partitions(dossier, all_variable, classifications)
-    for cur in _CURRENCIES:
+    for cur in currencies:
         dossier["currencies"][cur]["partition"] = partitions[cur]
 
     output = None
@@ -91,13 +94,17 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
     currency — the one piece of arithmetic the classification call itself never does.
     A USD expense never contributes to the ARS partition or vice versa."""
     by_id = {e["expense_id"]: e for e in all_variable}
-    fixed_totals = {cur: dossier["currencies"][cur]["fixed_expenses"]["total_paid"] for cur in _CURRENCIES}
+    currencies = list(dossier["currencies"])
+    fixed_totals = {
+        cur: dossier["currencies"][cur]["fixed_expenses"]["total_paid"]
+        for cur in currencies
+    }
 
     if classifications is None:
-        return {cur: {"available": False, "fixed_total": fixed_totals[cur]} for cur in _CURRENCIES}
+        return {cur: {"available": False, "fixed_total": fixed_totals[cur]} for cur in currencies}
 
     totals = {cur: {"recurring_total": money.MONEY_ZERO, "recurring_count": 0,
-                     "exceptional_total": money.MONEY_ZERO, "exceptional_count": 0} for cur in _CURRENCIES}
+                     "exceptional_total": money.MONEY_ZERO, "exceptional_count": 0} for cur in currencies}
     for c in classifications:
         expense = by_id.get(c["expense_id"])
         if expense is None:
@@ -125,7 +132,7 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
                 money.MONEY_ZERO,
             ),
         }
-        for cur in _CURRENCIES
+        for cur in currencies
     }
 
 

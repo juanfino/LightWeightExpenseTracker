@@ -49,6 +49,16 @@ class ForecastTests(unittest.TestCase):
         self.assertTrue(result["ARS"]["variable_available"])
         self.assertFalse(result["USD"]["variable_available"])
 
+    def test_forecast_uses_period_currencies_and_default_only(self):
+        db.set_family_default_currency("BRL")
+        self._expense("2026-08-01", 20, currency="EUR")
+
+        result = forecast.build_forecast(2026, 8)["currencies"]
+
+        self.assertEqual(list(result), ["BRL", "EUR"])
+        self.assertEqual(result["BRL"]["inflation_status"], "real_not_applicable")
+        self.assertEqual(result["EUR"]["inflation_status"], "real_not_applicable")
+
     def test_outlier_does_not_drag_habitual_category_median(self):
         for month, amount in zip((4, 5, 6, 7, 8), (100, 100, 10000, 100, 100)):
             self._expense(f"2026-{month:02d}-01", amount)

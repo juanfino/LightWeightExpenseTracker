@@ -63,6 +63,21 @@
         <form method="post" class="inline-form mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="rename"><input name="name" value="{{ family.name }}" required><button class="btn">Guardar</button></form>
         {% else %}<p class="mt-8">{{ family.name }}</p>{% endif %}
       </section>
+      <section class="card">
+        <h2 class="section-title">Moneda predeterminada</h2>
+        <p class="muted mt-8">Se usa cuando un mensaje nuevo no aclara moneda y como moneda principal de los próximos resúmenes.</p>
+        <p class="muted mt-8"><strong>No convierte nada:</strong> los gastos, ingresos, fijos y resúmenes existentes conservan su moneda para siempre.</p>
+        {% if current_user.role == 'owner' %}
+        <form method="post" class="inline-form mt-8">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="default_currency">
+          <select name="default_currency" aria-label="Moneda predeterminada">
+            {% for currency in currency_catalog %}<option value="{{ currency.code }}"{% if currency.code == default_currency %} selected{% endif %}>{{ currency.symbol }} {{ currency.code }}</option>{% endfor %}
+          </select>
+          <button class="btn">Guardar</button>
+        </form>
+        {% else %}<p class="mt-8"><strong>{{ default_currency }}</strong></p>{% endif %}
+      </section>
       {% if current_user.role == 'owner' %}
       <section class="card">
         <h2 class="section-title">Invitaciones</h2>

@@ -47,7 +47,7 @@ You have two signals, and how much to weigh each depends on how much history is 
 
 For cross-month consistency, you're shown how the same or similar concepts were classified in prior months. Prefer staying consistent unless the amount or context clearly indicates something changed (same store, a wildly different amount -> probably a genuinely different kind of purchase, not the same recurring one).
 
-Expenses come in two currencies, ARS and USD, each carrying its own 'currency' field. Never compare or weigh amounts across currencies — a USD amount has fewer digits than an ARS one but is not therefore small. Recurrence evidence is also currency-scoped: a concept's prior occurrences only count if they're in the same currency as the expense you're classifying.
+Expenses may use any of the currencies present under dossier.currencies, and each expense carries its own 'currency' field. Never compare or weigh amounts across currencies — an amount with fewer digits is not therefore small. Recurrence evidence is also currency-scoped: a concept's prior occurrences only count if they're in the same currency as the expense you're classifying.
 
 Return ONLY classifications. Do not narrate, do not sum amounts, do not analyze the month — a separate step aggregates your labels.
 ```
@@ -93,7 +93,7 @@ logged for the system prompt specifically — see §5).
 ```
 
 Notes:
-- `expenses` is the concatenation of **both currencies'** `variable_expenses` (expenses
+- `expenses` is the concatenation of **every dossier currency's** `variable_expenses` (expenses
   with `fixed_expense_id IS NULL`), built by `dossier.py`'s `_build_currency_block()`;
   each item already carries its own `"currency"`.
 - `recurrence_evidence` comes straight from `dossier["recurrence_evidence"]`
@@ -101,7 +101,7 @@ Notes:
   so a peso "Hotel" and a dollar "Hotel" don't merge.
 - `prior_months_classifications` is pre-rendered as **text lines**, not structured JSON —
   one line per prior classified expense, format
-  `"YYYY-MM: \"concept\" ($amount|U$S amount) -> label"`, produced by
+  `"YYYY-MM: \"concept\" (<catalogue symbol> amount) -> label"`, produced by
   `report.py`/`report_ai.py` from `db.get_recent_classifications_before(year, month,
   lookback_months=6)`.
 
@@ -146,19 +146,19 @@ Rules:
 - Every finding must cite a concrete figure from the dossier (an amount, a percentage, a count). A finding with no number is not acceptable — never write generic advice like 'gastaste mucho en X, planificá mejor.'
 - Few findings: five good ones beat twelve padded ones.
 - No recommendations. This app has no budgets, so there is no target to advise against — never suggest what the user should do differently.
-- questions[] is for actionable observations that need a human decision, not advice. Use type="uncategorized" for the aggregate uncategorized-spending question (fixed_expense_id null), type="unlinked_fixed" once per unpaid/unlinked fixed expense you want to flag (set fixed_expense_id to its id from the dossier — fixed expenses exist in both currencies.ARS.fixed_expenses and currencies.USD.fixed_expenses, and ids are unique across both), type="other" for anything else worth flagging that doesn't map to either link (fixed_expense_id null). Never invent a fixed_expense_id that isn't in the dossier.
+- questions[] is for actionable observations that need a human decision, not advice. Use type="uncategorized" for the aggregate uncategorized-spending question (fixed_expense_id null), type="unlinked_fixed" once per unpaid/unlinked fixed expense you want to flag (set fixed_expense_id to its id from the dossier — fixed expenses exist inside each currencies.<code>.fixed_expenses block, and ids are unique across all of them), type="other" for anything else worth flagging that doesn't map to either link (fixed_expense_id null). Never invent a fixed_expense_id that isn't in the dossier.
 - If hard_facts.months_available is small, present every contrast as an observation ('recién es el N-ésimo mes de datos') rather than a conclusion about behavior change — recent app adoption explains differences at least as well as real spending changes, and you must say so explicitly when history is short. Each currency block also carries its own months_available — a currency with little history of its own gets the same treatment even if the other currency has plenty.
 - registration_coverage measures who LOGGED an expense, not who spent the money — never infer spending behavior, fairness, or effort from it; if you mention it, describe it only as app usage.
-- The fixed/recurring/exceptional partition is already computed per currency (currencies.ARS.partition, currencies.USD.partition) — cite it, don't recompute or contradict it.
+- The fixed/recurring/exceptional partition is already computed separately in each currencies.<code>.partition block — cite it, don't recompute or contradict it.
 - If the dossier contains a forecast, it was computed and frozen by code. Never recompute, contradict, narrow, widen or sharpen any forecast range, and never present a range as a certainty. Every mention must explicitly name both its target month and its cutoff month (for example: 'Proyección para julio 2026, en base a los datos hasta junio 2026'). Forecast language is descriptive and conditional ('podrías gastar'), never normative ('deberías gastar menos').
 - Do not invent URLs, links, category names, or ids beyond what's in the input.
 
-Currency rules — this dossier covers two independent currencies, ARS and USD, as parallel same-shape blocks under "currencies". This is not a pesos report with a dollar footnote: both currencies are first-class and both deserve findings when material.
-- NEVER sum, average, or otherwise combine an ARS amount with a USD amount. Each currency's totals, contrasts, and partition are self-contained.
-- Every amount you write carries its currency's symbol explicitly: "$" for ARS, "U$S" for USD. A bare number with no symbol is not acceptable.
-- IPC/inflation ('real' figures) only exists for ARS. currencies.USD.contrasts entries carry real_not_applicable instead of real figures — never call a USD amount 'real' or inflation-adjusted, and never explain a USD change using IPC.
-- "equivalence" is a reference-only ARS-equivalent of this month's USD spending, at the family's own dollar rate (equivalence.rate, from equivalence.rate_source). You may cite it AT MOST ONCE, only to convey how large the USD spending was in terms the reader already thinks in, and always labeled as an approximation that names the rate used. Never treat it as a total, never feed it into a contrast, and never use it as if it were a real peso expense.
-- Materiality rule: if equivalence.usd_share_pct >= 10, or if there is USD spending but equivalence.available is false, the headline and summary MUST mention the USD spending explicitly (its own total, in U$S, plus a finding about it) — a large or unconvertible dollar expense cannot be relegated to a minor finding or omitted. Below that threshold, mention USD only if there's something specific worth noting (e.g. a new recurring USD subscription).
+Currency rules — this dossier contains independent, same-shape blocks under "currencies". dossier.default_currency names the primary currency; every other currency remains first-class and deserves findings when material.
+- NEVER sum, average, compare, or otherwise combine amounts from different currencies. Each currency's totals, contrasts, forecast and partition are self-contained.
+- Every amount you write carries the symbol for its own currency, taken from dossier.currency_metadata.<code>.symbol. A bare number with no symbol is not acceptable; never infer a symbol from locale or from another currency.
+- Inflation-adjusted ('real') figures may be cited ONLY when that currency's dossier entries actually provide real_current/real_baseline/real_delta fields. When an entry carries real_not_applicable, never call it real or inflation-adjusted and never explain its change using inflation. real_unavailable means a series applies but the required observation is missing; state that limitation rather than presenting the nominal figure as real.
+- equivalence.items contains one optional reference-only valuation for each non-default currency in the family default, derived only from the family's own exchange operations. Cite any such valuation AT MOST ONCE and only to convey magnitude in familiar terms. Always label it as an approximation, name both currencies and the rate and rate_source used. Never treat it as an expense or a total, never sum it with spending, and never feed it into a contrast, partition, forecast or comparison. If available is false, say there is no family rate; do not infer or invent one.
+- Materiality rule: for EVERY non-default currency, if its equivalence item has share_pct >= 10, or if that currency has spending and available is false, the headline and summary MUST mention that foreign-currency spending explicitly in its own currency, plus a finding about it. A large or unconvertible foreign spend cannot be relegated to a minor finding or omitted. Below that threshold, mention it only when there is something specific worth noting. Apply short-history calibration independently to that currency exactly as for the default currency.
 ```
 
 Approximate size: **3,854 characters / 599 words ≈ 780–965 tokens** (same heuristic
@@ -170,8 +170,9 @@ caveat as above).
 {"dossier": { /* the entire build_dossier() output, verbatim */ }}
 ```
 
-The full dossier — `period`, `hard_facts`, `dollars`, `equivalence`,
-`recurrence_evidence`, and `currencies.{ARS,USD}` (each with `base`, `contrasts`,
+The full dossier — `period`, `hard_facts`, `default_currency`, `currency_order`,
+`currency_metadata`, `dollars`, `equivalence`, `recurrence_evidence`, and dynamic
+`currencies.{code}` blocks (each with `base`, `contrasts`,
 `delta_attribution`, `outliers`, `fixed_expenses`, `taxonomy`,
 `registration_coverage`, `months_available`, `variable_expenses`, and — by the time
 this call runs — `partition`, injected by `report.py` after `classify_expenses()`
@@ -189,9 +190,16 @@ A synthetic sketch:
     "hard_facts": {"first_expense_date": "2026-01-10", "months_available": 6},
     "dollars": {"venta": {"cnt": 1, "total_usd": 500, "total_ars": 850000, "cotizacion_promedio": 1700},
                 "compra": {"cnt": 0}, "coverage_ratio": 0.62, "coverage_basis": "pesos + dólares equivalentes"},
-    "equivalence": {"available": true, "rate": 1700, "rate_source": "ventas_mes",
-                    "usd_total": 300, "usd_total_in_ars": 510000, "ars_total": 900000,
-                    "combined_ars_equivalent": 1410000, "usd_share_pct": 36.2},
+    "default_currency": "ARS",
+    "currency_order": ["ARS", "USD", "BRL"],
+    "currency_metadata": {"ARS": {"symbol": "$"}, "USD": {"symbol": "US$"}, "BRL": {"symbol": "R$"}},
+    "equivalence": {"default_currency": "ARS", "default_total": 900000,
+                    "combined_default_equivalent": 1460000,
+                    "items": {"USD": {"available": true, "rate": 1700,
+                    "rate_source": "sale_current_period", "foreign_total": 300,
+                    "total_in_default": 510000, "share_pct": 34.9},
+                    "BRL": {"available": false, "foreign_total": 1000,
+                    "total_in_default": null, "share_pct": 0}}},
     "recurrence_evidence": { "...": "..." },
     "currencies": {
       "ARS": {"currency": "ARS", "base": {"...": "..."}, "contrasts": {"...": "..."},
@@ -203,7 +211,8 @@ A synthetic sketch:
                              "recurring_count": 20, "exceptional_total": 100000,
                              "exceptional_count": 3, "variable_total": 600000},
               "inflation_unavailable": false},
-      "USD": { "...": "same shape, apply_ipc=False so contrasts carry real_not_applicable" }
+      "USD": { "...": "same shape; no series, so contrasts carry real_not_applicable" },
+      "BRL": { "...": "same shape; equivalence may be unavailable" }
     }
   }
 }
@@ -261,8 +270,8 @@ defaults:
 ```
 
 The emphasis choices come from actual dossier structures, not an independent product
-taxonomy: category totals/movement/taxonomy, temporal contrasts, USD spending and dollar
-position, fixed-expense state, statistical outliers, the fixed/recurring/exceptional
+taxonomy: category totals/movement/taxonomy, temporal contrasts, non-default-currency
+spending and reference equivalences, fixed-expense state, statistical outliers, the fixed/recurring/exceptional
 partition, and the stored next-month forecast. Tone is `neutral|warm|direct`; length is `short|medium|long`. Neutral/medium
 emit no extra soft-guidance text. Short prefers about three strong findings; long permits up to seven only
 when supported, retaining the no-padding rule.
@@ -291,14 +300,14 @@ Traced directly from `resumenes.html`'s `render()` and its helper functions.
 
 | Report section (template function) | Source |
 |---|---|
-| Hero total, per-currency total/count/daily-avg, trend vs. prior month, nominal/real % (`renderHero`/`heroCard`/`heroTrend`) | 100% deterministic — `dossier.currencies.{ARS,USD}.base` / `.contrasts`, computed by `dossier.py`. No LLM involvement |
-| Equivalence line under the hero (`equivalenceLine`) | 100% deterministic — `dossier.equivalence`, computed by `dossier._build_equivalence()` |
+| Primary hero plus collapsed additional-currency summaries (`renderHero`/`renderSecondaryCurrencies`/`heroCard`/`heroTrend`) | 100% deterministic — ordered dynamic `dossier.currencies.{code}.base` / `.contrasts`; the family default is primary |
+| Equivalence line inside each non-default panel (`equivalenceLine`) | 100% deterministic — `dossier.equivalence.items.{code}`, computed from family exchange operations |
 | Headline, summary, findings (`renderNarrative`) | 100% LLM — `report.output.headline`/`.summary`/`.findings[].text` verbatim from `analyze()`. Rendered through `escapeHtml()` (textContent-based), so arbitrary text is safe to inject as HTML but not otherwise validated |
-| "Tres clases de gasto" bars — fixed slice (`renderKinds`) | Deterministic — `partition.fixed_total`, from `dossier.currencies.{cur}.fixed_expenses.total_paid`, itself a DB aggregate with no LLM input |
+| "Tres clases de gasto" bars — fixed slice (`renderKinds`) | Deterministic per dynamic currency — `partition.fixed_total`, from that block's `fixed_expenses.total_paid` |
 | "Tres clases de gasto" bars — recurring/exceptional slices | **Hybrid**: the *label* on each expense (which bucket it falls in) comes from the classification LLM call; the *sums* (`recurring_total`, `exceptional_total`, counts) are computed by code in `report.py`'s `_build_partitions()`, which only aggregates labels the model returned — the model itself never sums |
 | Next-month projection and predicted-vs-actual (`renderForecast`) | 100% deterministic — `forecast.py` computes and `report_forecasts` freezes one block per currency. Target actuals are queried later only for the inline backtest and never change the stored prediction |
 | Dollars section (venta/compra totals, coverage ratio) (`renderDollars`) | 100% deterministic — `dossier.dollars`, from `db.get_cambios_resumen_mes_by_tipo()` |
-| "Quién registró" / registration coverage (`renderCoverage`) | 100% deterministic — `dossier.currencies.{cur}.registration_coverage` |
+| "Quién registró" / registration coverage (`renderCoverage`) | 100% deterministic and rendered once per currency — `dossier.currencies.{cur}.registration_coverage` |
 | "Para resolver" / questions list (`renderQuestions`) | 100% LLM — `report.output.questions[]` verbatim from `analyze()`. `type` drives which URL the question links to (client-side `if` on the enum value, not LLM-supplied); `text` goes through `escapeHtml()` |
 | "Análisis narrativo no disponible" note | Deterministic gate: shown whenever `report.llm_ok` is false (i.e. either LLM call failed) |
 | Header meta line ("Versión generada el… con…") | Deterministic — `report.generated_at` and `report.model` (the model name string persisted at generation time), plus the same `llm_ok` gate |

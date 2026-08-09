@@ -217,6 +217,59 @@ class ReportCurrencyDossierTests(unittest.TestCase):
         self.assertEqual(d["dollars"]["coverage_basis"], "pesos + dólares equivalentes")
         self.assertAlmostEqual(d["dollars"]["coverage_ratio"], round(300000 / 151000, 3))
 
+    def test_dossier_derives_three_currencies_and_keeps_default_first(self):
+        db.set_family_default_currency("BRL")
+        db.create_expense_full(self.user["id"], None, "Brasil", 100, "2026-07-01", currency="BRL")
+        db.create_expense_full(self.user["id"], None, "Argentina", 200, "2026-07-02", currency="ARS")
+        db.create_expense_full(self.user["id"], None, "Europa", 30, "2026-07-03", currency="EUR")
+
+        d = dossier.build_dossier(2026, 7)
+
+        self.assertEqual(d["default_currency"], "BRL")
+        self.assertEqual(d["currency_order"], ["BRL", "ARS", "EUR"])
+        self.assertEqual(set(d["currencies"]), {"BRL", "ARS", "EUR"})
+        self.assertNotIn("USD", d["currencies"])
+
+    def test_default_only_period_still_has_one_coherent_currency_block(self):
+        db.set_family_default_currency("EUR")
+
+        d = dossier.build_dossier(2026, 7)
+
+        self.assertEqual(d["currency_order"], ["EUR"])
+        self.assertEqual(d["currencies"]["EUR"]["base"]["total"], 0)
+
+    def test_non_series_currency_is_structurally_real_not_applicable(self):
+        db.create_expense_full(self.user["id"], None, "Brasil", 100, "2026-07-01", currency="BRL")
+        db.create_expense_full(self.user["id"], None, "Brasil", 80, "2026-06-01", currency="BRL")
+
+        prev = dossier.build_dossier(2026, 7)["currencies"]["BRL"]["contrasts"]["prev_month"]
+
+        self.assertTrue(prev["real_not_applicable"])
+        self.assertNotIn("real_unavailable", prev)
+
+    def test_each_foreign_currency_has_own_equivalence_or_unavailable(self):
+        db.create_expense_full(self.user["id"], None, "Brasil", 100, "2026-07-01", currency="BRL")
+        db.create_expense_full(self.user["id"], None, "Europa", 50, "2026-07-02", currency="EUR")
+        db.registrar_cambio("2026-07-10", 10, "BRL", 2000, "ARS", "Tester")
+
+        items = dossier.build_dossier(2026, 7)["equivalence"]["items"]
+
+        self.assertEqual(items["BRL"]["rate"], 200)
+        self.assertEqual(items["BRL"]["total_in_default"], 20000)
+        self.assertTrue(items["BRL"]["available"])
+        self.assertFalse(items["EUR"]["available"])
+        self.assertIsNone(items["EUR"]["total_in_default"])
+
+    def test_reverse_exchange_rate_values_foreign_in_default(self):
+        db.create_expense_full(self.user["id"], None, "Brasil", 10, "2026-07-01", currency="BRL")
+        db.registrar_cambio("2026-07-10", 2000, "ARS", 10, "BRL", "Tester")
+
+        item = dossier.build_dossier(2026, 7)["equivalence"]["items"]["BRL"]
+
+        self.assertEqual(item["rate_source"], "purchase_current_period")
+        self.assertEqual(item["rate"], 200)
+        self.assertEqual(item["total_in_default"], 2000)
+
 
 if __name__ == "__main__":
     unittest.main()
