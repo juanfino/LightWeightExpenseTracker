@@ -25,8 +25,18 @@ import money
 logger = logging.getLogger(__name__)
 
 _SERIES_ID = "148.3_INIVELNAL_DICI_M_26"
+_SERIES_CURRENCY = "ARS"
 _API_URL = "https://apis.datos.gob.ar/series/api/series/"
 _TIMEOUT_S = 15
+
+
+def has_series(currency: str) -> bool:
+    """Whether this module owns an inflation series for ``currency``.
+
+    The catalogue can grow independently; today we intentionally acquire only
+    Argentina's national CPI, so every other currency is structurally nominal.
+    """
+    return str(currency).upper().strip() == _SERIES_CURRENCY
 
 
 def refresh() -> bool:

@@ -718,7 +718,7 @@ def family():
         try:
             if action in {
                 "invite", "revoke_invite", "rename", "remove",
-                "transfer", "delete",
+                "transfer", "delete", "default_currency",
             }:
                 _owner_required()
             if action == "invite":
@@ -738,6 +738,14 @@ def family():
                 )
                 g.current_user["family_name"] = request.form.get("name", "").strip()
                 success = "Nombre actualizado."
+            elif action == "default_currency":
+                selected = db.set_family_default_currency(
+                    request.form.get("default_currency", "")
+                )
+                success = (
+                    f"Moneda predeterminada actualizada a {selected}. "
+                    "No se convirtió ningún movimiento existente."
+                )
             elif action == "remove":
                 target_id = int(request.form["user_id"])
                 if target_id == g.current_user["id"]:
@@ -783,6 +791,8 @@ def family():
     return render_template(
         "family.html", family=family_data, invitations=invitations,
         invitation_url=invitation_url, error=error, success=success,
+        default_currency=db.get_family_default_currency(),
+        currency_catalog=db.get_currencies(),
     )
 
 

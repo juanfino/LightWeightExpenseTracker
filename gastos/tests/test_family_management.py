@@ -234,6 +234,51 @@ class FamilyManagementTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_owner_can_change_default_currency_without_converting_history(self):
+        expense_id = db.create_expense_full(
+            self.owner["id"], None, "Histórico", 1000, "2026-08-01", currency="ARS"
+        )
+        client, headers = authenticated_client(dashboard, "100")
+        response = client.post(
+            "/familia",
+            data={
+                "csrf_token": headers["X-CSRF-Token"],
+                "action": "default_currency",
+                "default_currency": "BRL",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(db.get_family_default_currency(), "BRL")
+        self.assertEqual(db.get_expense_by_id(expense_id)["currency"], "ARS")
+        self.assertIn(b"No se convirti", response.data)
+
+    def test_member_cannot_change_default_currency(self):
+        client, headers = authenticated_client(dashboard, "200")
+        response = client.post(
+            "/familia",
+            data={
+                "csrf_token": headers["X-CSRF-Token"],
+                "action": "default_currency",
+                "default_currency": "EUR",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(db.get_family_default_currency(), "ARS")
+
+    def test_default_currency_writer_is_tenant_scoped(self):
+        other_family = auth.create_family_for_existing_user(
+            auth.create_user_without_family("other-family@example.com", "Otra"),
+            "Otra familia",
+        )
+        db.set_family_default_currency("EUR")
+        with auth.platform_transaction() as raw:
+            rows = dict(raw.execute(
+                "SELECT id, default_currency FROM families WHERE id IN (%s, %s)",
+                (1, other_family),
+            ).fetchall())
+        self.assertEqual(rows[1], "EUR")
+        self.assertEqual(rows[other_family], "ARS")
+
 
 if __name__ == "__main__":
     unittest.main()

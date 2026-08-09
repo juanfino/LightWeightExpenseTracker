@@ -179,6 +179,29 @@
   padding-top: 14px;
 }
 
+.secondary-currencies { display:flex; flex-direction:column; gap:10px; }
+.currency-panel {
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface);
+  overflow:hidden;
+}
+.currency-panel > summary {
+  cursor:pointer;
+  list-style:none;
+  padding:16px 18px;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.currency-panel > summary::-webkit-details-marker { display:none; }
+.currency-panel > summary::after { content:"+"; color:var(--text3); font-size:20px; }
+.currency-panel[open] > summary::after { content:"−"; }
+.currency-panel-body { border-top:1px solid var(--border-soft); padding:18px; }
+.currency-panel-body > .card { box-shadow:none; }
+
 .preferences-card { display: none; }
 .preferences-card.open { display: block; }
 .preferences-grid {
@@ -413,7 +436,29 @@
   // {total, count, by_category}. Reshape those into today's currencies.{ARS,USD}
   // form so old reports still render.
   function normalizeDossier(d) {
-    if (d.currencies) return d;
+    if (d.currencies) {
+      const defaultCurrency = d.default_currency || "ARS";
+      const order = d.currency_order || [defaultCurrency].concat(
+        Object.keys(d.currencies).filter(code => code !== defaultCurrency)
+      );
+      const normalized = Object.assign({}, d, {
+        default_currency: defaultCurrency,
+        currency_order: order,
+        currency_metadata: d.currency_metadata || {},
+      });
+      if (normalized.equivalence && !normalized.equivalence.items) {
+        const e = normalized.equivalence;
+        normalized.equivalence = Object.assign({}, e, {items: {
+          USD: {
+            foreign_currency: "USD", default_currency: "ARS",
+            available: !!e.available, rate: e.rate, rate_source: e.rate_source,
+            rate_period: e.rate_period, foreign_total: e.usd_total || 0,
+            total_in_default: e.usd_total_in_ars, share_pct: e.usd_share_pct || 0,
+          },
+        }});
+      }
+      return normalized;
+    }
     const usd = d.usd_expenses || {total: 0, count: 0, daily_avg: 0, by_category: []};
     const noContrast = {available: false};
     return Object.assign({}, d, {
@@ -433,10 +478,17 @@
           registration_coverage: [],
         },
       },
+      default_currency: "ARS",
+      currency_order: ["ARS", "USD"],
+      currency_metadata: {},
       equivalence: {
         available: false, usd_total: usd.total || 0,
         ars_total: d.base ? d.base.total : 0,
         combined_ars_equivalent: d.base ? d.base.total : 0, usd_share_pct: 0,
+        items: {USD: {
+          foreign_currency: "USD", default_currency: "ARS", available: false,
+          foreign_total: usd.total || 0, total_in_default: null, share_pct: 0,
+        }},
       },
     });
   }
@@ -462,9 +514,10 @@
 
     const d = normalizeDossier(report.dossier);
     const out = report.output;
-    const ars = d.currencies.ARS;
-    const usd = d.currencies.USD;
-    const hasUsd = !!(usd.base && usd.base.count);
+    const order = d.currency_order.filter(code => d.currencies[code]);
+    const primaryCode = d.default_currency;
+    const primary = d.currencies[primaryCode] || d.currencies[order[0]];
+    const secondaryCodes = order.filter(code => code !== primaryCode && d.currencies[code].base.count);
 
     const parts = [];
 
@@ -472,13 +525,17 @@
       parts.push(`<div class="dossier-only-note">El análisis narrativo no se pudo generar esta vez (falló la llamada al modelo). Los datos numéricos de abajo sí están completos y son correctos.</div>`);
     }
 
-    parts.push(renderHero(ars, usd, hasUsd, d.equivalence));
+    parts.push(renderHero(primary, primaryCode));
     if (out) parts.push(renderNarrative(out));
-    parts.push(renderKinds(ars, "ARS", "Las tres clases de gasto — pesos"));
-    if (hasUsd) parts.push(renderKinds(usd, "USD", "Las tres clases de gasto — dólares"));
-    if (report.forecast) parts.push(renderForecast(report.forecast));
-    parts.push(renderDollars(d.dollars));
-    parts.push(renderCoverage(ars.registration_coverage, usd.registration_coverage));
+    parts.push(renderKinds(primary, primaryCode, `Las tres clases de gasto — ${primaryCode}`));
+    if (report.forecast && report.forecast.currencies[primaryCode]) {
+      parts.push(renderForecast(report.forecast, primaryCode));
+    }
+    if (secondaryCodes.length) {
+      parts.push(renderSecondaryCurrencies(d, report.forecast, secondaryCodes));
+    }
+    parts.push(renderExchanges(d.exchanges, d.dollars));
+    parts.push(renderCoverage(primary.registration_coverage, primaryCode));
     if (out && out.questions && out.questions.length) parts.push(renderQuestions(out.questions));
 
     root.innerHTML = parts.join("");
@@ -489,7 +546,7 @@
     if (!prev || !prev.available) return `<span>Sin mes anterior para comparar todavía</span>`;
     const cls = prev.nominal_delta >= 0 ? "trend-up" : "trend-down";
     let trend = `<span class="${cls}">${fmtPct(prev.nominal_delta_pct)} nominal vs. mes anterior</span>`;
-    if (currency === "ARS") {
+    if (!prev.real_not_applicable) {
       if (prev.real_delta_pct !== undefined) {
         const clsR = prev.real_delta >= 0 ? "trend-up" : "trend-down";
         trend += `<span class="${clsR}">${fmtPct(prev.real_delta_pct)} real vs. mes anterior</span>`;
@@ -510,25 +567,43 @@
       </div>`;
   }
 
-  function equivalenceLine(equivalence, hasUsd) {
-    if (!hasUsd || !equivalence || !equivalence.usd_total) return "";
-    if (!equivalence.available) {
-      return `<div class="card-sub mt-8">Sin cotización propia para estimar un equivalente en pesos de los ${fmtAmount(equivalence.usd_total, "USD")} de este mes.</div>`;
+  function equivalenceLine(equivalence, currency) {
+    const item = equivalence && equivalence.items && equivalence.items[currency];
+    if (!item || !item.foreign_total) return "";
+    if (!item.available) {
+      return `<div class="card-sub mt-8">Sin un cambio propio entre ${currency} y ${item.default_currency}: no podemos estimar el equivalente de ${fmtAmount(item.foreign_total, currency)}.</div>`;
     }
-    const rateLabel = equivalence.rate_source === "mes_anterior" && equivalence.rate_period
-      ? `a la última cotización registrada (${MONTHS_ES[equivalence.rate_period.month]} ${equivalence.rate_period.year}: ${fmtAmount(equivalence.rate, "ARS")})`
-      : `a tu cotización del mes (${fmtAmount(equivalence.rate, "ARS")})`;
-    return `<div class="card-sub mt-8">≈ ${fmtAmount(equivalence.usd_total_in_ars, "ARS")} si valuás los ${fmtAmount(equivalence.usd_total, "USD")} ${rateLabel}. Es sólo referencia — ningún otro número de esta página mezcla monedas.</div>`;
+    const historical = ["recent_operation", "mes_anterior"].includes(item.rate_source);
+    const rateLabel = historical && item.rate_period
+      ? `al último cambio registrado (${MONTHS_ES[item.rate_period.month]} ${item.rate_period.year}: ${fmtAmount(item.rate, item.default_currency)} por ${currency})`
+      : `a tu cambio del mes (${fmtAmount(item.rate, item.default_currency)} por ${currency})`;
+    return `<div class="card-sub mt-8">≈ ${fmtAmount(item.total_in_default, item.default_currency)} si valuás ${fmtAmount(item.foreign_total, currency)} ${rateLabel}. Es sólo referencia: no se suma a ningún gasto ni mezcla monedas.</div>`;
   }
 
-  function renderHero(ars, usd, hasUsd, equivalence) {
-    const arsCard = heroCard(ars, "ARS", "pesos");
-    const usdCard = hasUsd ? heroCard(usd, "USD", "dólares") : "";
+  function renderHero(cur, currency) {
     return `
       <div class="card">
-        <div class="${hasUsd ? "grid-2" : ""}">${arsCard}${usdCard}</div>
-        ${equivalenceLine(equivalence, hasUsd)}
+        ${heroCard(cur, currency, currency)}
       </div>`;
+  }
+
+  function renderSecondaryCurrencies(d, forecast, currencies) {
+    const panels = currencies.map(currency => {
+      const cur = d.currencies[currency];
+      const forecastBlock = forecast && forecast.currencies[currency]
+        ? renderForecastCurrency(forecast, currency, currency) : "";
+      return `<details class="currency-panel">
+        <summary><span>${currency}</span><span>${fmtAmount(cur.base.total, currency)} · ${cur.base.count} gastos</span></summary>
+        <div class="currency-panel-body">
+          ${heroCard(cur, currency, currency)}
+          ${equivalenceLine(d.equivalence, currency)}
+          ${renderKinds(cur, currency, `Las tres clases de gasto — ${currency}`)}
+          ${forecastBlock}
+          ${renderCoverage(cur.registration_coverage, currency)}
+        </div>
+      </details>`;
+    }).join("");
+    return `<div class="mt-24"><div class="section-title" style="margin-bottom:12px">Otras monedas del mes</div><div class="secondary-currencies">${panels}</div></div>`;
   }
 
   function renderNarrative(out) {
@@ -549,9 +624,9 @@
     const total = fixed + recurring + exceptional || 1;
     const note = partition.available ? "" :
       `<div class="dossier-only-note">La clasificación recurrente / excepcional no está disponible para este resumen.</div>`;
-    const categoryRows = (currency === "USD" && cur.base.by_category && cur.base.by_category.length)
+    const categoryRows = (cur.base.by_category && cur.base.by_category.length)
       ? `<div style="margin-top:16px">${cur.base.by_category.map(r =>
-          `<div class="card-sub">${escapeHtml(r.category)}: <b>${fmtAmount(r.total, "USD")}</b></div>`
+          `<div class="card-sub">${escapeHtml(r.category)}: <b>${fmtAmount(r.total, currency)}</b></div>`
         ).join('')}</div>`
       : '';
     return `
@@ -609,7 +684,7 @@
     const fixedUnknownNote = cur.fixed.has_unknown_amounts
       ? `<div class="card-sub mt-8">Hay gastos fijos activos sin monto estimado; se muestran en la lista pero no se suman al rango.</div>` : "";
     let inflationNote = "Montos nominales: el ajuste por inflación no aplica a esta moneda.";
-    if (currency === "ARS") {
+    if (cur.inflation_status !== "real_not_applicable") {
       inflationNote = cur.inflation_status === "adjusted"
         ? "Los antecedentes se llevaron a precios comparables y el IPC se proyectó un mes usando sólo la serie disponible hasta el corte."
         : "Montos nominales: no había una serie IPC suficiente hasta el corte para ajustar sin inventar datos.";
@@ -627,19 +702,34 @@
     </div>`;
   }
 
-  function renderForecast(forecast) {
-    const usd = forecast.currencies.USD;
-    const showUsd = usd.history_months > 0 || (usd.fixed.items || []).length > 0;
+  function renderForecast(forecast, currency) {
     return `<div class="mt-24">
       <div class="section-title" style="margin-bottom:12px">Qué podría venir el mes siguiente</div>
-      <div class="${showUsd ? "grid-2" : ""}">
-        ${renderForecastCurrency(forecast, "ARS", "Pesos")}
-        ${showUsd ? renderForecastCurrency(forecast, "USD", "Dólares") : ""}
-      </div>
+      ${renderForecastCurrency(forecast, currency, currency)}
     </div>`;
   }
 
-  function renderDollars(dollars) {
+  function renderExchanges(exchanges, legacyDollars) {
+    if (!exchanges) return renderLegacyDollars(legacyDollars);
+    const cov = exchanges.coverage_ratio;
+    const covText = cov === null || cov === undefined
+      ? "Sin gastos este mes para calcular cobertura."
+      : `Cobertura: ${(cov * 100).toFixed(0)}% del gasto con equivalencia disponible (${exchanges.coverage_basis}) se financió convirtiendo otras monedas a ${exchanges.default_currency}.`;
+    const operations = (exchanges.operations || []).map(op => `
+      <div class="stat-cell">
+        <div class="stat-label">${op.currency_given} → ${op.currency_received} · ${op.cnt} operaciones</div>
+        <div class="stat-value">${fmtAmount(op.total_given, op.currency_given)} → ${fmtAmount(op.total_received, op.currency_received)}</div>
+        <div class="card-sub">Promedio: ${fmtAmount(op.average_rate, op.currency_received)} por ${op.currency_given}</div>
+      </div>`).join("");
+    return `<div class="card mt-24">
+      <div class="section-title" style="margin-bottom:16px">Cambios del mes</div>
+      ${operations ? `<div class="stat-strip" style="border:none">${operations}</div>` : `<div class="card-sub">Sin cambios registrados este mes.</div>`}
+      <div class="card-sub mt-8">${covText}</div>
+    </div>`;
+  }
+
+  function renderLegacyDollars(dollars) {
+    if (!dollars) return "";
     const cov = dollars.coverage_ratio;
     const covText = cov === null || cov === undefined
       ? "Sin gastos este mes para calcular cobertura."
@@ -666,19 +756,15 @@
       </div>`;
   }
 
-  function renderCoverage(arsCoverage, usdCoverage) {
-    function rows(coverage, currency) {
-      return coverage.map(c =>
-        `<div class="stat-cell"><div class="stat-label">${escapeHtml(c.user)}</div><div class="stat-value">${c.count}</div><div class="card-sub">${fmtAmount(c.total, currency)}</div></div>`
-      ).join("");
-    }
-    const usdRows = (usdCoverage && usdCoverage.length) ? rows(usdCoverage, "USD") : "";
+  function renderCoverage(coverage, currency) {
+    const rows = (coverage || []).map(c =>
+      `<div class="stat-cell"><div class="stat-label">${escapeHtml(c.user)}</div><div class="stat-value">${c.count}</div><div class="card-sub">${fmtAmount(c.total, currency)}</div></div>`
+    ).join("");
     return `
       <div class="card mt-24">
         <div class="section-title" style="margin-bottom:8px">Quién registró</div>
         <div class="card-sub" style="margin-bottom:16px">Cuenta quién cargó cada gasto en la app, no quién lo pagó — no es un reparto de gastos.</div>
-        <div class="stat-strip" style="border:none">${rows(arsCoverage, "ARS")}</div>
-        ${usdRows ? `<div class="stat-strip mt-8" style="border:none">${usdRows}</div>` : ""}
+        <div class="stat-strip" style="border:none">${rows}</div>
       </div>`;
   }
 

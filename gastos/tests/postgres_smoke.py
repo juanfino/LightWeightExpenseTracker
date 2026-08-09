@@ -33,10 +33,11 @@ def main():
                     "fk_families_default_currency",
                     "fk_cambios_currency_given",
                     "fk_cambios_currency_received",
+                    "fk_report_forecasts_currency",
                 ],),
             ).fetchall()
         }
-        assert len(fk_names) == 7, fk_names
+        assert len(fk_names) == 8, fk_names
         try:
             conn.execute("UPDATE families SET default_currency = 'ZZZ' WHERE id = 1")
             conn.commit()

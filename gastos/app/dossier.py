@@ -11,13 +11,10 @@ Cash basis: everything is grouped by the expense's own ART-adjusted date
 functions. That's what keeps fixed + variable summing to the same total the
 dashboard already shows for the period.
 
-ARS and USD are built as two parallel, same-shape blocks under ``currencies``
-(``base``, ``contrasts``, ``partition``, ``fixed_expenses``, etc.) — neither is a
-derivative of the other, and no aggregate anywhere sums amounts across currencies.
-The one exception is ``equivalence``: a single reference-only ARS-equivalent of the
-month's USD spending, at the family's own dollar rate, used solely to convey
-magnitude (in the hero and, once, in the narrative) — it never feeds a contrast,
-IPC, or a partition total.
+Currency blocks derive from currencies used in the period plus the family default.
+No aggregate sums amounts across currencies. ``equivalence`` contains isolated,
+reference-only valuations of each non-default currency in the default currency at
+the family's own rates; they never feed a contrast, IPC, or partition total.
 """
 
 import statistics
@@ -38,7 +35,6 @@ MONTHS_ES = [
 
 _MIN_HISTORY_FOR_OUTLIERS = 3
 _OUTLIER_STDEV_MULTIPLIER = 2
-_CURRENCIES = ("ARS", "USD")
 
 
 def _prev_period(year: int, month: int) -> tuple[int, int]:
@@ -60,21 +56,40 @@ def _month_label(year: int, month: int) -> str:
 
 
 def build_dossier(year: int, month: int) -> dict:
-    period_rows = {c: db.get_expenses_for_period_art(year, month, c) for c in _CURRENCIES}
-    history_rows = {c: db.get_expenses_excluding_period(year, month, c) for c in _CURRENCIES}
+    default_currency = db.get_family_default_currency()
+    all_period_rows = db.get_expenses_for_period_art(year, month)
+    used = {row["currency"] for row in all_period_rows}
+    currencies = [default_currency] + [
+        row["code"] for row in db.get_currencies()
+        if row["code"] in used and row["code"] != default_currency
+    ]
+    period_rows = {
+        currency: [row for row in all_period_rows if row["currency"] == currency]
+        for currency in currencies
+    }
+    history_rows = {
+        currency: db.get_expenses_excluding_period(year, month, currency)
+        for currency in currencies
+    }
     months_with_data = db.get_months_with_data()
 
     monthly_totals = {}
-    for currency in _CURRENCIES:
+    for currency in currencies:
         totals = _monthly_totals(history_rows[currency])
         totals[(year, month)] = sum((r["amount"] for r in period_rows[currency]), money.MONEY_ZERO)
         monthly_totals[currency] = totals
 
-    ars_total = monthly_totals["ARS"][(year, month)]
-    usd_total = monthly_totals["USD"][(year, month)]
-
     by_tipo = db.get_cambios_resumen_mes_by_tipo(year, month)
-    equivalence = _build_equivalence(year, month, ars_total, usd_total, by_tipo)
+    period_totals = {currency: monthly_totals[currency][(year, month)] for currency in currencies}
+    equivalence = _build_equivalence(year, month, default_currency, period_totals)
+    dollars = _build_dollars(year, month, by_tipo, equivalence)
+    exchanges = db.get_cambios_resumen_mes(year, month)
+    exchanges.update({
+        "coverage_ratio": dollars["coverage_ratio"],
+        "coverage_basis": dollars["coverage_basis"],
+        "converted_into_default": dollars["converted_into_default"],
+        "default_currency": default_currency,
+    })
 
     dossier = {
         "period": {"year": year, "month": month, "label": _month_label(year, month)},
@@ -82,21 +97,26 @@ def build_dossier(year: int, month: int) -> dict:
             "first_expense_date": db.get_first_expense_date(),
             "months_available": len(months_with_data),
         },
-        "dollars": _build_dollars(year, month, by_tipo, equivalence),
+        "default_currency": default_currency,
+        "currency_order": currencies,
+        "currency_metadata": {row["code"]: row for row in db.get_currencies()},
+        "dollars": dollars,  # 7.7–7.16 compatibility shape
+        "exchanges": exchanges,
         "equivalence": equivalence,
         "recurrence_evidence": _build_recurrence_evidence(period_rows, history_rows),
         "currencies": {
-            "ARS": _build_currency_block(
-                year, month, "ARS", period_rows["ARS"], history_rows["ARS"],
-                monthly_totals["ARS"], apply_ipc=True,
-            ),
-            "USD": _build_currency_block(
-                year, month, "USD", period_rows["USD"], history_rows["USD"],
-                monthly_totals["USD"], apply_ipc=False,
-            ),
+            currency: _build_currency_block(
+                year, month, currency, period_rows[currency], history_rows[currency],
+                monthly_totals[currency], apply_ipc=inflation.has_series(currency),
+            )
+            for currency in currencies
         },
     }
-    dossier["currencies"]["ARS"]["inflation_unavailable"] = db.get_ipc_value(year, month) is None
+    for currency in currencies:
+        if inflation.has_series(currency):
+            dossier["currencies"][currency]["inflation_unavailable"] = (
+                db.get_ipc_value(year, month) is None
+            )
     return dossier
 
 
@@ -367,58 +387,87 @@ def _build_fixed_expenses(year: int, month: int, currency: str) -> dict:
     }
 
 
-def _build_equivalence(year: int, month: int, ars_total: float, usd_total: float, by_tipo: dict) -> dict:
-    """Reference-only ARS equivalent of the month's USD spending, at the family's own
-    dollar rate — used to convey magnitude (hero card, and once in the narrative),
-    never to feed a contrast, IPC or a partition total.
+def _build_equivalence(year: int, month: int, default_currency: str,
+                       totals: dict) -> dict:
+    """Reference-only valuations in the family default, one per foreign currency."""
+    default_total = totals[default_currency]
+    items = {}
+    for foreign_currency, foreign_total in totals.items():
+        if foreign_currency == default_currency:
+            continue
+        quote = db.get_exchange_rate_for_pair(
+            year, month, foreign_currency, default_currency
+        )
+        valued = money.amount(foreign_total * quote["rate"]) if quote else None
+        items[foreign_currency] = {
+            "foreign_currency": foreign_currency,
+            "default_currency": default_currency,
+            "available": quote is not None,
+            "rate": quote["rate"] if quote else None,
+            "rate_source": quote["rate_source"] if quote else None,
+            "rate_period": quote["rate_period"] if quote else {"year": year, "month": month},
+            "foreign_total": foreign_total,
+            "total_in_default": valued,
+        }
 
-    Rate picked in order: this month's own sale rate (the rate the family actually
-    got pesos at) -> this month's own purchase rate -> the most recent recorded
-    operation within the last 12 months -> unavailable."""
-    rate = rate_source = None
-    rate_period = {"year": year, "month": month}
-
-    if by_tipo["venta"]["cnt"]:
-        rate, rate_source = by_tipo["venta"]["cotizacion_promedio"], "ventas_mes"
-    elif by_tipo["compra"]["cnt"]:
-        rate, rate_source = by_tipo["compra"]["cotizacion_promedio"], "compras_mes"
-    else:
-        latest = db.get_latest_cotizacion_upto(year, month)
-        if latest:
-            rate, rate_source = latest["cotizacion"], "mes_anterior"
-            fecha = str(latest["fecha"])
-            rate_period = {"year": int(fecha[:4]), "month": int(fecha[5:7])}
-
-    available = rate is not None
-    usd_total_in_ars = money.amount(usd_total * rate) if available else None
-    combined = money.amount(ars_total + (usd_total_in_ars or money.MONEY_ZERO))
-    usd_share_pct = money.statistic(
-        (usd_total_in_ars or money.MONEY_ZERO) / combined * 100, 1
-    ) if combined else 0.0
-
-    return {
-        "available": available,
-        "rate": rate,
-        "rate_source": rate_source,
-        "rate_period": rate_period,
-        "usd_total": usd_total,
-        "usd_total_in_ars": usd_total_in_ars,
-        "ars_total": ars_total,
-        "combined_ars_equivalent": combined,
-        "usd_share_pct": usd_share_pct,
+    combined = money.amount(
+        default_total + sum(
+            (item["total_in_default"] or money.MONEY_ZERO for item in items.values()),
+            money.MONEY_ZERO,
+        )
+    )
+    for item in items.values():
+        item["share_pct"] = (
+            money.statistic(item["total_in_default"] / combined * 100, 1)
+            if item["total_in_default"] is not None and combined else 0.0
+        )
+    result = {
+        "default_currency": default_currency,
+        "default_total": default_total,
+        "combined_default_equivalent": combined,
+        "items": items,
     }
+
+    # Keep the 7.7–7.16 ARS/USD numeric contract as aliases. Historical consumers
+    # and regression fixtures can compare this familiar shape unchanged.
+    if default_currency == "ARS" and "USD" in items:
+        usd = items["USD"]
+        legacy_sources = {
+            "sale_current_period": "ventas_mes",
+            "purchase_current_period": "compras_mes",
+            "recent_operation": "mes_anterior",
+        }
+        result.update({
+            "available": usd["available"],
+            "rate": usd["rate"],
+            "rate_source": legacy_sources.get(usd["rate_source"]),
+            "rate_period": usd["rate_period"],
+            "usd_total": usd["foreign_total"],
+            "usd_total_in_ars": usd["total_in_default"],
+            "ars_total": default_total,
+            "combined_ars_equivalent": combined,
+            "usd_share_pct": usd["share_pct"],
+        })
+    return result
 
 
 def _build_dollars(year: int, month: int, by_tipo: dict, equivalence: dict) -> dict:
-    if equivalence["available"] or not equivalence["usd_total"]:
-        basis_total = equivalence["combined_ars_equivalent"]
-        basis = "pesos + dólares equivalentes" if equivalence["usd_total"] else "sólo pesos"
+    default = equivalence["default_currency"]
+    items = equivalence["items"]
+    unavailable = [code for code, item in items.items() if item["foreign_total"] and not item["available"]]
+    if default == "ARS" and set(items) <= {"USD"}:
+        usd = items.get("USD", {"foreign_total": money.MONEY_ZERO, "available": False})
+        if usd["available"] or not usd["foreign_total"]:
+            basis_total = equivalence["combined_default_equivalent"]
+            basis = "pesos + dólares equivalentes" if usd["foreign_total"] else "sólo pesos"
+        else:
+            basis_total = equivalence["default_total"]
+            basis = "sólo pesos (sin cotización para convertir los dólares del mes)"
     else:
-        # USD spending exists but there's no rate this period (or ever) to convert it —
-        # fall back to an ARS-only basis rather than silently dropping USD spend from
-        # the denominator.
-        basis_total = equivalence["ars_total"]
-        basis = "sólo pesos (sin cotización para convertir los dólares del mes)"
+        basis_total = equivalence["combined_default_equivalent"]
+        basis = f"{default} + equivalencias disponibles"
+        if unavailable:
+            basis += f" (sin cotización para {', '.join(unavailable)})"
     converted_into_default = db.get_converted_into_default_total(year, month)
     coverage_ratio = money.statistic(converted_into_default / basis_total, 3) if basis_total else None
     return {
@@ -427,7 +476,7 @@ def _build_dollars(year: int, month: int, by_tipo: dict, equivalence: dict) -> d
         "coverage_ratio": coverage_ratio,
         "coverage_basis": basis,
         "converted_into_default": converted_into_default,
-        "default_currency": db.get_family_default_currency(),
+        "default_currency": default,
     }
 
 
@@ -462,7 +511,7 @@ def _build_taxonomy(year: int, month: int, period_rows: list[dict], history_rows
 def _build_recurrence_evidence(period_rows_by_currency: dict, history_rows_by_currency: dict) -> dict:
     by_concept: dict[str, list[dict]] = {}
     concept_currency: dict[str, str] = {}
-    for currency in _CURRENCIES:
+    for currency in period_rows_by_currency:
         all_variable = [r for r in period_rows_by_currency[currency] if r["fixed_expense_id"] is None] + \
             [r for r in history_rows_by_currency[currency] if r["fixed_expense_id"] is None]
         for r in all_variable:

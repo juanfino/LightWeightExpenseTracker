@@ -242,6 +242,18 @@ def get_family_default_currency() -> str:
     return normalize_currency(row["default_currency"] if row else DEFAULT_CURRENCY)
 
 
+def set_family_default_currency(currency: str) -> str:
+    """Set the tenant family's input/report default; existing rows are untouched."""
+    selected = normalize_currency(currency)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE families SET default_currency = ?"
+            " WHERE id = NULLIF(current_setting('app.family_id', true), '')::integer",
+            (selected,),
+        )
+    return selected
+
+
 def get_daily_quote(family_id: int, local_date, language: str = "es-AR"):
     """Return a stable active quote for a family-local day.
 
@@ -2004,6 +2016,68 @@ def get_latest_cotizacion_upto(year: int, month: int, lookback_months: int = 12)
     )
     result["tipo"] = "venta" if result["currency_given"] == "USD" else "compra"
     return result
+
+
+def get_exchange_rate_for_pair(year: int, month: int, foreign_currency: str,
+                               default_currency: str, lookback_months: int = 12) -> dict | None:
+    """Default-currency units per foreign unit from the family's own operations.
+
+    Preference is current-period foreign->default, then current-period
+    default->foreign, then the most recent operation in either direction within
+    the preceding ``lookback_months``. No indirect path or external quote is used.
+    """
+    foreign = normalize_currency(foreign_currency)
+    default = normalize_currency(default_currency)
+    if foreign == default:
+        raise ValueError("La equivalencia requiere dos monedas distintas")
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT amount_given, currency_given, amount_received, currency_received,"
+            " rate_received_per_given FROM cambios_dolar"
+            " WHERE strftime('%Y', fecha)=? AND strftime('%m', fecha)=?"
+            " AND ((currency_given=? AND currency_received=?)"
+            " OR (currency_given=? AND currency_received=?))",
+            (str(year), f"{month:02d}", foreign, default, default, foreign),
+        ).fetchall()
+    direct = [row["rate_received_per_given"] for row in rows if row["currency_given"] == foreign]
+    if direct:
+        return {
+            "rate": sum(direct, money.MONEY_ZERO) / len(direct),
+            "rate_source": "sale_current_period",
+            "rate_period": {"year": year, "month": month},
+        }
+    reverse = [money.amount(row["amount_given"] / row["amount_received"])
+               for row in rows if row["currency_given"] == default]
+    if reverse:
+        return {
+            "rate": sum(reverse, money.MONEY_ZERO) / len(reverse),
+            "rate_source": "purchase_current_period",
+            "rate_period": {"year": year, "month": month},
+        }
+
+    period_start = f"{year:04d}-{month:02d}-01"
+    lookback_total = year * 12 + month - 1 - lookback_months
+    lookback_start = f"{lookback_total // 12:04d}-{lookback_total % 12 + 1:02d}-01"
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT fecha, amount_given, currency_given, amount_received,"
+            " currency_received, rate_received_per_given FROM cambios_dolar"
+            " WHERE fecha < ? AND fecha >= ?"
+            " AND ((currency_given=? AND currency_received=?)"
+            " OR (currency_given=? AND currency_received=?))"
+            " ORDER BY fecha DESC, id DESC LIMIT 1",
+            (period_start, lookback_start, foreign, default, default, foreign),
+        ).fetchone()
+    if not row:
+        return None
+    rate = (row["rate_received_per_given"] if row["currency_given"] == foreign
+            else money.amount(row["amount_given"] / row["amount_received"]))
+    fecha = str(row["fecha"])
+    return {
+        "rate": rate,
+        "rate_source": "recent_operation",
+        "rate_period": {"year": int(fecha[:4]), "month": int(fecha[5:7])},
+    }
 
 
 # ── Resúmenes mensuales (IA) ────────────────────────────────────────────────

@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import db
 import fixed_matcher
+import inflation
 import money
 
 
@@ -19,7 +20,6 @@ METHOD_ID = "category_median_iqr_tail_v1"
 HISTORY_WINDOW_MONTHS = 6
 MIN_HISTORY_MONTHS = 3
 MATERIALITY_RATIO = Decimal("0.02")
-_CURRENCIES = ("ARS", "USD")
 _BAIRES = timezone(timedelta(hours=-3))
 
 
@@ -139,7 +139,7 @@ def _currency_forecast(
         "data_floor_months": MIN_HISTORY_MONTHS,
         "variable_available": variable_available,
         "fixed": fixed_bucket,
-        "inflation_status": "real_not_applicable" if currency != "ARS" else "real_unavailable",
+        "inflation_status": "real_unavailable" if inflation.has_series(currency) else "real_not_applicable",
         "habitual": {"confidence": "medium", "categories": []},
         "tail": {"confidence": "low"},
     }
@@ -154,7 +154,7 @@ def _currency_forecast(
         and fixed_matcher.expense_period(row["created_at"], _BAIRES) in period_set
     ]
     factors = None
-    if currency == "ARS":
+    if inflation.has_series(currency):
         factors, result["inflation_status"] = _projected_inflation_factors(
             observed_periods, (year, month), ipc_series
         )
@@ -230,23 +230,33 @@ def _currency_forecast(
     return result
 
 
-def build_forecast(year: int, month: int) -> dict:
+def build_forecast(year: int, month: int, currencies: list[str] | None = None) -> dict:
     """Forecast the month after ``year``/``month`` using no later facts."""
     target_year, target_month = next_period(year, month)
     all_rows = db.get_expenses_through_period_art(year, month)
     ipc_series = db.get_ipc_series()
-    currencies = {}
-    for currency in _CURRENCIES:
+    if currencies is None:
+        period_rows = db.get_expenses_for_period_art(year, month)
+        used = {row["currency"] for row in period_rows}
+        default = db.get_family_default_currency()
+        currency_codes = [default] + [
+            row["code"] for row in db.get_currencies()
+            if row["code"] in used and row["code"] != default
+        ]
+    else:
+        currency_codes = list(currencies)
+    forecast_currencies = {}
+    for currency in currency_codes:
         rows = [row for row in all_rows if row["currency"] == currency]
         fixed_rows = db.get_active_fixed_expenses_at_cutoff(year, month, currency)
-        currencies[currency] = _currency_forecast(
+        forecast_currencies[currency] = _currency_forecast(
             year, month, currency, rows, fixed_rows, ipc_series
         )
     return {
         "method_id": METHOD_ID,
         "source_period": {"year": year, "month": month},
         "target_period": {"year": target_year, "month": target_month},
-        "currencies": currencies,
+        "currencies": forecast_currencies,
     }
 
 
@@ -257,10 +267,10 @@ def actuals(forecast: dict) -> dict | None:
     if not rows:
         return None
     result = {}
-    for currency in _CURRENCIES:
+    for currency, currency_forecast in forecast["currencies"].items():
         currency_rows = [row for row in rows if row["currency"] == currency]
         habitual_categories = {
-            item["category_key"] for item in forecast["currencies"][currency]["habitual"].get("categories", [])
+            item["category_key"] for item in currency_forecast["habitual"].get("categories", [])
         }
         fixed_total = sum(
             (row["amount"] for row in currency_rows if row["fixed_expense_id"] is not None),
