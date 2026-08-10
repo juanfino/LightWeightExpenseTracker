@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.17.6
+- Nueva auditoría de primer contacto del bot de Telegram: reconstruye el recorrido desde la vinculación, contrasta `/ayuda` con todas las capacidades reales y evalúa rechazos, fallos de IA y límites para miembros no owner.
+- Los cambios propuestos quedan agrupados en lotes independientes, con copy final en español rioplatense y sin modificar handlers ni mensajes en esta versión.
+
 ## 7.17.5
 - La creación de una familia ahora aclara que gastos, ingresos y lista de compras son compartidos y que no hay una vista privada dentro de ella.
 - Movimientos y Fijos explican el efecto de vincular o registrar el pago de un gasto fijo, incluida la copia de su categoría.
