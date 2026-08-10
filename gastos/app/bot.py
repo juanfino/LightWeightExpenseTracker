@@ -1670,6 +1670,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ <b>{cat_icon} {cat_name}</b> asignada\n"
                 f"📋 {expense['concept']}\n"
                 f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n\n"
+                f"🧠 Los gastos parecidos a \"{expense['concept']}\" ya van a ir solos a esta categoría.\n\n"
                 f"¿Querés agregar una subcategoría?",
                 parse_mode="HTML",
                 reply_markup=_build_subcategory_keyboard(expense_id, subcats),
@@ -1681,7 +1682,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n"
                 f"{cat_icon} {cat_name}\n"
                 f"👤 {user['name']}\n"
-                f"<code>#ID{expense_id}</code>",
+                f"<code>#ID{expense_id}</code>\n\n"
+                f"🧠 Los gastos parecidos a \"{expense['concept']}\" ya van a ir solos a esta categoría.",
                 parse_mode="HTML",
                 reply_markup=_build_edit_only_keyboard(expense_id),
             )
@@ -1713,7 +1715,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 {fmt_amount(expense['amount'], expense['currency'])}\n"
             f"{_cat_line(cat_icon, cat_name, subcat_id)}\n"
             f"👤 {user['name']}\n"
-            f"<code>#ID{expense_id}</code>",
+            f"<code>#ID{expense_id}</code>\n\n"
+            f"🧠 Los gastos parecidos a \"{expense['concept']}\" ya van a ir solos a esta categoría.",
             parse_mode="HTML",
             reply_markup=_build_edit_only_keyboard(expense_id),
         )

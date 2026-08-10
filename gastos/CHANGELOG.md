@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.17.5
+- La creación de una familia ahora aclara que gastos, ingresos y lista de compras son compartidos y que no hay una vista privada dentro de ella.
+- Movimientos y Fijos explican el efecto de vincular o registrar el pago de un gasto fijo, incluida la copia de su categoría.
+- Los filtros por persona de Movimientos y Dashboard aclaran que identifican quién cargó el gasto, no necesariamente quién lo pagó.
+- La confirmación del teclado de categorías de Telegram avisa que la selección aprende el concepto para categorizar automáticamente gastos parecidos.
+
 ## 7.17.4
 - Los formularios web de alta con selector de persona — gasto manual y pago de gasto fijo desde Fijos o Dashboard — ahora preseleccionan al miembro autenticado aunque no sea el primero alfabéticamente; la atribución sigue siendo editable.
 
