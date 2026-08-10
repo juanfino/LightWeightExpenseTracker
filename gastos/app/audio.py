@@ -53,7 +53,7 @@ def _parse_confidence(raw) -> float:
 
 
 def transcribe(audio_bytes: bytes, openai_api_key: str, currencies: list[dict] | None = None,
-               default_currency: str = "ARS") -> str:
+               default_currency: str | None = None) -> str:
     """Transcribe voice audio to text using Whisper. Raises RuntimeError on failure."""
     oa_client = openai.OpenAI(api_key=openai_api_key, timeout=15.0, max_retries=0)
     audio_file = io.BytesIO(audio_bytes)
@@ -63,9 +63,11 @@ def transcribe(audio_bytes: bytes, openai_api_key: str, currencies: list[dict] |
         call_started = llm_usage.started()
         with llm_limits.routine_call():
             catalogue = currencies or db.get_currencies()
+            default_currency = default_currency or db.get_family_default_currency()
             whisper_prompt = (
                 f"Gastos en {', '.join(row['code'] for row in catalogue)}. "
-                f"Moneda usual {default_currency}: 10000, 148900, 5000, 15 USD, 200 EUR."
+                f"Moneda usual {default_currency}: 10000, 148900, 5000. "
+                "También pueden aparecer montos con cualquier código del catálogo."
             )
             transcript = oa_client.audio.transcriptions.create(
                 model="whisper-1", file=audio_file, language="es",
@@ -87,7 +89,7 @@ def transcribe(audio_bytes: bytes, openai_api_key: str, currencies: list[dict] |
 
 def extract_expenses(transcription: str, anthropic_api_key: str,
                      currencies: list[dict] | None = None,
-                     default_currency: str = "ARS") -> list[dict]:
+                     default_currency: str | None = None) -> list[dict]:
     """Extract one or more expenses from a transcription.
 
     Returns [{"concept": str, "amount": Decimal | None, "confidence": float}, ...].
@@ -95,6 +97,7 @@ def extract_expenses(transcription: str, anthropic_api_key: str,
     """
     try:
         catalogue = currencies or db.get_currencies()
+        default_currency = default_currency or db.get_family_default_currency()
         currency_rule = currency_detection.catalogue_prompt(catalogue, default_currency)
         an_client = anthropic.Anthropic(api_key=anthropic_api_key, timeout=15.0, max_retries=0)
         call_started = llm_usage.started()
@@ -143,7 +146,7 @@ def extract_expenses(transcription: str, anthropic_api_key: str,
 
 def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_api_key: str,
                            currencies: list[dict] | None = None,
-                           default_currency: str = "ARS") -> dict:
+                           default_currency: str | None = None) -> dict:
     """Transcribe voice audio and extract one or more expenses.
 
     Returns:
@@ -153,6 +156,7 @@ def transcribe_and_extract(audio_bytes: bytes, openai_api_key: str, anthropic_ap
         }
     Raises RuntimeError on transcription or extraction failure.
     """
+    default_currency = default_currency or db.get_family_default_currency()
     transcription = transcribe(audio_bytes, openai_api_key, currencies, default_currency)
     return {
         "transcription": transcription,

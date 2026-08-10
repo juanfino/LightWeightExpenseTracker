@@ -13,10 +13,12 @@ class ClientMoneyFormattingTests(unittest.TestCase):
     def test_client_formatter_uses_metadata_locale_and_zero_decimals(self):
         config = {
             "locale": "es-AR",
-            "defaultCurrency": "ARS",
+            "defaultCurrency": "BRL",
             "currencies": [
                 {"code": "ARS", "symbol": "$", "decimal_places": 2},
                 {"code": "USD", "symbol": "US$", "decimal_places": 2},
+                {"code": "BRL", "symbol": "R$", "decimal_places": 2},
+                {"code": "EUR", "symbol": "€", "decimal_places": 2},
                 {"code": "CLP", "symbol": "CLP$", "decimal_places": 0},
             ],
         }
@@ -26,7 +28,9 @@ require({json.dumps(str(MONEY_JS))});
 console.log(JSON.stringify([
   window.MoneyFormat.formatAmount(5580.5, 'USD'),
   window.MoneyFormat.formatAmount(5580, 'USD'),
-  window.MoneyFormat.formatAmount(1234.5, 'CLP')
+  window.MoneyFormat.formatAmount(1234.5, 'CLP'),
+  window.MoneyFormat.formatCompactAmount(1200000, 'EUR'),
+  window.MoneyFormat.periodCurrencyOrder(['EUR', 'ARS'])
 ]));
 """
 
@@ -36,7 +40,7 @@ console.log(JSON.stringify([
 
         self.assertEqual(
             json.loads(result.stdout),
-            ["US$ 5.580,50", "US$ 5.580", "CLP$ 1.235"],
+            ["US$ 5.580,50", "US$ 5.580", "CLP$ 1.235", "€ 1.2M", ["BRL", "ARS", "EUR"]],
         )
 
 

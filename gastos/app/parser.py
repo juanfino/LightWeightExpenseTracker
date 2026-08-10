@@ -78,8 +78,8 @@ def _normalize_amount(raw: str) -> Decimal | None:
         return None
 
 
-def parse_message(text: str, currencies: list[dict] | None = None,
-                  default_currency: str = "ARS") -> dict | None:
+def parse_message(text: str, currencies: list[dict],
+                  default_currency: str | None = None) -> dict | None:
     """
     Parsea un mensaje de texto en {concept, amount}.
 
@@ -93,10 +93,8 @@ def parse_message(text: str, currencies: list[dict] | None = None,
     Retorna None si no se puede extraer un monto válido.
     """
     text = text.strip()
-    catalogue = currencies or [
-        {"code": "ARS", "symbol": "$"}, {"code": "USD", "symbol": "US$"},
-        {"code": "BRL", "symbol": "R$"}, {"code": "EUR", "symbol": "€"},
-    ]
+    catalogue = currencies
+    default_currency = default_currency or catalogue[0]["code"]
     currency, text, _ = currency_detection.detect_and_strip(text, catalogue, default_currency)
     matches = list(_NUMBER_RE.finditer(text))
     if not matches:
@@ -148,9 +146,13 @@ if __name__ == "__main__":
         ("123456",                None),
     ]
 
+    catalogue = [
+        {"code": "ARS", "symbol": "$"}, {"code": "USD", "symbol": "US$"},
+        {"code": "BRL", "symbol": "R$"}, {"code": "EUR", "symbol": "€"},
+    ]
     passed = 0
     for msg, expected in cases:
-        result = parse_message(msg)
+        result = parse_message(msg, catalogue, "ARS")
         ok = result == expected
         status = "✅" if ok else "❌"
         print(f"{status} '{msg}'")

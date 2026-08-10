@@ -242,6 +242,29 @@ def get_family_default_currency() -> str:
     return normalize_currency(row["default_currency"] if row else DEFAULT_CURRENCY)
 
 
+def resolve_family_currency(currency: str | None = None) -> str:
+    """Resolve an optional business-data currency through the current family default."""
+    return normalize_currency(currency or get_family_default_currency())
+
+
+def period_currency_order(used_currencies) -> list[str]:
+    """Catalogue-backed period currencies, always including and leading with the family default."""
+    default = get_family_default_currency()
+    used = {normalize_currency(currency) for currency in used_currencies}
+    return [default] + [
+        row["code"] for row in get_currencies()
+        if row["code"] in used and row["code"] != default
+    ]
+
+
+def default_exchange_pair() -> tuple[str, str]:
+    """Return a valid initial pair: preferred USD when possible, into the family default."""
+    received = get_family_default_currency()
+    available = [row["code"] for row in get_currencies() if row["code"] != received]
+    given = "USD" if "USD" in available else available[0]
+    return given, received
+
+
 def set_family_default_currency(currency: str) -> str:
     """Set the tenant family's input/report default; existing rows are untouched."""
     selected = normalize_currency(currency)
@@ -779,19 +802,19 @@ def _normalize_concept(concept: str) -> str:
 
 
 def create_expense(user_id: int, category_id: int | None, concept: str, amount: float, raw_text: str,
-                   subcategory_id: int | None = None, currency: str = DEFAULT_CURRENCY) -> int:
+                   subcategory_id: int | None = None, currency: str | None = None) -> int:
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, currency, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, _normalize_concept(concept), money.amount(amount), normalize_currency(currency), raw_text, now_utc),
+            (user_id, category_id, subcategory_id, _normalize_concept(concept), money.amount(amount), resolve_family_currency(currency), raw_text, now_utc),
         )
         return cur.lastrowid
 
 
 def create_expense_full(user_id: int, category_id: int | None, concept: str, amount: float, date_str: str,
-                        subcategory_id: int | None = None, currency: str = DEFAULT_CURRENCY) -> int:
+                        subcategory_id: int | None = None, currency: str | None = None) -> int:
     """Like create_expense but accepts an explicit date (YYYY-MM-DD in ART/UTC-3).
     Stores as 03:00 UTC (= midnight ART) so date queries using '-3 hours' return the correct day."""
     created_at = f"{date_str} 03:00:00"
@@ -800,7 +823,7 @@ def create_expense_full(user_id: int, category_id: int | None, concept: str, amo
         cur = conn.execute(
             "INSERT INTO expenses (user_id, category_id, subcategory_id, concept, amount, currency, raw_text, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, category_id, subcategory_id, concept, money.amount(amount), normalize_currency(currency), concept, created_at),
+            (user_id, category_id, subcategory_id, concept, money.amount(amount), resolve_family_currency(currency), concept, created_at),
         )
         return cur.lastrowid
 
@@ -940,9 +963,9 @@ def get_expenses_today():
 
 
 def get_expenses_summary_by_category(year: int, month: int, user_name: str | None = None,
-                                     currency: str = DEFAULT_CURRENCY):
+                                     currency: str | None = None):
     """Retorna [{category, total, color, icon, pct}] para el mes dado, opcionalmente filtrado por usuario."""
-    params = [str(year), f"{month:02d}", normalize_currency(currency)]
+    params = [str(year), f"{month:02d}", resolve_family_currency(currency)]
     user_join   = "JOIN users u ON u.id = e.user_id" if user_name else ""
     user_filter = "AND u.name = ?"                   if user_name else ""
     if user_name:
@@ -981,15 +1004,39 @@ def get_expenses_summary_by_category(year: int, month: int, user_name: str | Non
     return result
 
 
+def get_expense_month_totals(year: int, month: int,
+                             user_name: str | None = None) -> dict[str, Decimal]:
+    """Return one disjoint total per currency actually used in the requested month."""
+    params = [str(year), f"{month:02d}"]
+    user_join = "JOIN users u ON u.id = e.user_id" if user_name else ""
+    user_filter = "AND u.name = ?" if user_name else ""
+    if user_name:
+        params.append(user_name)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT e.currency, SUM(e.amount) AS total
+            FROM expenses e
+            {user_join}
+            WHERE strftime('%Y', e.created_at) = ?
+              AND strftime('%m', e.created_at) = ?
+              {user_filter}
+            GROUP BY e.currency
+            """,
+            params,
+        ).fetchall()
+    return {row["currency"]: row["total"] for row in rows}
+
+
 def get_expenses_by_week_of_month(year: int, month: int, user_name: str | None = None,
-                                  currency: str = DEFAULT_CURRENCY):
+                                  currency: str | None = None):
     """Agrupa los gastos del mes por semana del mes (1–5) para el gráfico de barras.
 
     Con `user_name` filtra al usuario indicado (mismo filtro que la variante
     por-usuario), para que la línea comparativa del mes anterior respete el
     filtro "Ver gastos de" del dashboard.
     """
-    params: list = [str(year), f"{month:02d}", normalize_currency(currency)]
+    params: list = [str(year), f"{month:02d}", resolve_family_currency(currency)]
     user_filter = ""
     if user_name:
         user_filter = "AND u.name = ?"
@@ -1022,7 +1069,7 @@ def get_expenses_by_week_of_month(year: int, month: int, user_name: str | None =
     ]
 
 
-def get_expenses_by_user(year: int, month: int, currency: str = DEFAULT_CURRENCY):
+def get_expenses_by_user(year: int, month: int, currency: str | None = None):
     with get_conn() as conn:
         return conn.execute(
             """
@@ -1035,7 +1082,7 @@ def get_expenses_by_user(year: int, month: int, currency: str = DEFAULT_CURRENCY
             GROUP BY e.user_id, u.name
             ORDER BY total DESC
             """,
-            (str(year), f"{month:02d}", normalize_currency(currency)),
+            (str(year), f"{month:02d}", resolve_family_currency(currency)),
         ).fetchall()
 
 
@@ -1301,9 +1348,9 @@ def get_all_users():
 
 
 def get_expenses_by_week_of_month_by_user(year: int, month: int, user_name: str | None = None,
-                                          currency: str = DEFAULT_CURRENCY):
+                                          currency: str | None = None):
     """Groups expenses by week-of-month and user for the stacked weekly bar chart."""
-    params = [str(year), f"{month:02d}", normalize_currency(currency)]
+    params = [str(year), f"{month:02d}", resolve_family_currency(currency)]
     user_filter = ""
     if user_name:
         user_filter = "AND u.name = ?"
@@ -1351,9 +1398,9 @@ def get_expenses_by_week_of_month_by_user(year: int, month: int, user_name: str 
 
 
 def get_gastos_por_categoria(year: int, month: int, user_name: str | None = None,
-                             currency: str = DEFAULT_CURRENCY) -> list[dict]:
+                             currency: str | None = None) -> list[dict]:
     """Retorna gastos del mes agrupados por categoría y subcategoría, ordenados por total DESC."""
-    params = [str(year), f"{month:02d}", normalize_currency(currency)]
+    params = [str(year), f"{month:02d}", resolve_family_currency(currency)]
     user_filter = ""
     if user_name:
         user_filter = "AND u.name = ?"
@@ -1404,7 +1451,7 @@ def get_gastos_por_categoria(year: int, month: int, user_name: str | None = None
     return result
 
 
-def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
+def get_annual_data(year: int, currency: str | None = None) -> dict:
     """Returns full-year expense data broken down by month and category."""
     import calendar
     from datetime import date
@@ -1427,7 +1474,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
             GROUP BY month_num, e.category_id, c.name, c.color
             ORDER BY cat_name, month_num
             """,
-            (str(year), normalize_currency(currency)),
+            (str(year), resolve_family_currency(currency)),
         ).fetchall()
 
     cats: dict[str, list] = {}
@@ -1468,7 +1515,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
             GROUP BY month_num, e.user_id, u.name
             ORDER BY month_num
             """,
-            (str(year), normalize_currency(currency)),
+            (str(year), resolve_family_currency(currency)),
         ).fetchall()
 
     by_user: dict[str, list] = {}
@@ -1496,7 +1543,7 @@ def get_annual_data(year: int, currency: str = DEFAULT_CURRENCY) -> dict:
     }
 
 
-def get_monthly_totals(months: int = 6, currency: str = DEFAULT_CURRENCY) -> list[dict]:
+def get_monthly_totals(months: int = 6, currency: str | None = None) -> list[dict]:
     """Returns aggregated totals for the last N months, used for sparklines."""
     import calendar
     from datetime import date
@@ -1521,7 +1568,7 @@ def get_monthly_totals(months: int = 6, currency: str = DEFAULT_CURRENCY) -> lis
             GROUP BY ym
             ORDER BY ym
             """,
-            (start_date, normalize_currency(currency)),
+            (start_date, resolve_family_currency(currency)),
         ).fetchall()
 
     row_map = {r["ym"]: r for r in rows}
@@ -1725,11 +1772,11 @@ def get_fixed_expense_by_id(fe_id: int):
 
 
 def create_fixed_expense(concept: str, estimated_amount: float | None, category_id: int | None,
-                         subcategory_id: int | None = None, currency: str = DEFAULT_CURRENCY) -> int:
+                         subcategory_id: int | None = None, currency: str | None = None) -> int:
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO fixed_expenses (concept, estimated_amount, currency, category_id, subcategory_id) VALUES (?, ?, ?, ?, ?)",
-            (concept.strip(), money.amount(estimated_amount) if estimated_amount is not None else None, normalize_currency(currency), category_id, subcategory_id),
+            (concept.strip(), money.amount(estimated_amount) if estimated_amount is not None else None, resolve_family_currency(currency), category_id, subcategory_id),
         )
         return cur.lastrowid
 
@@ -1857,8 +1904,8 @@ def unlink_expense_from_fixed(expense_id: int) -> bool:
 
 
 def get_fixed_expense_monthly_summary(year: int, month: int,
-                                      currency: str = DEFAULT_CURRENCY) -> dict:
-    selected_currency = normalize_currency(currency)
+                                      currency: str | None = None) -> dict:
+    selected_currency = resolve_family_currency(currency)
     rows = [
         r for r in get_fixed_payments_for_period(year, month)
         if r["currency"] == selected_currency
@@ -1943,8 +1990,8 @@ def get_cambios_historial(limit: int = 50) -> list:
         ).fetchall()
 
 
-def get_cambios_por_mes(months: int = 12, currency_given: str = "USD",
-                        currency_received: str = "ARS") -> list:
+def get_cambios_por_mes(months: int = 12, currency_given: str | None = None,
+                        currency_received: str | None = None) -> list:
     from datetime import date
     today = date.today()
     start_m = today.month - months + 1
@@ -1953,6 +2000,7 @@ def get_cambios_por_mes(months: int = 12, currency_given: str = "USD",
         start_m += 12
         start_y -= 1
     start_date = f"{start_y}-{start_m:02d}-01"
+    default_given, default_received = default_exchange_pair()
     with get_conn() as conn:
         return conn.execute(
             """
@@ -1965,17 +2013,20 @@ def get_cambios_por_mes(months: int = 12, currency_given: str = "USD",
             GROUP BY mes
             ORDER BY mes ASC
             """,
-            (start_date, normalize_currency(currency_given), normalize_currency(currency_received)),
+            (start_date, normalize_currency(currency_given or default_given),
+             normalize_currency(currency_received or default_received)),
         ).fetchall()
 
 
-def get_cambios_cotizacion_historica(currency_given: str = "USD",
-                                     currency_received: str = "ARS") -> list:
+def get_cambios_cotizacion_historica(currency_given: str | None = None,
+                                     currency_received: str | None = None) -> list:
+    default_given, default_received = default_exchange_pair()
     with get_conn() as conn:
         return conn.execute(
             "SELECT fecha, rate_received_per_given FROM cambios_dolar"
             " WHERE currency_given = ? AND currency_received = ? ORDER BY fecha ASC",
-            (normalize_currency(currency_given), normalize_currency(currency_received)),
+            (normalize_currency(currency_given or default_given),
+             normalize_currency(currency_received or default_received)),
         ).fetchall()
 
 

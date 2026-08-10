@@ -325,11 +325,15 @@ def classify_expenses(dossier: dict, variable: list[dict], prior_classifications
     if client is None:
         return None
 
-    prior_lines = [
-        f"- {c['year']:04d}-{c['month']:02d}: \"{c['concept']}\" "
-        f"({'U$S' if c.get('currency') == 'USD' else '$'}{c['amount']:.0f}) -> {c['label']}"
-        for c in prior_classifications
-    ]
+    prior_lines = []
+    for classification in prior_classifications:
+        currency = classification.get("currency") or dossier["default_currency"]
+        prior_lines.append(
+            f"- {classification['year']:04d}-{classification['month']:02d}: "
+            f"\"{classification['concept']}\" "
+            f"({money.format_amount(classification['amount'], dossier['currency_metadata'][currency])}) "
+            f"-> {classification['label']}"
+        )
     payload = {
         "expenses": variable,
         "recurrence_evidence": dossier["recurrence_evidence"],

@@ -97,6 +97,27 @@ class ReportPayloadTests(unittest.TestCase):
         self.assertIsInstance(payload["expenses"][0]["amount"], float)
         self.assertIsInstance(payload["recurrence_evidence"]["ARS:super"]["occurrences"][0]["amount"], float)
 
+    def test_prior_classification_uses_its_catalogue_currency_symbol(self):
+        dossier = {
+            "default_currency": "BRL",
+            "currency_metadata": {
+                "BRL": {"code": "BRL", "symbol": "R$", "decimal_places": 2},
+                "EUR": {"code": "EUR", "symbol": "€", "decimal_places": 2},
+            },
+            "recurrence_evidence": {},
+            "hard_facts": {"months_available": 3},
+        }
+        variable = [{"expense_id": 1, "concept": "Super", "amount": Decimal("10"), "currency": "BRL"}]
+        prior = [{
+            "year": 2026, "month": 7, "concept": "Hotel", "amount": Decimal("42"),
+            "currency": "EUR", "label": "exceptional",
+        }]
+
+        report_ai.classify_expenses(dossier, variable, prior)
+
+        payload = json.loads(self.messages.calls[0]["messages"][0]["content"])
+        self.assertIn("€ 42", payload["prior_months_classifications"][0])
+
     def test_narration_payload_amounts_are_json_numbers(self):
         dossier = {"currencies": {"ARS": {"base": {"total": Decimal("8500.00")}}}}
 

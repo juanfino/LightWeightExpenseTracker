@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db  # noqa: E402
 import dossier  # noqa: E402
 import report  # noqa: E402
-from support import reset_database  # noqa: E402
+from support import authenticated_client, reset_database  # noqa: E402
 
 
 class MultiCurrencyDBTests(unittest.TestCase):
@@ -45,6 +46,38 @@ class MultiCurrencyDBTests(unittest.TestCase):
         stored = db.get_expense_by_id(expense_id)
         self.assertEqual(stored["currency"], "BRL")
         self.assertEqual(str(stored["amount"]), "1234.56")
+
+    def test_implicit_business_currency_uses_family_default(self):
+        db.set_family_default_currency("BRL")
+
+        expense_id = db.create_expense_full(
+            self.user["id"], None, "Brasil", 10, "2026-07-03"
+        )
+        fixed_id = db.create_fixed_expense("Internet", 20, None)
+
+        self.assertEqual(db.get_expense_by_id(expense_id)["currency"], "BRL")
+        self.assertEqual(db.get_fixed_expense_by_id(fixed_id)["currency"], "BRL")
+
+    def test_dashboard_secondary_totals_include_every_period_currency(self):
+        import dashboard
+
+        db.set_family_default_currency("BRL")
+        now = datetime.now()
+        db.create_expense_full(
+            self.user["id"], None, "Europa", 42,
+            f"{now.year:04d}-{now.month:02d}-01", currency="EUR",
+        )
+        client, _headers = authenticated_client(dashboard, "123")
+
+        response = client.get(
+            f"/api/monthly?year={now.year}&month={now.month}&currency=EUR"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json()["currency_totals"],
+            [{"currency": "BRL", "total": 0.0}, {"currency": "EUR", "total": 42.0}],
+        )
 
     def test_fixed_expense_requires_matching_currency_and_locks_changes(self):
         usd_fixed = db.create_fixed_expense("Hosting", 20, None, currency="USD")

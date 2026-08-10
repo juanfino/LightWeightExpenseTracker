@@ -319,6 +319,13 @@ def _currency_arg() -> str:
     )
 
 
+def _expense_currency_totals(year: int, month: int, user_name: str | None = None) -> list[dict]:
+    totals = db.get_expense_month_totals(year, month, user_name)
+    order = db.period_currency_order(totals)
+    return [{"currency": currency, "total": totals.get(currency, money.MONEY_ZERO)}
+            for currency in order]
+
+
 def _require_superadmin():
     if not g.current_user.get("is_superadmin"):
         abort(403)
@@ -866,14 +873,17 @@ def api_summary():
     by_user_rows = db.get_expenses_by_user(year, month, currency=currency)
 
     total = sum(r["total"] for r in by_category)
-    other_currency = "USD" if currency == "ARS" else "ARS"
-    other_total = sum(r["total"] for r in db.get_expenses_summary_by_category(year, month, currency=other_currency))
+    currency_totals = _expense_currency_totals(year, month)
+    other_totals = [item for item in currency_totals if item["currency"] != currency]
+    first_other = other_totals[0] if other_totals else {"currency": None, "total": 0}
 
     return jsonify({
         "month":       _month_label(year, month),
         "currency":    currency,
-        "other_currency": other_currency,
-        "other_total": other_total,
+        "currency_totals": currency_totals,
+        "other_totals": other_totals,
+        "other_currency": first_other["currency"],
+        "other_total": first_other["total"],
         "total":       total,
         "by_category": by_category,
         "by_week":     by_week,
@@ -904,14 +914,17 @@ def api_monthly():
     by_week_prev     = db.get_expenses_by_week_of_month(prev_y, prev_m, user_name, currency)
     by_user_rows     = db.get_expenses_by_user(year, month, currency)
     total = sum(r["total"] for r in by_category)
-    other_currency = "USD" if currency == "ARS" else "ARS"
-    other_total = sum(r["total"] for r in db.get_expenses_summary_by_category(year, month, user_name, other_currency))
+    currency_totals = _expense_currency_totals(year, month, user_name)
+    other_totals = [item for item in currency_totals if item["currency"] != currency]
+    first_other = other_totals[0] if other_totals else {"currency": None, "total": 0}
 
     return jsonify({
         "month":           _month_label(year, month),
         "currency":        currency,
-        "other_currency":  other_currency,
-        "other_total":     other_total,
+        "currency_totals": currency_totals,
+        "other_totals":    other_totals,
+        "other_currency":  first_other["currency"],
+        "other_total":     first_other["total"],
         "total":           total,
         "by_category":     by_category,
         "by_week":         by_week,
@@ -1506,7 +1519,11 @@ def api_backup_status():
 
 @app.route("/dolares")
 def dolares_page():
-    return render_template("dolares.html", year=g.period_year, month=g.period_month)
+    default_given, _default_received = db.default_exchange_pair()
+    return render_template(
+        "dolares.html", year=g.period_year, month=g.period_month,
+        default_given_currency=default_given,
+    )
 
 
 @app.route("/api/cambios/resumen")
@@ -1536,9 +1553,10 @@ def api_cambios_historial():
 
 @app.route("/api/cambios/por_mes")
 def api_cambios_por_mes():
+    default_given, default_received = db.default_exchange_pair()
     try:
-        given = db.normalize_currency(request.args.get("currency_given") or "USD")
-        received = db.normalize_currency(request.args.get("currency_received") or "ARS")
+        given = db.normalize_currency(request.args.get("currency_given") or default_given)
+        received = db.normalize_currency(request.args.get("currency_received") or default_received)
         if given == received:
             raise ValueError
     except ValueError:
@@ -1549,9 +1567,10 @@ def api_cambios_por_mes():
 
 @app.route("/api/cambios/cotizacion_historica")
 def api_cambios_cotizacion_historica():
+    default_given, default_received = db.default_exchange_pair()
     try:
-        given = db.normalize_currency(request.args.get("currency_given") or "USD")
-        received = db.normalize_currency(request.args.get("currency_received") or "ARS")
+        given = db.normalize_currency(request.args.get("currency_given") or default_given)
+        received = db.normalize_currency(request.args.get("currency_received") or default_received)
         if given == received:
             raise ValueError
     except ValueError:
@@ -1651,8 +1670,11 @@ def resumenes_page():
 
 @app.route("/ingresos")
 def incomes_page():
+    totals = db.get_income_month_totals(g.period_year, g.period_month)
     return render_template("incomes.html", categories=[dict(r) for r in db.get_income_categories()],
-                           year=g.period_year, month=g.period_month)
+                           year=g.period_year, month=g.period_month,
+                           income_totals=totals,
+                           income_currency_order=db.period_currency_order(totals))
 
 
 def _shopping_category(name: str):

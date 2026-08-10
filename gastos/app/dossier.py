@@ -58,11 +58,7 @@ def _month_label(year: int, month: int) -> str:
 def build_dossier(year: int, month: int) -> dict:
     default_currency = db.get_family_default_currency()
     all_period_rows = db.get_expenses_for_period_art(year, month)
-    used = {row["currency"] for row in all_period_rows}
-    currencies = [default_currency] + [
-        row["code"] for row in db.get_currencies()
-        if row["code"] in used and row["code"] != default_currency
-    ]
+    currencies = db.period_currency_order(row["currency"] for row in all_period_rows)
     period_rows = {
         currency: [row for row in all_period_rows if row["currency"] == currency]
         for currency in currencies

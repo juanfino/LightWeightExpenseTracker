@@ -3,7 +3,7 @@
 
   const config = global.MANGOTECA_MONEY || {};
   const locale = config.locale || "es-AR";
-  const defaultCurrency = config.defaultCurrency || "ARS";
+  const defaultCurrency = config.defaultCurrency;
   const currencies = new Map(
     (config.currencies || []).map(currency => [currency.code, currency])
   );
@@ -31,6 +31,24 @@
     return `${currency.symbol}${separator}${formatted}`;
   }
 
+  function formatCompactAmount(value, code) {
+    const currency = metadata(code);
+    const number = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(number)) return "—";
+    let compact = String(Math.round(number));
+    if (Math.abs(number) >= 1_000_000) compact = `${(number / 1_000_000).toFixed(1)}M`;
+    else if (Math.abs(number) >= 1_000) compact = `${Math.round(number / 1_000)}k`;
+    const separator = currency.symbol === "$" ? "" : " ";
+    return `${currency.symbol}${separator}${compact}`;
+  }
+
+  function periodCurrencyOrder(usedCodes) {
+    const used = new Set(Array.from(usedCodes || [], code => String(code).trim().toUpperCase()));
+    return [defaultCurrency].concat(
+      Array.from(currencies.keys()).filter(code => code !== defaultCurrency && used.has(code))
+    );
+  }
+
   function optionMarkup(selected, includeAll) {
     const selectedCode = selected || defaultCurrency;
     const options = [];
@@ -45,7 +63,9 @@
   global.MoneyFormat = Object.freeze({
     defaultCurrency,
     formatAmount,
+    formatCompactAmount,
     metadata,
     optionMarkup,
+    periodCurrencyOrder,
   });
 })(window);

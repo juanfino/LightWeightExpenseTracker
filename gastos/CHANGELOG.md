@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.17.3
+- Los resúmenes mensuales de Ingresos y `/gastos`, el widget de ingresos y los totales secundarios del Dashboard ahora derivan sus bloques de las monedas con actividad más la predeterminada familiar, siempre separadas y con la predeterminada primero; BRL, EUR y futuras monedas del catálogo ya no quedan ocultas.
+- Los defaults internos de creación, consulta, audio, parser, formateo, gastos fijos y pares iniciales de Cambios dejan de caer silenciosamente en ARS/USD: usan la moneda predeterminada y el catálogo de la familia. Los símbolos compactos de gráficos y el historial enviado al clasificador también salen de metadata.
+- Agregadas regresiones N-moneda para Ingresos, `/gastos`, Dashboard, defaults de negocio, pares de Cambios, símbolos del clasificador y formateo del navegador.
+
 ## 7.17.2
 - Nuevo `docs/CONTEXTUAL_HELP_AUDIT.md`: auditoría de ayuda contextual de cara a las primeras familias externas — clasifica cada concepto de la app en "de dominio" (no necesita ayuda) o "mecánica del sistema" (inventada por la app), inventario completo por pantalla y por el bot, un vocabulario cerrado de patrones de ayuda ya usados en el producto, y lotes de implementación propuestos. Sin cambios de comportamiento, schema ni lógica.
 - Los cinco hallazgos más relevantes: el vínculo de un gasto a un fijo y por qué su "período" es independiente de la fecha; que elegir categoría por botón en Telegram aprende una keyword en silencio; que "quién registró" no es "quién pagó" fuera de Resúmenes (donde sí está aclarado); que crear una familia no avisa que todos los miembros ven todos los gastos; y que `/ayuda` no menciona OCR, el lenguaje natural para cargar/editar/consultar, ingresos por chat ni la lista de compras.
