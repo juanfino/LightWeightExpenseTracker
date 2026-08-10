@@ -1,5 +1,8 @@
 # Changelog
 
+## 7.17.4
+- Los formularios web de alta con selector de persona — gasto manual y pago de gasto fijo desde Fijos o Dashboard — ahora preseleccionan al miembro autenticado aunque no sea el primero alfabéticamente; la atribución sigue siendo editable.
+
 ## 7.17.3
 - Los resúmenes mensuales de Ingresos y `/gastos`, el widget de ingresos y los totales secundarios del Dashboard ahora derivan sus bloques de las monedas con actividad más la predeterminada familiar, siempre separadas y con la predeterminada primero; BRL, EUR y futuras monedas del catálogo ya no quedan ocultas.
 - Los defaults internos de creación, consulta, audio, parser, formateo, gastos fijos y pares iniciales de Cambios dejan de caer silenciosamente en ARS/USD: usan la moneda predeterminada y el catálogo de la familia. Los símbolos compactos de gráficos y el historial enviado al clasificador también salen de metadata.

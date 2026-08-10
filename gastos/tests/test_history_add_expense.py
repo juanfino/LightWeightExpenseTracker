@@ -1,5 +1,6 @@
 import sys
 import unittest
+import re
 from pathlib import Path
 
 
@@ -89,6 +90,38 @@ class HistoryAddExpenseTests(unittest.TestCase):
         self.assertIn(b'id="add-subcategory"', response.data)
         self.assertIn(b'id="add-category-create"', response.data)
         self.assertIn(b'id="add-subcategory-create"', response.data)
+
+    def test_creation_member_selectors_default_to_authenticated_user(self):
+        reset_database({"100": "Zulu", "200": "Alpha"})
+        client, headers = authenticated_client(dashboard, "100")
+        current_user = db.get_user_by_telegram_id("100")
+
+        for path, select_id in (
+            ("/history", "add-user"),
+            ("/fijos", "pay-user"),
+            ("/dashboard", "dash-pay-user"),
+        ):
+            with self.subTest(path=path):
+                html = client.get(path).get_data(as_text=True)
+                select = re.search(
+                    rf'<select id="{select_id}"[^>]*>(.*?)</select>', html, re.DOTALL
+                )
+                self.assertIsNotNone(select)
+                options = re.findall(r'<option value="(\d+)"([^>]*)>', select.group(1))
+                self.assertGreaterEqual(len(options), 2)
+                self.assertNotEqual(int(options[0][0]), current_user["id"])
+                selected = [int(value) for value, attrs in options if "selected" in attrs]
+                self.assertEqual(selected, [current_user["id"]])
+
+        category = db.get_category_by_name("Hogar")
+        fixed_id = db.create_fixed_expense("Internet", 100, category["id"])
+        response = client.post(
+            "/api/fixed-expenses/pay",
+            json={"fixed_expense_id": fixed_id, "amount": 100, "year": 2026, "month": 7},
+            headers=headers,
+        )
+        expense = db.get_expense_by_id(response.get_json()["expense_id"])
+        self.assertEqual(expense["user_id"], current_user["id"])
 
     def test_history_form_uses_catalogue_and_family_default_currency(self):
         with db.get_conn() as conn:

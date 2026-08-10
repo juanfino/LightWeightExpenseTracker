@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists catalogue-backed currency amounts to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.17.3 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.17.4 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 

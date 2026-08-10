@@ -110,7 +110,7 @@ ingresos, categorías u otras configuraciones de otra familia.
 
 Una familia nueva ve una checklist de primeros pasos en el Dashboard: crear la cuenta, cargar el primer gasto, conectar Telegram (opcional) e invitar a alguien. Cada paso lleva directamente a la pantalla correspondiente y la tarjeta desaparece cuando todos están completos. Las pantallas sin datos muestran qué va a aparecer ahí y un botón para empezar.
 
-Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso.
+Desde **Historial → Agregar gasto** se puede elegir categoría y subcategoría. Al final de cada selector aparece la opción para crear una nueva ahí mismo; la subcategoría se crea dentro de la categoría elegida y queda seleccionada automáticamente para el gasto en curso. Cuando un alta permite elegir una persona —al agregar un gasto o registrar el pago de un gasto fijo— se propone a quien inició sesión, pero el selector sigue permitiendo atribuírselo a otro integrante.
 
 En **Categorías**, una “palabra para categorizar” asocia un texto frecuente con una categoría o subcategoría: por ejemplo, `carrefour` → Hogar / Supermercado. Los siguientes gastos que contengan esa palabra se ordenan automáticamente.
 

@@ -302,7 +302,11 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
       <div class="filter-group">
         <label class="filter-label" for="add-user">Usuario</label>
-        <select id="add-user" style="width:100%"></select>
+        <select id="add-user" data-default-user-id="{{ current_user.id }}" style="width:100%">
+          {% for u in users %}
+          <option value="{{ u.id }}"{% if u.id == current_user.id %} selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div class="filter-group">
@@ -866,25 +870,15 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       today.getFullYear() + "-" + pad(today.getMonth() + 1) + "-" + pad(today.getDate());
 
     const userSel = document.getElementById("add-user");
+    userSel.value = userSel.dataset.defaultUserId;
 
-    const [cats, users] = await Promise.all([
-      fetch("/api/categories").then(function(r) { return r.json(); }),
-      fetch("/api/users").then(function(r) { return r.json(); }),
-    ]);
+    const cats = await fetch("/api/categories").then(function(r) { return r.json(); });
 
     categories.splice(0, categories.length);
     cats.forEach(function(c) { categories.push(c); });
     populateAddCategories(cats, null);
     closeInlineCreator("category", "");
     await loadAddSubcategories(null, null);
-
-    userSel.innerHTML = "";
-    users.forEach(function(u) {
-      const opt = document.createElement("option");
-      opt.value       = u.id;
-      opt.textContent = u.name;
-      userSel.appendChild(opt);
-    });
 
     document.getElementById("add-modal").style.display = "flex";
     document.getElementById("add-concept").focus();

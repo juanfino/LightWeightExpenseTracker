@@ -269,7 +269,11 @@
     </div>
     <div class="form-row">
       <label class="form-label">Usuario</label>
-      <select id="pay-user"></select>
+      <select id="pay-user" data-default-user-id="{{ current_user.id }}">
+        {% for u in users %}
+        <option value="{{ u.id }}"{% if u.id == current_user.id %} selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
     </div>
     <div class="modal-footer">
       <button class="btn" id="btn-pay-cancel">Cancelar</button>
@@ -422,6 +426,8 @@
     document.getElementById('pay-title').textContent  = `Registrar pago: ${concept}`;
     document.getElementById('pay-amount').value       = estimated || '';
     document.getElementById('pay-currency-prefix').textContent = MoneyFormat.metadata(currency).symbol;
+    const userEl = document.getElementById('pay-user');
+    userEl.value = userEl.dataset.defaultUserId;
 
     // Default date: today if we're looking at the current month, otherwise the 1st of
     // the period being viewed — a past period's payment must not be born dated today,
@@ -571,13 +577,6 @@
     });
   }
 
-  async function loadPayUsers() {
-    const res   = await fetch('/api/users');
-    const users = await res.json();
-    const sel   = document.getElementById('pay-user');
-    sel.innerHTML = users.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
-  }
-
   // ── Edit modal ─────────────────────────────────────────────────────────────
   let editFixedId = null;
 
@@ -677,6 +676,5 @@
   // ── Init ───────────────────────────────────────────────────────────────────
   loadStatus();
   loadAdmin();
-  loadPayUsers();
 </script>
 {% endblock %}
