@@ -443,7 +443,7 @@
   }
 
   // ── "Ya lo pagué" — candidate search ───────────────────────────────────────
-  let alreadyFeId = null, alreadyFeConcept = null, alreadyFeEstimated = 0, alreadyFeCurrency = 'ARS';
+  let alreadyFeId = null, alreadyFeConcept = null, alreadyFeEstimated = 0, alreadyFeCurrency = MoneyFormat.defaultCurrency;
 
   async function openAlreadyPaidModal(feId, concept, estimated, currency) {
     alreadyFeId = feId; alreadyFeConcept = concept; alreadyFeEstimated = estimated; alreadyFeCurrency = currency;

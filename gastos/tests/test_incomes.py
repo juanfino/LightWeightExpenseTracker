@@ -62,6 +62,21 @@ class IncomeTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in db.get_incomes()], [income_a])
         self.assertIsNone(db.get_income(income_b))
 
+    def test_income_summary_tiles_include_period_eur_and_default_first(self):
+        db.set_family_default_currency("BRL")
+        db.create_income(self.user["id"], "Europa", 42, "EUR", "2026-07-01")
+        client, _headers = authenticated_client(self.dashboard, "100")
+
+        response = client.get("/ingresos?period=2026-07")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Ingresos BRL del mes", html)
+        self.assertIn("Ingresos EUR del mes", html)
+        self.assertLess(html.index("Ingresos BRL del mes"), html.index("Ingresos EUR del mes"))
+        self.assertNotIn("Ingresos ARS del mes", html)
+        self.assertNotIn("Ingresos USD del mes", html)
+
 
 if __name__ == "__main__":
     unittest.main()

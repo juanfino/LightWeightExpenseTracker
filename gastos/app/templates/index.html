@@ -876,11 +876,7 @@ a.onboarding-step:hover { background:var(--surface2); }
   // ── Number formatting ──────────────────────────────────────────────────────
   const fmtAmount = (n, currency) => MoneyFormat.formatAmount(n, currency || activeCurrency);
 
-  function formatARS(n) {
-    if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1) + "M";
-    if (n >= 1_000)     return "$" + Math.round(n / 1_000) + "k";
-    return "$" + Math.round(n);
-  }
+  const formatCompactAmount = n => MoneyFormat.formatCompactAmount(n, activeCurrency);
 
   function fmtDate(s) {
     if (!s) return "—";
@@ -945,9 +941,9 @@ a.onboarding-step:hover { background:var(--surface2); }
       fetch(`/api/expenses?year=${currentYear}&month=${currentMonth}&usuario=${encodeURIComponent(usuario)}&currency=${activeCurrency}`).then(r => r.json()),
     ]);
     const incomeTotals = await fetch(`/api/incomes/month-totals?year=${currentYear}&month=${currentMonth}`).then(r => r.json());
-    const incomeParts = [];
-    if (incomeTotals.ARS) incomeParts.push(fmtAmount(incomeTotals.ARS, 'ARS'));
-    if (incomeTotals.USD) incomeParts.push(fmtAmount(incomeTotals.USD, 'USD'));
+    const incomeParts = MoneyFormat.periodCurrencyOrder(Object.keys(incomeTotals))
+      .filter(currency => currency === MoneyFormat.defaultCurrency || incomeTotals[currency])
+      .map(currency => fmtAmount(incomeTotals[currency] || 0, currency));
     document.getElementById('month-incomes').textContent = incomeParts.join(' · ') || 'Sin ingresos';
 
     loadFijosWidget(currentYear, currentMonth);
@@ -963,8 +959,11 @@ a.onboarding-step:hover { background:var(--surface2); }
 
   function renderCards(summary, expenses) {
     const total = summary.total || 0;
-    document.getElementById("header-secondary").textContent = summary.other_total
-      ? fmtAmount(summary.other_total, summary.other_currency) : '';
+    const otherTotals = summary.other_totals || (
+      summary.other_total ? [{currency: summary.other_currency, total: summary.other_total}] : []
+    );
+    document.getElementById("header-secondary").textContent = otherTotals
+      .map(item => fmtAmount(item.total, item.currency)).join(' · ');
     // Big hero total with the decimal part dimmed.
     const totalStr = fmtAmount(total);
     const [intPart, decPart] = totalStr.split(",");
@@ -1312,7 +1311,7 @@ a.onboarding-step:hover { background:var(--surface2); }
           y: {
             stacked: true,
             grid: { color: CHART_GRID },
-            ticks: { color: CHART_TICK, font: { family: "'Plus Jakarta Sans', sans-serif" }, callback: v => formatARS(v) },
+            ticks: { color: CHART_TICK, font: { family: "'Plus Jakarta Sans', sans-serif" }, callback: v => formatCompactAmount(v) },
           },
         },
       },
@@ -1379,7 +1378,7 @@ a.onboarding-step:hover { background:var(--surface2); }
           x: { grid: { color: CHART_GRID }, ticks: { color: CHART_TICK, font: { family: "'Plus Jakarta Sans', sans-serif" } } },
           y: {
             grid: { color: CHART_GRID },
-            ticks: { color: CHART_TICK, font: { family: "'Plus Jakarta Sans', sans-serif" }, callback: v => formatARS(v) },
+            ticks: { color: CHART_TICK, font: { family: "'Plus Jakarta Sans', sans-serif" }, callback: v => formatCompactAmount(v) },
           },
         },
       },

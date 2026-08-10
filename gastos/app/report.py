@@ -76,7 +76,7 @@ def generate_report(year: int, month: int) -> dict:
                 "expense_id": c["expense_id"],
                 "concept": by_id[c["expense_id"]]["concept"],
                 "amount": by_id[c["expense_id"]]["amount"],
-                "currency": by_id[c["expense_id"]].get("currency", "ARS"),
+                "currency": by_id[c["expense_id"]]["currency"],
                 "label": c["label"],
                 "confidence": c.get("confidence"),
             }
@@ -109,7 +109,7 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
         expense = by_id.get(c["expense_id"])
         if expense is None:
             continue
-        cur = expense.get("currency", "ARS")
+        cur = expense["currency"]
         bucket = totals.setdefault(cur, {"recurring_total": money.MONEY_ZERO, "recurring_count": 0,
                                           "exceptional_total": money.MONEY_ZERO, "exceptional_count": 0})
         if c["label"] == "recurring":
@@ -128,7 +128,7 @@ def _build_partitions(dossier: dict, all_variable: list[dict], classifications: 
             "exceptional_total": totals[cur]["exceptional_total"],
             "exceptional_count": totals[cur]["exceptional_count"],
             "variable_total": sum(
-                (e["amount"] for e in all_variable if e.get("currency", "ARS") == cur),
+                (e["amount"] for e in all_variable if e["currency"] == cur),
                 money.MONEY_ZERO,
             ),
         }

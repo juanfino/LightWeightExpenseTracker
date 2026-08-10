@@ -85,6 +85,15 @@ class GenericExchangeDBTests(unittest.TestCase):
         self.assertEqual(forward[0]["rate_received_per_given"], Decimal("1500.000000000000000000"))
         self.assertEqual(reverse[0]["rate_received_per_given"], Decimal("0.000666666666666667"))
 
+    def test_default_exchange_pair_never_duplicates_family_default(self):
+        db.set_family_default_currency("USD")
+
+        given, received = db.default_exchange_pair()
+
+        self.assertEqual(received, "USD")
+        self.assertNotEqual(given, received)
+        self.assertIn(given, db.SUPPORTED_CURRENCIES)
+
 
 if __name__ == "__main__":
     unittest.main()
