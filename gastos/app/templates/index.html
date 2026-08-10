@@ -728,7 +728,11 @@ a.onboarding-step:hover { background:var(--surface2); }
       </div>
       <div class="form-row">
         <label class="form-label">Usuario</label>
-        <select id="dash-pay-user"></select>
+        <select id="dash-pay-user" data-default-user-id="{{ current_user.id }}">
+          {% for u in users %}
+          <option value="{{ u.id }}"{% if u.id == current_user.id %} selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="modal-footer">
         <button class="btn" id="dash-btn-pay-cancel">Cancelar</button>
@@ -1481,16 +1485,6 @@ a.onboarding-step:hover { background:var(--surface2); }
 
   // ── Fijos del mes widget ───────────────────────────────────────────────────
   let dashPayFixedId  = null;
-  let dashPayUsers    = [];
-
-  (async function initDashPayUsers() {
-    try {
-      const res = await fetch('/api/users');
-      dashPayUsers = await res.json();
-      const sel = document.getElementById('dash-pay-user');
-      sel.innerHTML = dashPayUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
-    } catch(e) {}
-  })();
 
   async function loadFijosWidget(year, month) {
     try {
@@ -1552,6 +1546,8 @@ a.onboarding-step:hover { background:var(--surface2); }
     dashPayFixedId = { feId, year, month };
     document.getElementById('dash-pay-title').textContent = `Registrar pago: ${concept}`;
     document.getElementById('dash-pay-amount').value      = estimated || '';
+    const userEl = document.getElementById('dash-pay-user');
+    userEl.value = userEl.dataset.defaultUserId;
     document.getElementById('dash-modal-pay').classList.add('open');
     document.getElementById('dash-pay-amount').focus();
   }

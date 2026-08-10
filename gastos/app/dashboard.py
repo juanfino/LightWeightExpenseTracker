@@ -366,6 +366,7 @@ def index():
         "index.html", year=g.period_year, month=g.period_month,
         month_label=_month_label(g.period_year, g.period_month), onboarding=onboarding,
         daily_quote=daily_quote,
+        users=[_row_to_dict(u) for u in db.get_all_users()],
     )
 
 
@@ -1343,7 +1344,10 @@ def api_categories_delete():
 
 @app.route("/fijos")
 def fijos_page():
-    return render_template("fijos.html", year=g.period_year, month=g.period_month)
+    return render_template(
+        "fijos.html", year=g.period_year, month=g.period_month,
+        users=[_row_to_dict(u) for u in db.get_all_users()],
+    )
 
 
 @app.route("/config")
@@ -1466,10 +1470,7 @@ def api_fixed_expenses_pay():
         return jsonify({"ok": False, "error": "Gasto fijo no encontrado"}), 404
 
     if not user_id:
-        users = db.get_all_users()
-        if not users:
-            return jsonify({"ok": False, "error": "No hay usuarios configurados"}), 400
-        user_id = users[0]["id"]
+        user_id = g.current_user["id"]
 
     y, m = int(year), int(month)
 
