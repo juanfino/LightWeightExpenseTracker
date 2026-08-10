@@ -623,11 +623,14 @@ a.onboarding-step:hover { background:var(--surface2); }
       <div class="hero-trend" id="header-trend"></div>
     </div>
     <div class="hero-controls">
-      <div class="user-filter">
-        <span>Ver gastos de:</span>
-        <select id="user-select" style="min-width:110px">
-          <option value="">Todos</option>
-        </select>
+      <div>
+        <div class="user-filter">
+          <span>Ver gastos de:</span>
+          <select id="user-select" style="min-width:110px">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <div class="help-copy">Quién lo cargó, no quién lo pagó.</div>
       </div>
       <div class="user-filter"><span>Moneda:</span><select id="currency-select">{% for currency in currency_catalog %}<option value="{{ currency.code }}"{% if currency.code == default_currency %} selected{% endif %}>{{ currency.code }}</option>{% endfor %}</select></div>
       <div class="view-toggle">

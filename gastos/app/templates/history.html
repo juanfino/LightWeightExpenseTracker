@@ -194,6 +194,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
           <option value="{{ u.id }}">{{ u.name }}</option>
           {% endfor %}
         </select>
+        <span class="help-copy">Quién lo cargó en la app, no necesariamente quién lo pagó.</span>
       </div>
       <button class="btn" id="btn-reset">Limpiar filtros</button>
     </div>
@@ -458,7 +459,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
       + '<td data-label="Concepto"><input id="ei-concept-' + r.id + '" type="text" value="' + safeConceptAttr + '" style="width:100%;min-width:0;box-sizing:border-box"></td>'
       + '<td data-label="Categoría"><select id="ei-cat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">Sin categoría</option>' + catOptions + '</select></td>'
       + '<td data-label="Subcategoría"><select id="ei-subcat-' + r.id + '"' + catDisabled + ' style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Sin subcategoría —</option></select></td>'
-      + '<td class="hide-mobile" data-label="Gasto fijo"><select id="ei-fixed-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Ninguno —</option>' + fixedOptions + '</select></td>'
+      + '<td class="hide-mobile" data-label="Gasto fijo"><select id="ei-fixed-' + r.id + '" style="width:100%;min-width:0;box-sizing:border-box"><option value="">— Ninguno —</option>' + fixedOptions + '</select><div class="help-copy" style="margin-top:6px">Vincular un gasto a un fijo lo cuenta como su pago de ese mes y le copia la categoría del fijo.</div></td>'
       + '<td data-label="Monto"><div style="display:flex;gap:4px;align-items:center"><input id="ei-amount-' + r.id + '" type="number" value="' + r.amount + '" step="0.01" min="0.01" style="width:100%;min-width:0;box-sizing:border-box;font-family:var(--font-mono)"><select id="ei-currency-' + r.id + '"' + catDisabled + ' style="flex:0 0 auto;padding:9px 4px">' + MoneyFormat.optionMarkup(r.currency) + '</select></div></td>'
       + '<td data-label="Usuario" style="color:var(--muted)">' + r.user_name + '</td>'
       + '<td class="cell-actions"><div style="display:flex;gap:6px;flex-direction:column;align-items:flex-start">'
