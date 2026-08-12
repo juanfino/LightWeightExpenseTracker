@@ -482,7 +482,7 @@
     const data = await res.json();
     document.getElementById('modal-candidates').classList.remove('open');
     if (data.ok) loadStatus();
-    else alert('Error: ' + (data.error || 'desconocido'));
+    else await MangotecaDialog.alert({title:'No se pudo vincular',message:data.error||'Ocurrió un error desconocido.'});
   }
 
   document.getElementById('btn-candidates-none').addEventListener('click', () => {
@@ -502,8 +502,8 @@
     const amount  = parseFloat(document.getElementById('pay-amount').value);
     const date    = document.getElementById('pay-date').value;
     const userId  = document.getElementById('pay-user').value;
-    if (!amount || amount <= 0) { alert('Ingresá un monto válido.'); return; }
-    if (!date) { alert('Ingresá una fecha válida.'); return; }
+    if (!amount || amount <= 0) { await MangotecaDialog.alert({title:'Revisá el monto',message:'Ingresá un monto mayor que cero.'}); return; }
+    if (!date) { await MangotecaDialog.alert({title:'Revisá la fecha',message:'Ingresá una fecha válida.'}); return; }
     const res = await fetch('/api/fixed-expenses/pay', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -514,7 +514,7 @@
       document.getElementById('modal-pay').classList.remove('open');
       loadStatus();
     } else {
-      alert('Error: ' + (data.error || 'desconocido'));
+      await MangotecaDialog.alert({title:'No se pudo registrar el pago',message:data.error||'Ocurrió un error desconocido.'});
     }
   });
 
@@ -629,7 +629,7 @@
     const catId     = document.getElementById('edit-category').value;
     const subcatId  = document.getElementById('edit-subcategory').value;
     const currency  = document.getElementById('edit-currency').value;
-    if (!concept) { alert('El concepto es obligatorio.'); return; }
+    if (!concept) { await MangotecaDialog.alert({title:'Falta el concepto',message:'El concepto es obligatorio.'}); return; }
 
     const url  = editFixedId ? '/api/fixed-expenses/update' : '/api/fixed-expenses/add';
     const body = {
@@ -652,12 +652,18 @@
       await loadAdmin();
       loadStatus();
     } else {
-      alert('Error: ' + (data.error || 'desconocido'));
+      await MangotecaDialog.alert({title:'No se pudo guardar',message:data.error||'Ocurrió un error desconocido.'});
     }
   });
 
   async function deactivate(feId, concept) {
-    if (!confirm(`¿Desactivar "${concept}"? No se eliminará del historial.`)) return;
+    const confirmed = await MangotecaDialog.confirm({
+      title: `¿Desactivar "${concept}"?`,
+      message: "No aparecerá en los próximos períodos, pero no se eliminará del historial.",
+      confirmLabel: "Desactivar",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     const res  = await fetch('/api/fixed-expenses/deactivate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -665,7 +671,7 @@
     });
     const data = await res.json();
     if (data.ok) { await loadAdmin(); loadStatus(); }
-    else alert('Error: ' + (data.error || 'desconocido'));
+    else await MangotecaDialog.alert({title:'No se pudo desactivar',message:data.error||'Ocurrió un error desconocido.'});
   }
 
   // Close modals on backdrop click

@@ -393,7 +393,13 @@ button[disabled] {
 
   // ── Delete category ─────────────────────────────────────────────────────────
   async function deleteCategory(id, name) {
-    if (!confirm(`¿Eliminar la categoría "${name}"? Esta acción no se puede deshacer.`)) return;
+    const confirmed = await MangotecaDialog.confirm({
+      title: `¿Eliminar la categoría "${name}"?`,
+      message: "Esta acción no se puede deshacer.",
+      confirmLabel: "Eliminar",
+      variant: "danger",
+    });
+    if (!confirmed) return;
 
     const res = await fetch("/api/categories/delete", {
       method: "POST",
@@ -445,7 +451,13 @@ button[disabled] {
 
   // ── Keywords ─────────────────────────────────────────────────────────────────
   async function deleteKeyword(id, name) {
-    if (!confirm(`¿Eliminar la keyword "${name}"?`)) return;
+    const confirmed = await MangotecaDialog.confirm({
+      title: `¿Eliminar la keyword "${name}"?`,
+      message: "El concepto dejará de usar esta regla de categorización.",
+      confirmLabel: "Eliminar",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     const res = await fetch("/api/keywords/delete", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -618,7 +630,13 @@ button[disabled] {
   }
 
   async function deleteSubcat(subcatId, name, catId) {
-    if (!confirm('¿Eliminar la subcategoría "' + name + '"?')) return;
+    const confirmed = await MangotecaDialog.confirm({
+      title: '¿Eliminar la subcategoría "' + name + '"?',
+      message: "Esta acción no se puede deshacer.",
+      confirmLabel: "Eliminar",
+      variant: "danger",
+    });
+    if (!confirmed) return;
     const res  = await fetch("/api/subcategories/delete", {
       method: "POST",
       headers: {"Content-Type": "application/json"},

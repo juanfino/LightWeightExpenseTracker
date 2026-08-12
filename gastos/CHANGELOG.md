@@ -1,5 +1,10 @@
 # Changelog
 
+## 7.17.7
+- Los avisos, confirmaciones destructivas y pedidos breves de texto del dashboard dejan de usar `alert`, `confirm` y `prompt` del navegador: ahora comparten un diálogo propio de Mangoteca, adaptable a mobile y a los temas claro/oscuro.
+- El diálogo compartido conserva el foco, permite cancelar con Escape y confirmar campos con Enter; Familia también usa el mismo flujo para transferir propiedad, remover miembros, desconectar Telegram y salir del grupo.
+- Agregada una regresión que impide reintroducir diálogos nativos y verifica la carga única y accesible del componente compartido.
+
 ## 7.17.6
 - Nueva auditoría de primer contacto del bot de Telegram: reconstruye el recorrido desde la vinculación, contrasta `/ayuda` con todas las capacidades reales y evalúa rechazos, fallos de IA y límites para miembros no owner.
 - Los cambios propuestos quedan agrupados en lotes independientes, con copy final en español rioplatense y sin modificar handlers ni mensajes en esta versión.

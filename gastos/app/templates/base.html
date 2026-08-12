@@ -404,6 +404,58 @@
 
     .btn-primary:hover { filter: brightness(1.06); }
 
+    /* ── Shared app dialogs ── */
+    .app-dialog {
+      width: min(440px, calc(100vw - 28px));
+      max-width: none;
+      margin: auto;
+      padding: 0;
+      overflow: hidden;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+    }
+    .app-dialog::backdrop {
+      background: rgba(15, 10, 7, .66);
+      backdrop-filter: blur(3px);
+    }
+    .app-dialog-shell { padding: 24px; }
+    .app-dialog-heading { display: flex; align-items: flex-start; gap: 14px; }
+    .app-dialog-icon {
+      width: 40px;
+      height: 40px;
+      flex: 0 0 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      font-size: 21px;
+      color: var(--accent);
+      background: color-mix(in oklch, var(--accent) 14%, transparent);
+    }
+    .app-dialog[data-variant="danger"] .app-dialog-icon {
+      color: var(--red);
+      background: color-mix(in oklch, var(--red) 14%, transparent);
+    }
+    .app-dialog-copy { min-width: 0; padding-top: 1px; }
+    .app-dialog-title { font-size: 18px; font-weight: 800; line-height: 1.3; }
+    .app-dialog-message { margin-top: 7px; color: var(--text2); font-size: 13.5px; white-space: pre-line; }
+    .app-dialog-field { display: grid; gap: 7px; margin-top: 20px; }
+    .app-dialog-field[hidden] { display: none; }
+    .app-dialog-label { color: var(--text2); font-size: 12px; font-weight: 700; }
+    .app-dialog-input { width: 100%; }
+    .app-dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }
+    .app-dialog-actions .btn { justify-content: center; }
+    .app-dialog-confirm.btn-danger { color: var(--surface); background: var(--red); }
+    .app-dialog-confirm.btn-danger:hover { filter: brightness(1.06); }
+
+    @media (max-width: 480px) {
+      .app-dialog-shell { padding: 20px; }
+      .app-dialog-actions { flex-direction: column-reverse; }
+      .app-dialog-actions .btn { width: 100%; }
+    }
+
     /* ── Form inputs ── */
     input, select {
       background: var(--bg2);
@@ -787,6 +839,26 @@
 
   {% block content %}{% endblock %}
 
+  <dialog class="app-dialog" id="app-dialog" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-message">
+    <form class="app-dialog-shell" id="app-dialog-form" method="dialog">
+      <div class="app-dialog-heading">
+        <div class="app-dialog-icon" aria-hidden="true"><i id="app-dialog-icon" class="ti ti-message-circle"></i></div>
+        <div class="app-dialog-copy">
+          <h2 class="app-dialog-title" id="app-dialog-title"></h2>
+          <p class="app-dialog-message" id="app-dialog-message"></p>
+        </div>
+      </div>
+      <label class="app-dialog-field" id="app-dialog-field" hidden>
+        <span class="app-dialog-label" id="app-dialog-label"></span>
+        <input class="app-dialog-input" id="app-dialog-input" autocomplete="off">
+      </label>
+      <div class="app-dialog-actions">
+        <button class="btn" id="app-dialog-cancel" type="button">Cancelar</button>
+        <button class="btn btn-primary app-dialog-confirm" id="app-dialog-confirm" type="submit">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     // All same-origin mutations carry the server-session CSRF token. Existing
     // page code can keep using fetch without duplicating security plumbing.
@@ -815,6 +887,7 @@
     };
   </script>
   <script src="{{ url_for('static', filename='money.js') }}"></script>
+  <script src="{{ url_for('static', filename='dialogs.js') }}"></script>
 
   {% block scripts %}{% endblock %}
 

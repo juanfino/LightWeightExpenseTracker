@@ -1563,7 +1563,7 @@ a.onboarding-step:hover { background:var(--surface2); }
     });
     const data = await res.json();
     if (data.ok) loadFijosWidget(year, month);
-    else alert('Error: ' + (data.error || 'desconocido'));
+    else await MangotecaDialog.alert({title:'No se pudo actualizar',message:data.error||'Ocurrió un error desconocido.'});
   }
 
   document.getElementById('dash-btn-pay-cancel').addEventListener('click', () => {
@@ -1577,7 +1577,7 @@ a.onboarding-step:hover { background:var(--surface2); }
   document.getElementById('dash-btn-pay-save').addEventListener('click', async () => {
     const amount = parseFloat(document.getElementById('dash-pay-amount').value);
     const userId = document.getElementById('dash-pay-user').value;
-    if (!amount || amount <= 0) { alert('Ingresá un monto válido.'); return; }
+    if (!amount || amount <= 0) { await MangotecaDialog.alert({title:'Revisá el monto',message:'Ingresá un monto mayor que cero.'}); return; }
     const { feId, year, month } = dashPayFixedId;
     const res  = await fetch('/api/fixed-expenses/pay', {
       method: 'POST',
@@ -1589,7 +1589,7 @@ a.onboarding-step:hover { background:var(--surface2); }
       document.getElementById('dash-modal-pay').classList.remove('open');
       loadFijosWidget(year, month);
     } else {
-      alert('Error: ' + (data.error || 'desconocido'));
+      await MangotecaDialog.alert({title:'No se pudo registrar el pago',message:data.error||'Ocurrió un error desconocido.'});
     }
   });
 
