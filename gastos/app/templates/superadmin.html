@@ -119,12 +119,12 @@ new Chart(document.getElementById('llm-trend'), {
 document.querySelectorAll('.save-quota').forEach(button=>button.addEventListener('click',async()=>{
   const row=button.closest('tr'),id=row.dataset.familyId;
   const response=await fetch(`/admin/families/${id}/quotas`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({routine_daily_limit:row.querySelector('.routine-limit').value,summary_monthly_limit:row.querySelector('.summary-limit').value})});
-  const data=await response.json(); if(!response.ok)return alert(data.error); button.textContent='Guardado ✓'; setTimeout(()=>button.innerHTML='<i class="ti ti-device-floppy"></i> Guardar',1400);
+  const data=await response.json(); if(!response.ok)return MangotecaDialog.alert({title:'No se pudo guardar',message:data.error||'Intentá nuevamente.'}); button.textContent='Guardado ✓'; setTimeout(()=>button.innerHTML='<i class="ti ti-device-floppy"></i> Guardar',1400);
 }));
 document.querySelectorAll('.cost-card').forEach(form=>form.addEventListener('submit',async event=>{
   event.preventDefault();const values=Object.fromEntries(new FormData(form));
   const response=await fetch(`/admin/costs/${encodeURIComponent(form.dataset.provider)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)});
-  const data=await response.json();if(!response.ok)return alert(data.error);location.reload();
+  const data=await response.json();if(!response.ok)return MangotecaDialog.alert({title:'No se pudo guardar',message:data.error||'Intentá nuevamente.'});location.reload();
 }));
 </script>
 {% endblock %}

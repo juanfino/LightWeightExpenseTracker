@@ -85,6 +85,8 @@ Dashboard, Movimientos, Ingresos, Fijos, Cambios y Resúmenes comparten el mismo
 
 Al tocar el avatar arriba a la derecha se abre el menú de cuenta: Administrar familia, Categorías, Conectar Telegram, Exportar datos, el selector de apariencia y **Cerrar sesión**. La apariencia puede seguir al sistema o fijarse en modo oscuro/claro; la elección queda guardada en ese navegador. Cerrar sesión revoca la sesión del servidor y vuelve al login. Si la cuenta es superadmin, ese mismo menú agrega Sistema (backup/restauración global de la base) y el acceso al panel operativo global.
 
+Las confirmaciones, avisos y campos breves que aparecen sobre el dashboard usan diálogos propios de Mangoteca, no ventanas del navegador. Se pueden cancelar con **Escape**, mantienen el foco en la acción que los abrió y adaptan sus botones al ancho del celular.
+
 ### Panel de superadmin
 
 El acceso **Superadmin** aparece solamente para la cuenta configurada mediante

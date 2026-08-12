@@ -2,7 +2,7 @@
 
 Family expense tracker. Users send plain-text messages to a Telegram bot; the app parses, categorizes, and persists catalogue-backed currency amounts to PostgreSQL. A Flask dashboard provides monthly/annual visualizations, history, and configuration.
 
-- **Version:** 7.17.5 (canonical source: `gastos/config.yaml`)
+- **Version:** 7.17.7 (canonical source: `gastos/config.yaml`)
 - **Dashboard:** https://mangoteca.juampifinochietto.com
 - **Repo:** https://github.com/juanfino/LightWeightExpenseTracker
 
@@ -112,7 +112,7 @@ Both report calls cross the explicit numeric JSON boundary immediately before se
 | `/vincular-telegram` | `telegram_link.html` | Telegram deep link, desktop QR and live connected status |
 | `/superadmin` | `superadmin.html` | Superadmin-only cross-family operational metrics, AI/cost analysis, quota overrides and recent failures |
 
-All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark). The logo is the sole navigation entry for Dashboard. The desktop/mobile primary menu orders Movimientos, Ingresos, Fijos, Cambios and Resúmenes first, then visually separates Lista de compras as a non-accounting area; the avatar popup groups family administration, taxonomy, Telegram linking, export, system, superadmin access and logout.
+All screens share the amber/orange design system (Plus Jakarta Sans, borderless cards with large radii, CSS-variable-driven Chart.js colors synced light/dark). Authenticated pages also share one accessible app dialog from `base.html` + `static/dialogs.js` for alerts, confirmations and short text input; native browser `alert`/`confirm`/`prompt` calls are forbidden. The logo is the sole navigation entry for Dashboard. The desktop/mobile primary menu orders Movimientos, Ingresos, Fijos, Cambios and Resúmenes first, then visually separates Lista de compras as a non-accounting area; the avatar popup groups family administration, taxonomy, Telegram linking, export, system, superadmin access and logout.
 
 ## Superadmin operations
 

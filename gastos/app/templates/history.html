@@ -800,7 +800,7 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
     document.getElementById("modal").style.display = "none";
     pendingDeleteId = null;
     if (res.ok) loadExpenses();
-    else alert("Error al eliminar el gasto.");
+    else await MangotecaDialog.alert({title: "No se pudo eliminar", message: "El gasto no se eliminó. Intentá nuevamente."});
   });
 
   // ── Add expense modal ──────────────────────────────────────────────────────
@@ -999,7 +999,12 @@ th.sort-desc::after { content: " ▼"; font-size: 9px; opacity: .7; }
 
     if (data.suggested_fixed_expense) {
       const fe = data.suggested_fixed_expense;
-      if (confirm('💡 "' + concept + '" coincide con tu gasto fijo "' + fe.concept + '". ¿Vinculamos este gasto?')) {
+      const shouldLink = await MangotecaDialog.confirm({
+        title: "¿Vincularlo con un gasto fijo?",
+        message: '“' + concept + '” coincide con “' + fe.concept + '”. Al vincularlo, tomará la categoría del gasto fijo.',
+        confirmLabel: "Vincular",
+      });
+      if (shouldLink) {
         await fetch("/api/expenses/" + data.id + "/link-fixed", {
           method:  "POST",
           headers: {"Content-Type": "application/json"},

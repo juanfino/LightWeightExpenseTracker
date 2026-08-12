@@ -37,8 +37,8 @@
           {% if current_user.role == 'owner' and member.active and member.user_id != current_user.id %}
             <div class="inline-form">
               {% if member.role == 'member' %}
-              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="transfer"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn" onclick="return confirm('¿Transferir la propiedad a {{ member.name }}?')">Hacer owner</button></form>
-              <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn btn-danger" onclick="return confirm('¿Remover a {{ member.name }}? Sus gastos se conservarán.')">Remover</button></form>
+              <form method="post" data-confirm-title="¿Transferir la propiedad?" data-confirm-message="{{ member.name }} pasará a ser owner de la familia." data-confirm-label="Transferir"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="transfer"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn">Hacer owner</button></form>
+              <form method="post" data-confirm-title="¿Remover a {{ member.name }}?" data-confirm-message="Sus gastos se conservarán en la familia." data-confirm-label="Remover" data-confirm-variant="danger"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="user_id" value="{{ member.user_id }}"><button class="btn btn-danger">Remover</button></form>
               {% endif %}
             </div>
           {% endif %}
@@ -52,7 +52,7 @@
         <h2 class="section-title">Telegram</h2>
         {% if current_user.telegram_id %}
         <p class="muted mt-8">✅ Tu cuenta está conectada.</p>
-        <form method="post" class="mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="unlink_telegram"><button class="btn btn-danger" onclick="return confirm('¿Desconectar Telegram?')">Desconectar</button></form>
+        <form method="post" class="mt-8" data-confirm-title="¿Desconectar Telegram?" data-confirm-message="No vas a poder cargar gastos desde el chat hasta que vuelvas a vincularlo." data-confirm-label="Desconectar" data-confirm-variant="danger"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="unlink_telegram"><button class="btn btn-danger">Desconectar</button></form>
         {% else %}
         <p class="muted mt-8">Conectalo para cargar gastos desde el chat.</p><a class="btn btn-primary mt-8" href="{{ url_for('telegram_link') }}">Conectar mi Telegram</a>
         {% endif %}
@@ -93,7 +93,7 @@
         <h2 class="section-title">Zona sensible</h2>
         {% if current_user.role == 'member' %}
         <p class="muted mt-8">Tus gastos quedan en la familia aunque salgas.</p>
-        <form method="post" class="mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="leave"><button class="btn btn-danger" onclick="return confirm('¿Salir de esta familia?')">Salir de la familia</button></form>
+        <form method="post" class="mt-8" data-confirm-title="¿Salir de esta familia?" data-confirm-message="Tus gastos quedarán en la familia y perderás acceso a sus datos." data-confirm-label="Salir" data-confirm-variant="danger"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="leave"><button class="btn btn-danger">Salir de la familia</button></form>
         {% else %}
         <p class="muted mt-8">Para salir, primero transferí la propiedad. Para borrar todo, escribí exactamente <strong>{{ family.name }}</strong>.</p>
         <form method="post" class="stack mt-8"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="delete"><input name="confirmation" autocomplete="off" placeholder="{{ family.name }}" required><button class="btn btn-danger">Eliminar familia definitivamente</button></form>
